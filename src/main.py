@@ -11,6 +11,9 @@ import logging
 import requests
 import time
 
+if not os.path.exists(".env"):
+    raise FileNotFoundError("No .env file found.")
+
 load_dotenv()
 
 app = Flask(__name__)
