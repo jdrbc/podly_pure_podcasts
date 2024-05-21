@@ -20,6 +20,7 @@ prompt-toolkit = "*"
 pypodcastparser = "*"
 werkzeug = "*"
 black = "*"
+exceptiongroup = "*"
 
 [dev-packages]
 

@@ -25,7 +25,7 @@ Podly will:
 Copy `.env.example` into new file `.env`. Update `OPENAI_API_KEY` with your key.
 
 ```
-pipenv --python 3.9
+pipenv --python 3.11
 pipenv install
 pipenv shell
 python src/main.py

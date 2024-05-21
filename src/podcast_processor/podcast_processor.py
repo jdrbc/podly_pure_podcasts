@@ -89,13 +89,13 @@ class PodcastProcessor:
                 self.config["output"]["min_ad_segement_separation_seconds"],
                 self.config["output"]["fade_ms"],
             ).export(
-                f"{final_audio_path}/{task.audio_path.split("/")[-1]}", format="mp3"
+                f'{final_audio_path}/{task.audio_path.split("/")[-1]}', format="mp3"
             )
             self.logger.info(f"Processing task: {task} complete")
             return task.get_output_path()
 
     def make_dirs(self, task):
-        audio_processing_dir = f"{self.processing_dir}/{task.podcast_title}/{task.audio_path.split("/")[-1]}"
+        audio_processing_dir = f'{self.processing_dir}/{task.podcast_title}/{task.audio_path.split("/")[-1]}'
         transcript_dir = f"{audio_processing_dir}/transcription"
         classification_dir = f"{audio_processing_dir}/classification"
         final_audio_path = f"{self.output_dir}/{task.podcast_title}"
