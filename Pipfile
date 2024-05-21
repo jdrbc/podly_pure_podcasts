@@ -1,0 +1,27 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+speechrecognition = "*"
+pydub = "*"
+openai-whisper = "*"
+openai = "*"
+python-dotenv = "*"
+jinja2 = "*"
+flask = "*"
+pyrss2gen = "*"
+feedparser = "*"
+certifi = "*"
+cd = "*"
+pyyaml = "*"
+prompt-toolkit = "*"
+pypodcastparser = "*"
+werkzeug = "*"
+black = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.11"
