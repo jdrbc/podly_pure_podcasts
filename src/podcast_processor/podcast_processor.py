@@ -8,7 +8,14 @@ from openai import OpenAI
 from jinja2 import Template
 import pickle
 import threading
+from dotenv import dotenv_values
 
+env = dotenv_values( ".env" )
+for key in env:
+    if key == "OPENAI_API_KEY":
+        print(key, "********")
+    else:
+        print(key, env[key])
 
 class PodcastProcessorTask:
     def __init__(self, podcast_title, audio_path, podcast_description):
@@ -72,7 +79,7 @@ class PodcastProcessor:
             )
             self.classify(
                 transcript,
-                self.config["processing"]["model"],
+                env.OPENAI_MODEL_NAME or "gpt-4o",
                 self.config["processing"]["system_prompt"],
                 user_prompt_template,
                 self.config["processing"]["num_segments_to_input_to_prompt"],
@@ -122,7 +129,14 @@ class PodcastProcessor:
             self.logger.info("Transcript already transcribed")
             return self.pickle_transcripts[task.pickle_id()]
 
-        model = whisper.load_model("base")
+        # log available models
+        models = whisper.available_models()
+        self.logger.info(f"Available models: {models}")
+
+        model = whisper.load_model(
+            name=env.WHISPER_MODEL or "base",
+        )
+
         result = model.transcribe(task.audio_path, fp16=False, language="English")
 
         for segment in result["segments"]:
@@ -169,21 +183,21 @@ class PodcastProcessor:
                     f"Responses for segments {start} to {end} already received"
                 )
                 continue
-            exceprts = [
+            excerpts = [
                 f"[{segment['start']}] {segment['text']}"
                 for segment in segments[start:end]
             ]
 
             if start == 0:
-                exceprts.insert(0, f"[TRANSCRIPT START]")
+                excerpts.insert(0, f"[TRANSCRIPT START]")
             elif end == len(segments):
-                exceprts.append(f"[TRANSCRIPT END]")
+                excerpts.append(f"[TRANSCRIPT END]")
 
             self.logger.info(f"Calling {model}")
             user_prompt = user_prompt_template.render(
                 podcast_title=task.podcast_title,
                 podcast_topic=task.podcast_description,
-                transcript="\n".join(exceprts),
+                transcript="\n".join(excerpts),
             )
             identification = self.call_model(model, system_prompt, user_prompt)
             with open(f"{target_dir}/identification.txt", "w") as f:
@@ -192,13 +206,20 @@ class PodcastProcessor:
                 f.write(user_prompt)
 
     def call_model(self, model, system_prompt, user_prompt):
-        client = OpenAI()
+        # log the request
+        self.logger.info(f"Calling model: {model}")
+        client = OpenAI(
+            base_url=env.OPENAI_BASE_URL or "https://api.openai.com/v1",
+            api_key=env.OPENAI_API_KEY,
+        )
         response = client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
+            max_tokens=env.OPENAI_MAX_TOKENS,
+            timeout=env.OPENAI_TIMEOUT,
         )
 
         return response.choices[0].message.content

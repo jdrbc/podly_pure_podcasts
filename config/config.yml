@@ -4,7 +4,6 @@ server:
 processing:
   system_prompt: You classify portions of transcripts
   user_prompt_template_path: config/user_prompt.jinja
-  model: gpt-4o
   num_segments_to_input_to_prompt: 30
 
 output:
