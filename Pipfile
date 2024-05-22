@@ -21,6 +21,7 @@ pypodcastparser = "*"
 werkzeug = "*"
 black = "*"
 exceptiongroup = "*"
+zeroconf = "*"
 
 [dev-packages]
 

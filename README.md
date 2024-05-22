@@ -14,9 +14,10 @@ Podly will:
 
 - Start the server & note the URL.
   - For example, `192.168.0.2:5001`
+  - It'll try to register an mDNS record at `podly.local`
 - Open a podcast app & subscribe to a podcast by appending the RSS to the 'rss' endpoint.
   - For example, to subscribe to `https://mypodcast.com/rss.xml`
-  - Subscribe to `http://192.168.0.2:5001/rss/https://mypodcast.com/rss.xml`
+  - Subscribe to `http://podly.local:5001/rss/https://mypodcast.com/rss.xml`
 - Select an episode & download
 - Wait patiently :)
 

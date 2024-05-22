@@ -10,11 +10,16 @@ import yaml
 import logging
 import requests
 import time
+from zeroconf import ServiceInfo, Zeroconf
+import threading
+import socket
 
 if not os.path.exists(".env"):
     raise FileNotFoundError("No .env file found.")
 
 load_dotenv()
+
+stop = threading.Event()
 
 app = Flask(__name__)
 setup_logger("global_logger", "config/app.log")
@@ -122,6 +127,39 @@ def find_audio_link(entry):
     return None
 
 
+def get_ip_address():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = "127.0.0.1"
+    finally:
+        s.close()
+    return IP
+
+
+def register_mdns_service():
+    info = ServiceInfo(
+        "_http._tcp.local.",
+        "Podly._http._tcp.local.",
+        addresses=[socket.inet_aton(get_ip_address())],
+        port=5001,
+        properties={"path": "/"},
+        server="podly.local.",
+    )
+
+    zeroconf = Zeroconf()
+    zeroconf.register_service(info)
+    try:
+        while not stop.is_set():
+            time.sleep(1)
+    finally:
+        print("Unregistering...")
+        zeroconf.unregister_service(info)
+        zeroconf.close()
+
+
 if __name__ == "__main__":
     if not os.path.exists("processing"):
         os.makedirs("processing")
@@ -129,5 +167,11 @@ if __name__ == "__main__":
         os.makedirs("in")
     if not os.path.exists("srv"):
         os.makedirs("srv")
-
-    app.run(host="0.0.0.0", port=5001)
+    # Start a new thread for the mDNS service registration
+    thread = threading.Thread(target=register_mdns_service)
+    thread.start()
+    try:
+        app.run(host="0.0.0.0", port=5001)
+    except KeyboardInterrupt:
+        stop.set()
+        thread.join()
