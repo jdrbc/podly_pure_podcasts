@@ -142,7 +142,7 @@ def register_mdns_service():
         "_http._tcp.local.",
         "Podly._http._tcp.local.",
         addresses=[socket.inet_aton(get_ip_address())],
-        port=5001,
+        port=config["server"]["port"],
         properties={"path": "/"},
         server="podly.local.",
     )
