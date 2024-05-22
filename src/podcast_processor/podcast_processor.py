@@ -183,21 +183,21 @@ class PodcastProcessor:
                     f"Responses for segments {start} to {end} already received"
                 )
                 continue
-            exceprts = [
+            excerpts = [
                 f"[{segment['start']}] {segment['text']}"
                 for segment in segments[start:end]
             ]
 
             if start == 0:
-                exceprts.insert(0, f"[TRANSCRIPT START]")
+                excerpts.insert(0, f"[TRANSCRIPT START]")
             elif end == len(segments):
-                exceprts.append(f"[TRANSCRIPT END]")
+                excerpts.append(f"[TRANSCRIPT END]")
 
             self.logger.info(f"Calling {model}")
             user_prompt = user_prompt_template.render(
                 podcast_title=task.podcast_title,
                 podcast_topic=task.podcast_description,
-                transcript="\n".join(exceprts),
+                transcript="\n".join(excerpts),
             )
             identification = self.call_model(model, system_prompt, user_prompt)
             with open(f"{target_dir}/identification.txt", "w") as f:
