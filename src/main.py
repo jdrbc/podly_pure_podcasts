@@ -169,7 +169,7 @@ if __name__ == "__main__":
     thread = threading.Thread(target=register_mdns_service)
     thread.start()
     try:
-        app.run(host="0.0.0.0", port=5001)
+        app.run(host="0.0.0.0", port=config["server"]["port"])
     except KeyboardInterrupt:
         stop.set()
         thread.join()
