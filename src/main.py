@@ -70,9 +70,7 @@ def rss(podcast_rss):
         title="[podly] " + feed.feed.title,
         link=request.url_root,
         description=feed.feed.description,
-        lastBuildDate=datetime.datetime.fromtimestamp(
-            time.mktime(feed.feed.updated_parsed)
-        ),
+        lastBuildDate=datetime.datetime.now(),
         items=transformed_items,
     )
     return rss.to_xml("utf-8"), 200, {"Content-Type": "application/rss+xml"}
