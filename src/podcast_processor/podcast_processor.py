@@ -218,9 +218,8 @@ class PodcastProcessor:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=env.OPENAI_MAX_TOKENS or 4096,
-            timeout=env.OPENAI_TIMEOUT or 300,
-
+            max_tokens=env.OPENAI_MAX_TOKENS,
+            timeout=env.OPENAI_TIMEOUT,
         )
 
         return response.choices[0].message.content
