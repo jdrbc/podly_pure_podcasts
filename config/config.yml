@@ -1,3 +1,6 @@
+server:
+  port: 5001
+
 processing:
   system_prompt: You classify portions of transcripts
   user_prompt_template_path: config/user_prompt.jinja

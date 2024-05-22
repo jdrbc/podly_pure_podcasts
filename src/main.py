@@ -142,7 +142,7 @@ def register_mdns_service():
         "_http._tcp.local.",
         "Podly._http._tcp.local.",
         addresses=[socket.inet_aton(get_ip_address())],
-        port=5001,
+        port=config["server"]["port"],
         properties={"path": "/"},
         server="podly.local.",
     )
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     thread = threading.Thread(target=register_mdns_service)
     thread.start()
     try:
-        app.run(host="0.0.0.0", port=5001)
+        app.run(host="0.0.0.0", port=config["server"]["port"])
     except KeyboardInterrupt:
         stop.set()
         thread.join()
