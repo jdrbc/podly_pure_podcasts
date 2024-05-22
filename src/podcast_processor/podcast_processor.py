@@ -8,6 +8,7 @@ from openai import OpenAI
 from jinja2 import Template
 import pickle
 import threading
+import time
 from dotenv import dotenv_values
 
 env = dotenv_values( ".env" )
@@ -137,7 +138,12 @@ class PodcastProcessor:
             name=env.WHISPER_MODEL or "base",
         )
 
+        self.logger.info("Beginning transcription")
+        start = time.time()
         result = model.transcribe(task.audio_path, fp16=False, language="English")
+        end = time.time()
+        elapsed = end - start
+        self.logger.info(f"Transcription completed in {elapsed}")
 
         for segment in result["segments"]:
             segment["start"] = round(segment["start"], 1)
