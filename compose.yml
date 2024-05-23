@@ -1,0 +1,14 @@
+services:
+  server:
+    build:
+      context: .
+    ports:
+      - 5001:5001
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu
