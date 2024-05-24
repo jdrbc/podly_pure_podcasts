@@ -95,6 +95,7 @@ class PodcastProcessor:
             self.create_new_audio_without_ads(
                 audio,
                 ad_segments,
+                self.config["output"]["min_ad_segment_length_seconds"],
                 self.config["output"]["min_ad_segement_separation_seconds"],
                 self.config["output"]["fade_ms"],
             ).export(
@@ -280,7 +281,12 @@ class PodcastProcessor:
         return fade_in
 
     def create_new_audio_without_ads(
-        self, audio, ad_segments, min_ad_segement_separation_seconds, fade_ms=5000
+        self,
+        audio,
+        ad_segments,
+        min_ad_segment_length_seconds,
+        min_ad_segement_separation_seconds,
+        fade_ms=5000,
     ):
         self.logger.info(
             f"Creating new audio with ads segments removed between: {ad_segments}"
@@ -297,7 +303,23 @@ class PodcastProcessor:
                 ad_segments.pop(i + 1)
             else:
                 i += 1
+
+        # remove any isloated ad segments that are too short, possibly misidentified
+        ad_segments = [
+            segment
+            for segment in ad_segments
+            if segment[1] - segment[0] >= min_ad_segment_length_seconds
+        ]
+        # whisper sometimes drops the last bit of the transcript & this can lead to end-roll not being
+        # entirely removed, so bump the ad segment to the end of the audio if it's close enough
+        if len(ad_segments) > 0:
+            if (
+                audio.duration_seconds - ad_segments[-1][1]
+                < min_ad_segement_separation_seconds
+            ):
+                ad_segments[-1] = (ad_segments[-1][0], audio.duration_seconds)
         self.logger.info(f"Joined ad segments into: {ad_segments}")
+
         ad_segments_ms = [(start * 1000, end * 1000) for start, end in ad_segments]
         new_audio = AudioSegment.empty()
         last_end = 0
@@ -306,7 +328,8 @@ class PodcastProcessor:
             new_audio += self.get_ad_fade_out(audio, start, fade_ms)
             new_audio += self.get_ad_fade_in(audio, end, fade_ms)
             last_end = end
-        new_audio += audio[last_end:]
+        if last_end != audio.duration_seconds * 1000:
+            new_audio += audio[last_end:]
         return new_audio
 
 
