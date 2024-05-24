@@ -11,12 +11,13 @@ import threading
 import time
 from dotenv import dotenv_values
 
-env = dotenv_values( ".env" )
+env = dotenv_values(".env")
 for key in env:
     if key == "OPENAI_API_KEY":
         print(key, "********")
     else:
         print(key, env[key])
+
 
 class PodcastProcessorTask:
     def __init__(self, podcast_title, audio_path, podcast_description):
@@ -80,7 +81,7 @@ class PodcastProcessor:
             )
             self.classify(
                 transcript,
-                env.OPENAI_MODEL_NAME or "gpt-4o",
+                env["OPENAI_MODEL"] if "OPENAI_MODEL" in env else "gpt-4o",
                 self.config["processing"]["system_prompt"],
                 user_prompt_template,
                 self.config["processing"]["num_segments_to_input_to_prompt"],
@@ -135,7 +136,7 @@ class PodcastProcessor:
         self.logger.info(f"Available models: {models}")
 
         model = whisper.load_model(
-            name=env.WHISPER_MODEL or "base",
+            name=env["WHISPER_MODEL"] if "WHISPER_MODEL" in env else "base",
         )
 
         self.logger.info("Beginning transcription")
@@ -171,10 +172,6 @@ class PodcastProcessor:
         classification_path,
     ):
         self.logger.info(f"Identifying ad segments for {task.audio_path}")
-        if os.listdir(classification_path):
-            self.logger.info("Audio already classified")
-            return
-
         segments = transcript["segments"]
         self.logger.info(f"processing {len(segments)} transcript segments")
         for i in range(0, len(segments), num_segments_to_input_to_prompt):
@@ -215,8 +212,12 @@ class PodcastProcessor:
         # log the request
         self.logger.info(f"Calling model: {model}")
         client = OpenAI(
-            base_url=env.OPENAI_BASE_URL or "https://api.openai.com/v1",
-            api_key=env.OPENAI_API_KEY,
+            base_url=(
+                env["OPENAI_BASE_URL"]
+                if "OPENAI_BASE_URL" in env
+                else "https://api.openai.com/v1"
+            ),
+            api_key=env["OPENAI_API_KEY"],
         )
         response = client.chat.completions.create(
             model=model,
@@ -224,8 +225,8 @@ class PodcastProcessor:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=env.OPENAI_MAX_TOKENS,
-            timeout=env.OPENAI_TIMEOUT,
+            max_tokens=env["OPENAI_MAX_TOKENS"] if "OPENAI_MAX_TOKENS" in env else 4096,
+            timeout=env["OPENAI_TIMEOUT"] if "OPENAI_TIMEOUT" in env else 300,
         )
 
         return response.choices[0].message.content
