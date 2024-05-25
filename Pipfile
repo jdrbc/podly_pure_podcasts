@@ -22,6 +22,8 @@ werkzeug = "*"
 black = "*"
 exceptiongroup = "*"
 zeroconf = "*"
+waitress = "*"
+validators = "*"
 
 [dev-packages]
 

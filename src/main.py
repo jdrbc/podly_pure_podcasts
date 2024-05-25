@@ -1,14 +1,17 @@
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
-from flask import Flask, request, url_for
+from flask import Flask, request, url_for, abort
+from waitress import serve
 import feedparser
 import PyRSS2Gen
+import validators
 from logger import setup_logger
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 import os
 import datetime
 import yaml
 import logging
 import requests
+import re
 import time
 from zeroconf import ServiceInfo, Zeroconf
 import threading
@@ -17,7 +20,7 @@ import socket
 if not os.path.exists(".env"):
     raise FileNotFoundError("No .env file found.")
 
-load_dotenv()
+env = dotenv_values(".env")
 
 stop = threading.Event()
 
@@ -29,7 +32,7 @@ with open("config/config.yml", "r") as f:
 download_dir = "in"
 
 
-@app.route("/download/<path:episode_url>")
+@app.get("/download/<path:episode_url>")
 def download(episode_url):
     podcast_title = request.args.get("podcast_title")
     episode_name = request.args.get("episode_name")
@@ -47,22 +50,26 @@ def download(episode_url):
         return file.read()
 
 
-@app.route("/rss/<path:podcast_rss>")
+def fix_url(url):
+    pattern = r"(http(s)?):/([^/])"
+    replacement = r"\1://\3"
+    output_string = re.sub(pattern, replacement, url)
+    return output_string
+
+
+@app.get("/rss/<path:podcast_rss>")
 def rss(podcast_rss):
     url = podcast_rss
+    url = fix_url(url)
+    if not validators.url(url):
+        abort(404)
     feed = feedparser.parse(url)
     transformed_items = []
     for entry in feed.entries:
         transformed_items.append(
             PyRSS2Gen.RSSItem(
                 title=entry.title,
-                link=url_for(
-                    "download",
-                    _external=True,
-                    episode_url=find_audio_link(entry),
-                    podcast_title="[podly] " + feed.feed.title,
-                    episode_name=entry.title,
-                ),
+                link=get_download_link(entry, feed.feed.title),
                 description=entry.description,
             )
         )
@@ -76,15 +83,14 @@ def rss(podcast_rss):
     return rss.to_xml("utf-8"), 200, {"Content-Type": "application/rss+xml"}
 
 
-@app.route("/srv/<path:path>")
-def basic_srv(path):
-    logger.info(f'Serving file "srv/{path}"')
-    if not os.path.exists(f"srv/{path}"):
-        logger.error(f'File "srv/{path}" not found')
-        return "File not found", 404
-
-    with open(f"srv/{path}", "rb") as file:
-        return file.read()
+def get_download_link(entry, podcast_title):
+    return (env["SERVER"] if "SERVER" in env else "") + url_for(
+        "download",
+        _external="SERVER" not in env,
+        episode_url=find_audio_link(entry),
+        podcast_title="[podly] " + podcast_title,
+        episode_name=entry.title,
+    )
 
 
 def download_episode(podcast_title, episode_name, episode_url):
@@ -142,7 +148,7 @@ def register_mdns_service():
         "_http._tcp.local.",
         "Podly._http._tcp.local.",
         addresses=[socket.inet_aton(get_ip_address())],
-        port=config["server"]["port"],
+        port=int(env["SERVER_PORT"]) if "SERVER_PORT" in env else 5001,
         properties={"path": "/"},
         server="podly.local.",
     )
@@ -169,7 +175,11 @@ if __name__ == "__main__":
     thread = threading.Thread(target=register_mdns_service)
     thread.start()
     try:
-        app.run(host="0.0.0.0", port=config["server"]["port"])
+        serve(
+            app,
+            host="0.0.0.0",
+            port=int(env["SERVER_PORT"]) if "SERVER_PORT" in env else 5001,
+        )
     except KeyboardInterrupt:
         stop.set()
         thread.join()
