@@ -97,10 +97,9 @@ def download_episode(podcast_title, episode_name, episode_url):
     download_path = get_and_make_download_path(podcast_title, episode_name)
     if not os.path.exists(download_path):
         # Download the podcast episode
-        audio_link = episode_url
-        if audio_link is None:
-            logger.error("No audio link found.")
-            raise ValueError("No audio link found.")
+        audio_link = fix_url(episode_url)
+        if audio_link is None or not validators.url(audio_link):
+            abort(404)
 
         logger.info(f"Downloading {audio_link} into {download_path}...")
         response = requests.get(audio_link)

@@ -19,7 +19,7 @@ Podly will:
   - For example, to subscribe to `https://mypodcast.com/rss.xml`
   - Subscribe to `http://podly.local:5001/rss/https://mypodcast.com/rss.xml`
 - Select an episode & download
-- Wait patiently :)
+- Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 
 ## How To Run
 
@@ -32,6 +32,43 @@ pipenv install
 pipenv shell
 python src/main.py
 ```
+
+## Remote Setup
+
+Podly works out of the box when running locally (see [Usage](#usage)). To run it on a remote server add SERVER to .env
+
+```
+SERVER=http://my.domain.com
+```
+
+Podly supports basic authentication. See below for example setup for `httpd.conf`.
+
+```
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
+
+ProxyPass / http://127.0.0.1:5001/
+RequestHeader set X-Forwarded-Proto http
+RequestHeader set X-Forwarded-Prefix /
+
+SetEnv proxy-chain-auth On
+
+# auth
+<Location />
+    AuthName "Registered User"
+    AuthType Basic
+    AuthUserFile /lib/protected.users
+    require valid-user
+</Location>
+```
+
+Add users by running:
+
+```
+sudo htpasswd -c /lib/protected.users [username]
+```
+
+Some apps will support basic auth in the URL like http://[username]:[pass]@my.domain.com
 
 ## Environment Variables
 

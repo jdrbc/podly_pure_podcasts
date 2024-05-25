@@ -9,6 +9,7 @@ from jinja2 import Template
 import pickle
 import threading
 import time
+import gc
 from dotenv import dotenv_values
 
 env = dotenv_values(".env")
@@ -328,6 +329,7 @@ class PodcastProcessor:
             new_audio += self.get_ad_fade_out(audio, start, fade_ms)
             new_audio += self.get_ad_fade_in(audio, end, fade_ms)
             last_end = end
+            gc.collect()
         if last_end != audio.duration_seconds * 1000:
             new_audio += audio[last_end:]
         return new_audio

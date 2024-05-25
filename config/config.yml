@@ -6,4 +6,4 @@ processing:
 output:
   fade_ms: 3000
   min_ad_segement_separation_seconds: 60
-  min_ad_segment_length_seconds: 10
+  min_ad_segment_length_seconds: 14
