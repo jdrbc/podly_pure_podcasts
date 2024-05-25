@@ -35,9 +35,10 @@ with open("config/config.yml", "r") as f:
 download_dir = "in"
 
 
-@app.get("/download")
-def download():
-    podcast_title, episode_name, episode_url = get_args(request.url)
+@app.get("/download/<path:episode_name>")
+def download(episode_name):
+    episode_name = urllib.parse.unquote(episode_name)
+    podcast_title, episode_url = get_args(request.url)
     logging.info(f"Downloading episode {episode_name} from podcast {podcast_title}...")
     if episode_url is None or not validators.url(episode_url):
         return "Invalid episode URL", 404
@@ -58,7 +59,7 @@ def get_args(full_request_url):
     args = urllib.parse.parse_qs(
         urllib.parse.urlparse(full_request_url.replace(PARAM_SEP, "&")).query
     )
-    return args["podcast_title"][0], args["episode_name"][0], args["episode_url"][0]
+    return args["podcast_title"][0], args["episode_url"][0]
 
 
 def fix_url(url):
@@ -97,9 +98,10 @@ def rss(podcast_rss):
 def get_download_link(entry, podcast_title):
     return (
         (env["SERVER"] if "SERVER" in env else "")
-        + url_for("download", _external="SERVER" not in env)
+        + url_for(
+            "download", episode_name=f"{entry.title}.mp3", _external="SERVER" not in env
+        )
         + f"?podcast_title={urllib.parse.quote('[podly] ' + podcast_title)}"
-        + f"{PARAM_SEP}episode_name={urllib.parse.quote(entry.title)}"
         + f"{PARAM_SEP}episode_url={urllib.parse.quote(find_audio_link(entry))}"
     )
 
@@ -131,7 +133,7 @@ def download_episode(podcast_title, episode_name, episode_url):
 def get_and_make_download_path(podcast_title, episode_name):
     if not os.path.exists(f"{download_dir}/{podcast_title}"):
         os.makedirs(f"{download_dir}/{podcast_title}")
-    return f"{download_dir}/{podcast_title}/{episode_name}.mp3"
+    return f"{download_dir}/{podcast_title}/{episode_name}"
 
 
 def find_audio_link(entry):
@@ -175,6 +177,12 @@ def register_mdns_service():
 
 
 if __name__ == "__main__":
+    for key in env:
+        if key == "OPENAI_API_KEY":
+            logger.info(f"{key}: ********")
+        else:
+            logger.info(f"{key}: {env[key]}")
+
     if not os.path.exists("processing"):
         os.makedirs("processing")
     if not os.path.exists("in"):
