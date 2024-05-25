@@ -98,3 +98,9 @@ OPENAI_MODEL='phi3:14b-medium-4k-instruct-q5_K_M'
 ```shell
 WHISPER_MODEL='base.en' # optional
 ```
+
+To use OpenAI API instead of local model
+
+```shell
+REMOTE_WHISPER=TRUE # optional
+```
