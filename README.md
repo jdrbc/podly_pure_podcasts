@@ -12,12 +12,13 @@ Podly will:
 
 ## Usage
 
+- `.env.example` into new file `.env`. Update `OPENAI_API_KEY` with your key.
 - Start the server & note the URL.
   - For example, `192.168.0.2:5001`
   - It'll try to register an mDNS record at `podly.local`
-- Open a podcast app & subscribe to a podcast by appending the RSS to the 'rss' endpoint.
+- Open a podcast app & subscribe to a podcast by appending the RSS to the podly endpoint.
   - For example, to subscribe to `https://mypodcast.com/rss.xml`
-  - Subscribe to `http://podly.local:5001/rss/https://mypodcast.com/rss.xml`
+  - Subscribe to `http://podly.local:5001/https://mypodcast.com/rss.xml`
 - Select an episode & download
 - Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 

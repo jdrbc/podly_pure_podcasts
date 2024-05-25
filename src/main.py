@@ -57,7 +57,7 @@ def fix_url(url):
     return output_string
 
 
-@app.get("/rss/<path:podcast_rss>")
+@app.get("/<path:podcast_rss>")
 def rss(podcast_rss):
     url = podcast_rss
     url = fix_url(url)
