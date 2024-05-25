@@ -10,6 +10,8 @@ import pickle
 import threading
 import time
 import gc
+import math
+import shutil
 from dotenv import dotenv_values
 
 env = dotenv_values(".env")
@@ -47,6 +49,14 @@ class PodcastProcessor:
         self.output_dir = "srv"
         self.config = config
         self.pickle_transcripts = self.init_pickle_transcripts()
+        self.client = OpenAI(
+            base_url=(
+                env["OPENAI_BASE_URL"]
+                if "OPENAI_BASE_URL" in env
+                else "https://api.openai.com/v1"
+            ),
+            api_key=env["OPENAI_API_KEY"],
+        )
 
     def init_pickle_transcripts(self):
         pickle_path = "transcripts.pickle"
@@ -73,7 +83,7 @@ class PodcastProcessor:
                 self.logger.info(f"Audio already processed: {task}")
                 return task.get_output_path()
             transcript_dir, classification_dir, final_audio_path = self.make_dirs(task)
-            transcript = self.transcribe(
+            transcript_segments = self.transcribe(
                 task,
                 transcript_dir,
             )
@@ -81,7 +91,7 @@ class PodcastProcessor:
                 self.config["processing"]["user_prompt_template_path"]
             )
             self.classify(
-                transcript,
+                transcript_segments,
                 env["OPENAI_MODEL"] if "OPENAI_MODEL" in env else "gpt-4o",
                 self.config["processing"]["system_prompt"],
                 user_prompt_template,
@@ -89,9 +99,7 @@ class PodcastProcessor:
                 task,
                 classification_dir,
             )
-            ad_segments = self.get_ad_segments(
-                transcript["segments"], classification_dir
-            )
+            ad_segments = self.get_ad_segments(transcript_segments, classification_dir)
             audio = AudioSegment.from_file(task.audio_path)
             self.create_new_audio_without_ads(
                 audio,
@@ -131,9 +139,74 @@ class PodcastProcessor:
         # check pickle
         if task.pickle_id() in self.pickle_transcripts:
             self.logger.info("Transcript already transcribed")
-            return self.pickle_transcripts[task.pickle_id()]
+            transcript = self.pickle_transcripts[task.pickle_id()]
+            if (
+                "segments" in transcript
+            ):  # used to store whole transcript, saves people from having to delete pickle on upgrade
+                return transcript["segments"]
+            else:
+                return transcript
 
-        # log available models
+        segments = (
+            self.remote_whisper(task)
+            if "REMOTE_WHISPER" in env
+            else self.local_whisper(task)
+        )
+
+        for segment in segments:
+            segment["start"] = round(segment["start"], 1)
+            segment["end"] = round(segment["end"], 1)
+
+        with open(transcript_file_path + "/transcript.txt", "w") as f:
+            for segment in segments:
+                f.write(f"{segment['start']}{segment['text']}\n")
+
+        self.update_pickle_transcripts(task, segments)
+        return segments
+
+    def remote_whisper(self, task):
+        self.logger.info("Using remote whisper")
+        self.split_file(task.audio_path)
+        for i in range(0, len(os.listdir(f"{task.audio_path}_parts")), 1):
+            segments = self.get_segments_for_chunk(f"{task.audio_path}_parts/{i}.mp3")
+            if i == 0:
+                all_segments = segments
+            else:
+                all_segments.extend(segments)
+        # clean up
+        shutil.rmtree(f"{task.audio_path}_parts")
+        return all_segments
+
+    def get_segments_for_chunk(self, chunk):
+        with open(chunk, "rb") as f:
+            return self.client.audio.transcriptions.create(
+                model="whisper-1",
+                file=f,
+                timestamp_granularities=["segment"],
+                language="en",
+                response_format="verbose_json",
+            ).model_extra["segments"]
+
+    def split_file(
+        self, audio_path, chunk_size=24 * 1024 * 1024
+    ):  # chunk_size in bytes
+        if not os.path.exists(audio_path + "_parts"):
+            os.makedirs(audio_path + "_parts")
+        audio = AudioSegment.from_mp3(audio_path)
+        duration = len(audio)  # duration in milliseconds
+        chunk_duration = (
+            chunk_size / os.path.getsize(audio_path)
+        ) * duration  # chunk duration in milliseconds
+
+        num_chunks = math.ceil(duration / chunk_duration)
+        for i in range(num_chunks):
+            start_time = i * chunk_duration
+            end_time = (i + 1) * chunk_duration
+            chunk = audio[start_time:end_time]
+            chunk.export(f"{audio_path}_parts/{i}.mp3", format="mp3")
+
+    def local_whisper(self, task):
+        self.logger.info("Using local whisper")
         models = whisper.available_models()
         self.logger.info(f"Available models: {models}")
 
@@ -147,17 +220,7 @@ class PodcastProcessor:
         end = time.time()
         elapsed = end - start
         self.logger.info(f"Transcription completed in {elapsed}")
-
-        for segment in result["segments"]:
-            segment["start"] = round(segment["start"], 1)
-            segment["end"] = round(segment["end"], 1)
-
-        with open(transcript_file_path + "/transcript.txt", "w") as f:
-            for segment in result["segments"]:
-                f.write(f"{segment['start']}{segment['text']}\n")
-
-        self.update_pickle_transcripts(task, result)
-        return result
+        return result["segments"]
 
     def get_user_prompt_template(self, prompt_template_path):
         with open(prompt_template_path, "r") as f:
@@ -165,7 +228,7 @@ class PodcastProcessor:
 
     def classify(
         self,
-        transcript,
+        transcript_segments,
         model,
         system_prompt,
         user_prompt_template,
@@ -174,13 +237,12 @@ class PodcastProcessor:
         classification_path,
     ):
         self.logger.info(f"Identifying ad segments for {task.audio_path}")
-        segments = transcript["segments"]
-        self.logger.info(f"processing {len(segments)} transcript segments")
-        for i in range(0, len(segments), num_segments_to_input_to_prompt):
+        self.logger.info(f"processing {len(transcript_segments)} transcript segments")
+        for i in range(0, len(transcript_segments), num_segments_to_input_to_prompt):
             start = i
-            end = min(i + num_segments_to_input_to_prompt, len(segments))
+            end = min(i + num_segments_to_input_to_prompt, len(transcript_segments))
 
-            target_dir = f"{classification_path}/{segments[start]['start']}_{segments[end-1]['end']}"
+            target_dir = f"{classification_path}/{transcript_segments[start]['start']}_{transcript_segments[end-1]['end']}"
             if not os.path.exists(target_dir):
                 os.makedirs(target_dir)
             else:
@@ -190,12 +252,12 @@ class PodcastProcessor:
                 continue
             excerpts = [
                 f"[{segment['start']}] {segment['text']}"
-                for segment in segments[start:end]
+                for segment in transcript_segments[start:end]
             ]
 
             if start == 0:
                 excerpts.insert(0, f"[TRANSCRIPT START]")
-            elif end == len(segments):
+            elif end == len(transcript_segments):
                 excerpts.append(f"[TRANSCRIPT END]")
 
             self.logger.info(f"Calling {model}")
@@ -213,15 +275,7 @@ class PodcastProcessor:
     def call_model(self, model, system_prompt, user_prompt):
         # log the request
         self.logger.info(f"Calling model: {model}")
-        client = OpenAI(
-            base_url=(
-                env["OPENAI_BASE_URL"]
-                if "OPENAI_BASE_URL" in env
-                else "https://api.openai.com/v1"
-            ),
-            api_key=env["OPENAI_API_KEY"],
-        )
-        response = client.chat.completions.create(
+        response = self.client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -336,7 +390,6 @@ class PodcastProcessor:
 
 
 if __name__ == "__main__":
-    import queue
     import logging
     import yaml
 
@@ -346,13 +399,11 @@ if __name__ == "__main__":
     with open("config/config.yml", "r") as f:
         config = yaml.safe_load(f)
 
-    queue = queue.Queue()
     task = PodcastProcessorTask(
         "Example",
         "in/example.mp3",
         "Example podcast title",
     )
-    queue.put(task)
-    processor = PodcastProcessor(queue, config)
+    processor = PodcastProcessor(config)
     processor.process(task)
     logger.info("PodcastProcessor done")
