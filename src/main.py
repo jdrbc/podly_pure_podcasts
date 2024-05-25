@@ -16,9 +16,12 @@ import time
 from zeroconf import ServiceInfo, Zeroconf
 import threading
 import socket
+import urllib.parse
 
 if not os.path.exists(".env"):
     raise FileNotFoundError("No .env file found.")
+
+PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampe
 
 env = dotenv_values(".env")
 
@@ -32,11 +35,12 @@ with open("config/config.yml", "r") as f:
 download_dir = "in"
 
 
-@app.get("/download/<path:episode_url>")
-def download(episode_url):
-    podcast_title = request.args.get("podcast_title")
-    episode_name = request.args.get("episode_name")
+@app.get("/download")
+def download():
+    podcast_title, episode_name, episode_url = get_args(request.url)
     logging.info(f"Downloading episode {episode_name} from podcast {podcast_title}...")
+    if episode_url is None or not validators.url(episode_url):
+        return "Invalid episode URL", 404
 
     download_path = download_episode(podcast_title, episode_name, episode_url)
     if download_path is None:
@@ -48,6 +52,13 @@ def download(episode_url):
         return "Failed to process episode", 500
     with open(output_path, "rb") as file:
         return file.read()
+
+
+def get_args(full_request_url):
+    args = urllib.parse.parse_qs(
+        urllib.parse.urlparse(full_request_url.replace(PARAM_SEP, "&")).query
+    )
+    return args["podcast_title"][0], args["episode_name"][0], args["episode_url"][0]
 
 
 def fix_url(url):
@@ -84,12 +95,12 @@ def rss(podcast_rss):
 
 
 def get_download_link(entry, podcast_title):
-    return (env["SERVER"] if "SERVER" in env else "") + url_for(
-        "download",
-        _external="SERVER" not in env,
-        episode_url=find_audio_link(entry),
-        podcast_title="[podly] " + podcast_title,
-        episode_name=entry.title,
+    return (
+        (env["SERVER"] if "SERVER" in env else "")
+        + url_for("download", _external="SERVER" not in env)
+        + f"?podcast_title={urllib.parse.quote('[podly] ' + podcast_title)}"
+        + f"{PARAM_SEP}episode_name={urllib.parse.quote(entry.title)}"
+        + f"{PARAM_SEP}episode_url={urllib.parse.quote(find_audio_link(entry))}"
     )
 
 
