@@ -99,11 +99,17 @@ def get_download_link(entry, podcast_title):
     return (
         (env["SERVER"] if "SERVER" in env else "")
         + url_for(
-            "download", episode_name=f"{entry.title}.mp3", _external="SERVER" not in env
+            "download",
+            episode_name=f"{remove_odd_characters(entry.title)}.mp3",
+            _external="SERVER" not in env,
         )
-        + f"?podcast_title={urllib.parse.quote('[podly] ' + podcast_title)}"
+        + f"?podcast_title={urllib.parse.quote('[podly] ' + remove_odd_characters(podcast_title))}"
         + f"{PARAM_SEP}episode_url={urllib.parse.quote(find_audio_link(entry))}"
     )
+
+
+def remove_odd_characters(title):
+    return re.sub(r"[^a-zA-Z0-9\s]", "", title)
 
 
 def download_episode(podcast_title, episode_name, episode_url):
@@ -196,6 +202,7 @@ if __name__ == "__main__":
         serve(
             app,
             host="0.0.0.0",
+            threads=int(env["THREADS"] if "THREADS" in env else 1),
             port=int(env["SERVER_PORT"]) if "SERVER_PORT" in env else 5001,
         )
     except KeyboardInterrupt:
