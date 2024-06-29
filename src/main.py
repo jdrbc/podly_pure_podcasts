@@ -21,7 +21,7 @@ import urllib.parse
 if not os.path.exists(".env"):
     raise FileNotFoundError("No .env file found.")
 
-PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampe
+PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
 
 env = dotenv_values(".env")
 
@@ -83,6 +83,8 @@ def rss(podcast_rss):
                 title=entry.title,
                 link=get_download_link(entry, feed.feed.title),
                 description=entry.description,
+                guid=PyRSS2Gen.Guid(entry.link),
+                pubDate=datetime.datetime(*entry.published_parsed[:6]),
             )
         )
     rss = PyRSS2Gen.RSS2(

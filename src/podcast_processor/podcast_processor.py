@@ -305,6 +305,10 @@ class PodcastProcessor:
                 identification = identification.strip()
                 try:
                     identification_json = json.loads(identification)
+                    if "confidence" in identification_json:
+                        confidence = identification_json["confidence"]
+                        if confidence < self.config["output"]["min_confidence"]:
+                            continue
                     ad_segment_starts = identification_json["ad_segments"]
                     # filter out ad segments outside of the start/end, and that do not exist in segments_by_start
                     ad_segment_starts = [
