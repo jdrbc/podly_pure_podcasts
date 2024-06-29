@@ -63,27 +63,24 @@ def get_args(full_request_url):
 
 
 def fix_url(url):
-    pattern = r"(http(s)?):/([^/])"
-    replacement = r"\1://\3"
-    output_string = re.sub(pattern, replacement, url)
-    return output_string
+    return re.sub(r"(http(s)?):/([^/])", r"\1://\3", url)
 
 
 @app.get("/<path:podcast_rss>")
 def rss(podcast_rss):
-    url = podcast_rss
-    url = fix_url(url)
+    url = fix_url(podcast_rss)
     if not validators.url(url):
         abort(404)
     feed = feedparser.parse(url)
     transformed_items = []
     for entry in feed.entries:
+        dl_link = get_download_link(entry, feed.feed.title)
         transformed_items.append(
             PyRSS2Gen.RSSItem(
                 title=entry.title,
-                link=get_download_link(entry, feed.feed.title),
+                link=dl_link,
                 description=entry.description,
-                guid=PyRSS2Gen.Guid(entry.link),
+                guid=PyRSS2Gen.Guid(dl_link),
                 pubDate=datetime.datetime(*entry.published_parsed[:6]),
             )
         )
@@ -151,39 +148,6 @@ def find_audio_link(entry):
     return None
 
 
-def get_ip_address():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("10.255.255.255", 1))
-        IP = s.getsockname()[0]
-    except Exception:
-        IP = "127.0.0.1"
-    finally:
-        s.close()
-    return IP
-
-
-def register_mdns_service():
-    info = ServiceInfo(
-        "_http._tcp.local.",
-        "Podly._http._tcp.local.",
-        addresses=[socket.inet_aton(get_ip_address())],
-        port=int(env["SERVER_PORT"]) if "SERVER_PORT" in env else 5001,
-        properties={"path": "/"},
-        server="podly.local.",
-    )
-
-    zeroconf = Zeroconf()
-    zeroconf.register_service(info)
-    try:
-        while not stop.is_set():
-            time.sleep(1)
-    finally:
-        print("Unregistering...")
-        zeroconf.unregister_service(info)
-        zeroconf.close()
-
-
 if __name__ == "__main__":
     for key in env:
         if key == "OPENAI_API_KEY":
@@ -197,16 +161,10 @@ if __name__ == "__main__":
         os.makedirs("in")
     if not os.path.exists("srv"):
         os.makedirs("srv")
-    # Start a new thread for the mDNS service registration
-    thread = threading.Thread(target=register_mdns_service)
-    thread.start()
-    try:
-        serve(
-            app,
-            host="0.0.0.0",
-            threads=int(env["THREADS"] if "THREADS" in env else 1),
-            port=int(env["SERVER_PORT"]) if "SERVER_PORT" in env else 5001,
-        )
-    except KeyboardInterrupt:
-        stop.set()
-        thread.join()
+
+    serve(
+        app,
+        host="0.0.0.0",
+        threads=int(env["THREADS"] if "THREADS" in env else 1),
+        port=int(env["SERVER_PORT"]) if "SERVER_PORT" in env else 5001,
+    )

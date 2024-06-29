@@ -15,14 +15,19 @@ Podly will:
 - `.env.example` into new file `.env`. Update `OPENAI_API_KEY` with your key.
 - Start the server & note the URL.
   - For example, `192.168.0.2:5001`
-  - It'll try to register an mDNS record at `podly.local`
 - Open a podcast app & subscribe to a podcast by appending the RSS to the podly endpoint.
   - For example, to subscribe to `https://mypodcast.com/rss.xml`
-  - Subscribe to `http://podly.local:5001/https://mypodcast.com/rss.xml`
+  - Subscribe to `http://192.168.0.2:5001:5001/https://mypodcast.com/rss.xml`
 - Select an episode & download
 - Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 
 ## How To Run
+
+Install ffmpeg
+
+```shell
+sudo apt install ffmpeg
+```
 
 Copy `.env.example` into new file `.env`. Update `OPENAI_API_KEY` with your key.
 
@@ -70,6 +75,33 @@ sudo htpasswd -c /lib/protected.users [username]
 ```
 
 Some apps will support basic auth in the URL like http://[username]:[pass]@my.domain.com
+
+## Ubuntu Service
+
+Add a service file to /etc/systemd/system/podly.service
+
+```
+[Unit]
+Description=Podly Podcast Service
+After=network.target
+
+[Service]
+User=yourusername
+Group=yourusername
+WorkingDirectory=/path/to/your/app
+ExecStart=/usr/bin/pipenv run python src/main.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+enable the service
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable podly.service
+```
 
 ## Environment Variables
 
