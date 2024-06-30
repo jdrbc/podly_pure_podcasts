@@ -1,5 +1,5 @@
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
-from flask import Flask, request, url_for, abort
+from flask import Flask, request, url_for, abort, Response
 from waitress import serve
 import feedparser
 import PyRSS2Gen
@@ -35,7 +35,7 @@ with open("config/config.yml", "r") as f:
 download_dir = "in"
 
 
-@app.get("/download/<path:episode_name>")
+@app.route("/download/<path:episode_name>")
 def download(episode_name):
     episode_name = urllib.parse.unquote(episode_name)
     podcast_title, episode_url = get_args(request.url)
@@ -51,8 +51,24 @@ def download(episode_name):
     output_path = processor.process(task)
     if output_path is None:
         return "Failed to process episode", 500
-    with open(output_path, "rb") as file:
-        return file.read()
+
+    range_header = request.headers.get("Range", None)
+    if range_header:
+        match = re.search(r"bytes=(\d+)-(\d*)", range_header)
+        start = int(match.group(1))
+        end = int(match.group(2) or end)
+        file_size = os.path.getsize(download_path)
+        with open(download_path, "rb") as file:
+            file.seek(start)
+            data = file.read(end - start + 1)
+            resp = Response(data, 206, mimetype="audio/mpeg", direct_passthrough=True)
+            resp.headers.add("Content-Range", f"bytes {start}-{end}/{file_size}")
+            resp.headers.add("Accept-Ranges", "bytes")
+            resp.headers.add("Content-Length", str(len(data)))
+            return resp
+    else:
+        with open(output_path, "rb") as file:
+            return file.read(), 200, {"Content-Type": "audio/mpeg"}
 
 
 def get_args(full_request_url):
@@ -63,15 +79,26 @@ def get_args(full_request_url):
 
 
 def fix_url(url):
-    return re.sub(r"(http(s)?):/([^/])", r"\1://\3", url)
+    url = re.sub(r"(http(s)?):/([^/])", r"\1://\3", url)
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+    return url
 
 
 @app.get("/<path:podcast_rss>")
 def rss(podcast_rss):
-    url = fix_url(podcast_rss)
+    logging.info(f"getting rss for {podcast_rss}...")
+    if podcast_rss == "favicon.ico":
+        abort(404)
+    if podcast_rss in config["podcasts"]:
+        url = config["podcasts"][podcast_rss]
+    else:
+        url = fix_url(podcast_rss)
     if not validators.url(url):
         abort(404)
     feed = feedparser.parse(url)
+    if "feed" not in feed or "title" not in feed.feed:
+        abort(404)
     transformed_items = []
     for entry in feed.entries:
         dl_link = get_download_link(entry, feed.feed.title)
@@ -81,6 +108,11 @@ def rss(podcast_rss):
                 link=dl_link,
                 description=entry.description,
                 guid=PyRSS2Gen.Guid(dl_link),
+                enclosure=PyRSS2Gen.Enclosure(
+                    dl_link,
+                    str(entry.get("enclosures", [{}])[0].get("length", 0)),
+                    "audio/mp3",
+                ),
                 pubDate=datetime.datetime(*entry.published_parsed[:6]),
             )
         )
