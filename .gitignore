@@ -42,3 +42,4 @@ config/app.log
 **/*.mp3
 *.pickle
 .env
+config/config.yml

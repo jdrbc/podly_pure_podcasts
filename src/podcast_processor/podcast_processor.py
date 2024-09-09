@@ -1,6 +1,5 @@
 import threading
 import logging
-import whisper
 from pydub import AudioSegment
 import os
 import json
@@ -206,6 +205,8 @@ class PodcastProcessor:
             chunk.export(f"{audio_path}_parts/{i}.mp3", format="mp3")
 
     def local_whisper(self, task):
+        import whisper
+
         self.logger.info("Using local whisper")
         models = whisper.available_models()
         self.logger.info(f"Available models: {models}")
