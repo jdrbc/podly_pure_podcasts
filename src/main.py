@@ -6,6 +6,7 @@ import socket
 import threading
 import time
 import urllib.parse
+from pathlib import Path
 from typing import Any, Optional, cast
 
 import feedparser
@@ -14,7 +15,7 @@ import requests
 import validators
 import yaml
 from dotenv import dotenv_values
-from flask import Flask, Response, abort, request, url_for
+from flask import Flask, abort, request, send_file, url_for
 from waitress import serve
 from zeroconf import ServiceInfo, Zeroconf
 
@@ -55,23 +56,11 @@ def download(episode_name):
     if output_path is None:
         return "Failed to process episode", 500
 
-    range_header = request.headers.get("Range", None)
-    if range_header:
-        match = re.search(r"bytes=(\d+)-(\d*)", range_header)
-        start = int(match.group(1))
-        end = int(match.group(2) or end)
-        file_size = os.path.getsize(download_path)
-        with open(download_path, "rb") as file:
-            file.seek(start)
-            data = file.read(end - start + 1)
-            resp = Response(data, 206, mimetype="audio/mpeg", direct_passthrough=True)
-            resp.headers.add("Content-Range", f"bytes {start}-{end}/{file_size}")
-            resp.headers.add("Accept-Ranges", "bytes")
-            resp.headers.add("Content-Length", str(len(data)))
-            return resp
-    else:
-        with open(output_path, "rb") as file:
-            return file.read(), 200, {"Content-Type": "audio/mpeg"}
+    try:
+        return send_file(path_or_file=Path(output_path).resolve())
+    except Exception as e:
+        logging.error(f"Error sending file: {e}")
+        return "Error sending file", 500
 
 
 def get_args(full_request_url):
