@@ -130,7 +130,7 @@ def rss(podcast_rss):
         lastBuildDate=datetime.datetime.now(),
         items=transformed_items,
     )
-    return rss.to_xml("utf-8"), 200, {"Content-Type": "application/rss+xml"}
+    return rss.to_xml("utf-8"), 200, {"Content-Type": "application/xml"}
 
 
 def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
