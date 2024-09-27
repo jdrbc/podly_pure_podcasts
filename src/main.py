@@ -9,8 +9,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Optional, cast
 
-import feedparser
-import PyRSS2Gen
+import feedparser  # type: ignore[import-untyped]
+import PyRSS2Gen  # type: ignore[import-untyped]
 import requests
 import validators
 import yaml
@@ -19,8 +19,9 @@ from flask import Flask, abort, request, send_file, url_for
 from waitress import serve
 from zeroconf import ServiceInfo, Zeroconf
 
-from logger import setup_logger
-from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
+from logger import setup_logger  # type: ignore[import-not-found]
+from podcast_processor.podcast_processor import (  # type: ignore[import-not-found]
+    PodcastProcessor, PodcastProcessorTask)
 
 if not os.path.exists(".env"):
     raise FileNotFoundError("No .env file found.")
@@ -128,7 +129,7 @@ def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
         return None
 
     return (
-        (env["SERVER"] if "SERVER" in env else "")
+        (env["SERVER"] if "SERVER" in env and env["SERVER"] is not None else "")
         + url_for(
             "download",
             episode_name=f"{remove_odd_characters(entry.title)}.mp3",
@@ -198,6 +199,12 @@ if __name__ == "__main__":
     serve(
         app,
         host="0.0.0.0",
-        threads=int(env["THREADS"] if "THREADS" in env else 1),
-        port=int(env["SERVER_PORT"]) if "SERVER_PORT" in env else 5001,
+        threads=(
+            int(env["THREADS"])
+            if "THREADS" in env and env["THREADS"] is not None
+            else 1
+        ),
+        port=int(env["SERVER_PORT"])
+        if "SERVER_PORT" in env and env["SERVER_PORT"] is not None
+        else 5001,
     )
