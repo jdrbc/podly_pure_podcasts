@@ -124,15 +124,3 @@ OPENAI_MAX_TOKENS=4096
 OPENAI_API_KEY='ollama'
 OPENAI_MODEL='phi3:14b-medium-4k-instruct-q5_K_M'
 ```
-
-### Whisper
-
-```shell
-WHISPER_MODEL='base.en' # optional
-```
-
-To use OpenAI API instead of local model
-
-```shell
-REMOTE_WHISPER=TRUE # optional
-```

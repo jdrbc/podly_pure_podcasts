@@ -1,0 +1,31 @@
+name: Run mypy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  mypy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install pipenv
+      run: pip install pipenv
+
+    - name: Install dependencies
+      run: pipenv install --dev
+
+    - name: Run mypy
+      run: pipenv run mypy .

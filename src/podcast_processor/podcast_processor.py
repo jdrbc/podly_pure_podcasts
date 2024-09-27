@@ -149,11 +149,7 @@ class PodcastProcessor:
             else:
                 return transcript
 
-        segments = (
-            self.remote_whisper(task)
-            if env_settings.RemoteWhisper
-            else self.local_whisper(task)
-        )
+        segments = self.remote_whisper(task)
 
         for segment in segments:
             segment["start"] = round(segment["start"], 1)
@@ -209,23 +205,6 @@ class PodcastProcessor:
             end_time = (i + 1) * chunk_duration
             chunk = audio[start_time:end_time]
             chunk.export(f"{audio_path}_parts/{i}.mp3", format="mp3")
-
-    def local_whisper(self, task: PodcastProcessorTask) -> List[Segment]:
-        import whisper  # type: ignore[import-untyped]
-
-        self.logger.info("Using local whisper")
-        models = whisper.available_models()
-        self.logger.info(f"Available models: {models}")
-
-        model = whisper.load_model(name=env_settings.WhisperModel)
-
-        self.logger.info("Beginning transcription")
-        start = time.time()
-        result = model.transcribe(task.audio_path, fp16=False, language="English")
-        end = time.time()
-        elapsed = end - start
-        self.logger.info(f"Transcription completed in {elapsed}")
-        return result["segments"]
 
     def get_user_prompt_template(self, prompt_template_path: str) -> Template:
         with open(prompt_template_path, "r") as f:
