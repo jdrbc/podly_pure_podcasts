@@ -1,22 +1,26 @@
-from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
-from flask import Flask, request, url_for, abort, Response
-from waitress import serve
+import datetime
+import logging
+import os
+import re
+import socket
+import threading
+import time
+import urllib.parse
+from pathlib import Path
+from typing import Any, Optional, cast
+
 import feedparser
 import PyRSS2Gen
-import validators
-from logger import setup_logger
-from dotenv import dotenv_values
-import os
-import datetime
-import yaml
-import logging
 import requests
-import re
-import time
+import validators
+import yaml
+from dotenv import dotenv_values
+from flask import Flask, abort, request, send_file, url_for
+from waitress import serve
 from zeroconf import ServiceInfo, Zeroconf
-import threading
-import socket
-import urllib.parse
+
+from logger import setup_logger
+from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 
 if not os.path.exists(".env"):
     raise FileNotFoundError("No .env file found.")
@@ -52,23 +56,11 @@ def download(episode_name):
     if output_path is None:
         return "Failed to process episode", 500
 
-    range_header = request.headers.get("Range", None)
-    if range_header:
-        match = re.search(r"bytes=(\d+)-(\d*)", range_header)
-        start = int(match.group(1))
-        end = int(match.group(2) or end)
-        file_size = os.path.getsize(download_path)
-        with open(download_path, "rb") as file:
-            file.seek(start)
-            data = file.read(end - start + 1)
-            resp = Response(data, 206, mimetype="audio/mpeg", direct_passthrough=True)
-            resp.headers.add("Content-Range", f"bytes {start}-{end}/{file_size}")
-            resp.headers.add("Accept-Ranges", "bytes")
-            resp.headers.add("Content-Length", str(len(data)))
-            return resp
-    else:
-        with open(output_path, "rb") as file:
-            return file.read(), 200, {"Content-Type": "audio/mpeg"}
+    try:
+        return send_file(path_or_file=Path(output_path).resolve())
+    except Exception as e:
+        logging.error(f"Error sending file: {e}")
+        return "Error sending file", 500
 
 
 def get_args(full_request_url):
@@ -97,11 +89,15 @@ def rss(podcast_rss):
     if not validators.url(url):
         abort(404)
     feed = feedparser.parse(url)
+    feed = cast(feedparser.FeedParserDict, feed)
     if "feed" not in feed or "title" not in feed.feed:
         abort(404)
     transformed_items = []
     for entry in feed.entries:
         dl_link = get_download_link(entry, feed.feed.title)
+        if dl_link is None:
+            continue
+
         transformed_items.append(
             PyRSS2Gen.RSSItem(
                 title=entry.title,
@@ -123,10 +119,14 @@ def rss(podcast_rss):
         lastBuildDate=datetime.datetime.now(),
         items=transformed_items,
     )
-    return rss.to_xml("utf-8"), 200, {"Content-Type": "application/rss+xml"}
+    return rss.to_xml("utf-8"), 200, {"Content-Type": "application/xml"}
 
 
-def get_download_link(entry, podcast_title):
+def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
+    audio_link = find_audio_link(entry)
+    if audio_link is None:
+        return None
+
     return (
         (env["SERVER"] if "SERVER" in env else "")
         + url_for(
@@ -135,7 +135,7 @@ def get_download_link(entry, podcast_title):
             _external="SERVER" not in env,
         )
         + f"?podcast_title={urllib.parse.quote('[podly] ' + remove_odd_characters(podcast_title))}"
-        + f"{PARAM_SEP}episode_url={urllib.parse.quote(find_audio_link(entry))}"
+        + f"{PARAM_SEP}episode_url={urllib.parse.quote(audio_link)}"
     )
 
 
@@ -173,10 +173,11 @@ def get_and_make_download_path(podcast_title, episode_name):
     return f"{download_dir}/{podcast_title}/{episode_name}"
 
 
-def find_audio_link(entry):
+def find_audio_link(entry) -> Optional[str]:
     for link in entry.links:
         if link.type == "audio/mpeg":
             return link.href
+
     return None
 
 

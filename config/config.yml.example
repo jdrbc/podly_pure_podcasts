@@ -8,3 +8,6 @@ output:
   min_ad_segement_separation_seconds: 60
   min_ad_segment_length_seconds: 14
   min_confidence: 0.8
+
+podcasts:
+  my_podcast.rss: "https://www.example.com/original/podcast/rss/feed.rss"
