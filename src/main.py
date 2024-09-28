@@ -2,9 +2,7 @@ import datetime
 import logging
 import os
 import re
-import socket
 import threading
-import time
 import urllib.parse
 from pathlib import Path
 from typing import Any, Optional, cast
@@ -17,11 +15,9 @@ import yaml
 from dotenv import dotenv_values
 from flask import Flask, abort, request, send_file, url_for
 from waitress import serve
-from zeroconf import ServiceInfo, Zeroconf
 
-from logger import setup_logger  # type: ignore[import-not-found]
-from podcast_processor.podcast_processor import (  # type: ignore[import-not-found]
-    PodcastProcessor, PodcastProcessorTask)
+from logger import setup_logger
+from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 
 if not os.path.exists(".env"):
     raise FileNotFoundError("No .env file found.")
@@ -37,7 +33,7 @@ setup_logger("global_logger", "config/app.log")
 logger = logging.getLogger("global_logger")
 with open("config/config.yml", "r") as f:
     config = yaml.safe_load(f)
-download_dir = "in"
+DOWNLOAD_DIR = "in"
 
 
 @app.route("/download/<path:episode_name>")
@@ -59,7 +55,7 @@ def download(episode_name):
 
     try:
         return send_file(path_or_file=Path(output_path).resolve())
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logging.error(f"Error sending file: {e}")
         return "Error sending file", 500
 
@@ -113,14 +109,14 @@ def rss(podcast_rss):
                 pubDate=datetime.datetime(*entry.published_parsed[:6]),
             )
         )
-    rss = PyRSS2Gen.RSS2(
+    rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.feed.title,
         link=request.url_root,
         description=feed.feed.description,
         lastBuildDate=datetime.datetime.now(),
         items=transformed_items,
     )
-    return rss.to_xml("utf-8"), 200, {"Content-Type": "application/xml"}
+    return rss_feed.to_xml("utf-8"), 200, {"Content-Type": "application/xml"}
 
 
 def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
@@ -153,7 +149,7 @@ def download_episode(podcast_title, episode_name, episode_url):
             abort(404)
 
         logger.info(f"Downloading {audio_link} into {download_path}...")
-        response = requests.get(audio_link)
+        response = requests.get(audio_link)  # pylint: disable=missing-timeout
         if response.status_code == 200:
             with open(download_path, "wb") as file:
                 file.write(response.content)
@@ -169,9 +165,9 @@ def download_episode(podcast_title, episode_name, episode_url):
 
 
 def get_and_make_download_path(podcast_title, episode_name):
-    if not os.path.exists(f"{download_dir}/{podcast_title}"):
-        os.makedirs(f"{download_dir}/{podcast_title}")
-    return f"{download_dir}/{podcast_title}/{episode_name}"
+    if not os.path.exists(f"{DOWNLOAD_DIR}/{podcast_title}"):
+        os.makedirs(f"{DOWNLOAD_DIR}/{podcast_title}")
+    return f"{DOWNLOAD_DIR}/{podcast_title}/{episode_name}"
 
 
 def find_audio_link(entry) -> Optional[str]:
@@ -204,7 +200,9 @@ if __name__ == "__main__":
             if "THREADS" in env and env["THREADS"] is not None
             else 1
         ),
-        port=int(env["SERVER_PORT"])
-        if "SERVER_PORT" in env and env["SERVER_PORT"] is not None
-        else 5001,
+        port=(
+            int(env["SERVER_PORT"])
+            if "SERVER_PORT" in env and env["SERVER_PORT"] is not None
+            else 5001
+        ),
     )

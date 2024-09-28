@@ -6,11 +6,11 @@ from dotenv import dotenv_values
 
 @dataclass
 class EnvSettings:
-    OpenAIMaxTokens: int
-    OpenAIAPIKey: str
-    OpenAIBaseURL: str
-    OpenAIModel: str
-    OpenAITimeout: int
+    openai_max_tokens: int
+    openai_api_key: str
+    openai_base_url: str
+    openai_model: str
+    openai_timeout: int
 
 
 def get_or_die(source: Dict[str, Optional[str]], key: str) -> str:
@@ -34,11 +34,11 @@ def populate_env_settings() -> EnvSettings:
             print(key, env[key])
 
     return EnvSettings(
-        OpenAIMaxTokens=int(get_or_default(env, "OPENAI_MAX_TOKENS", "4096")),
-        OpenAIAPIKey=get_or_die(env, "OPENAI_API_KEY"),
-        OpenAIBaseURL=get_or_default(
+        openai_max_tokens=int(get_or_default(env, "OPENAI_MAX_TOKENS", "4096")),
+        openai_api_key=get_or_die(env, "OPENAI_API_KEY"),
+        openai_base_url=get_or_default(
             env, "OPENAI_BASE_URL", "https://api.openai.com/v1"
         ),
-        OpenAIModel=get_or_default(env, "OPENAI_MODEL", "gpt-4o"),
-        OpenAITimeout=int(get_or_default(env, "OPENAI_TIMEOUT", "300")),
+        openai_model=get_or_default(env, "OPENAI_MODEL", "gpt-4o"),
+        openai_timeout=int(get_or_default(env, "OPENAI_TIMEOUT", "300")),
     )

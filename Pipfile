@@ -30,6 +30,7 @@ mypy = "*"
 types-pyyaml = "*"
 types-requests = "*"
 types-waitress = "*"
+pylint = "*"
 
 [requires]
 python_version = "3.11"

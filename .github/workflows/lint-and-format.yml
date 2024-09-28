@@ -1,4 +1,4 @@
-name: Run mypy
+name: Python Linting and Formatting
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  mypy:
+  lint-and-format:
     runs-on: ubuntu-latest
 
     steps:
@@ -29,3 +29,13 @@ jobs:
 
     - name: Run mypy
       run: pipenv run mypy .
+
+    - name: Run pylint
+      run: pipenv run pylint **/*.py
+
+    - name: Run black
+      run: pipenv run black --check .
+
+    - name: Run isort
+      run: pipenv run isort --check-only .
+
