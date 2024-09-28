@@ -17,7 +17,7 @@ Podly will:
   - For example, `192.168.0.2:5001`
 - Open a podcast app & subscribe to a podcast by appending the RSS to the podly endpoint.
   - For example, to subscribe to `https://mypodcast.com/rss.xml`
-  - Subscribe to `http://192.168.0.2:5001:5001/https://mypodcast.com/rss.xml`
+  - Subscribe to `http://192.168.0.2:5001/https://mypodcast.com/rss.xml`
 - Select an episode & download
 - Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 
