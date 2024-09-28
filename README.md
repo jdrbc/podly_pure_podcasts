@@ -111,14 +111,14 @@ If you're using OpenAI only the `OPENAI_API_KEY` is required.
 
 ```shell
 OPENAI_API_KEY='sk-1234567890abcdef1234567890abcdef'
-OPENAI_API_BASE='https://api.openai.com/v1' # optional
+OPENAI_BASE_URL='https://api.openai.com/v1' # optional
 OPENAI_MODEL='gpt-4o' # optional
 ```
 
 ### Ollama
 
 ```shell
-OPENAI_API_BASE='http://127.0.0.1:11434/v1'
+OPENAI_BASE_URL='http://127.0.0.1:11434/v1'
 OPENAI_TIMEOUT=300
 OPENAI_MAX_TOKENS=4096
 OPENAI_API_KEY='ollama'
