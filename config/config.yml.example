@@ -1,8 +1,22 @@
+# Required openai settings
+openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
+# Optional openai settings
+# openai_base_url: http://127.0.0.1:11434/v1
+# openai_timeout: 300
+# openai_max_tokens: 4096
+# openai_model: phi3:14b-medium-4k-instruct-q5_K_M
+# whisper_model: base.en
+
+# server: http://my.domain.com
+# server_port: 5001
+# threads: 5
+
 processing:
   system_prompt_path: config/system_prompt.txt
   user_prompt_template_path: config/user_prompt.jinja
   num_segments_to_input_to_prompt: 30
 
+# enables mapping nice urls like localhost:5001/mypodcast.rss
 podcasts:
   my_podcast.rss: "https://www.example.com/original/podcast/rss/feed.rss"
 

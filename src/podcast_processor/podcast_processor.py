@@ -11,15 +11,6 @@ import time
 import gc
 import math
 import shutil
-from dotenv import dotenv_values
-
-env = dotenv_values(".env")
-for key in env:
-    if key == "OPENAI_API_KEY":
-        print(key, "********")
-    else:
-        print(key, env[key])
-
 
 class PodcastProcessorTask:
     def __init__(self, podcast_title, audio_path, podcast_description):
@@ -50,11 +41,11 @@ class PodcastProcessor:
         self.pickle_transcripts = self.init_pickle_transcripts()
         self.client = OpenAI(
             base_url=(
-                env["OPENAI_BASE_URL"]
-                if "OPENAI_BASE_URL" in env
+                self.config["openai_base_url"]
+                if "openai_base_url" in self.config
                 else "https://api.openai.com/v1"
             ),
-            api_key=env["OPENAI_API_KEY"],
+            api_key=self.config["openai_api_key"],
         )
 
     def init_pickle_transcripts(self):
@@ -92,7 +83,7 @@ class PodcastProcessor:
             system_prompt = self.get_system_prompt(self.config["processing"]["system_prompt_path"])
             self.classify(
                 transcript_segments,
-                env["OPENAI_MODEL"] if "OPENAI_MODEL" in env else "gpt-4o",
+                self.config["openai_model"] if "openai_model" in self.config else "gpt-4o",
                 system_prompt,
                 user_prompt_template,
                 self.config["processing"]["num_segments_to_input_to_prompt"],
@@ -149,7 +140,7 @@ class PodcastProcessor:
 
         segments = (
             self.remote_whisper(task)
-            if "REMOTE_WHISPER" in env
+            if "REMOTE_WHISPER" in self.config
             else self.local_whisper(task)
         )
 
@@ -213,7 +204,7 @@ class PodcastProcessor:
         self.logger.info(f"Available models: {models}")
 
         model = whisper.load_model(
-            name=env["WHISPER_MODEL"] if "WHISPER_MODEL" in env else "base",
+            name=self.config["whisper_model"] if "whisper_model" in self.config else "base",
         )
 
         self.logger.info("Beginning transcription")
@@ -287,8 +278,8 @@ class PodcastProcessor:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=env["OPENAI_MAX_TOKENS"] if "OPENAI_MAX_TOKENS" in env else 4096,
-            timeout=env["OPENAI_TIMEOUT"] if "OPENAI_TIMEOUT" in env else 300,
+            max_tokens=self.config["openai_max_tokens"] if "openai_max_tokens" in self.config else 4096,
+            timeout=self.config["openai_timeout"] if "openai_timeout" in self.config else 300,
         )
 
         return response.choices[0].message.content
