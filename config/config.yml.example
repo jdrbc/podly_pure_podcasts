@@ -1,13 +1,13 @@
 processing:
-  system_prompt: You classify portions of transcripts
+  system_prompt_path: config/system_prompt.txt
   user_prompt_template_path: config/user_prompt.jinja
   num_segments_to_input_to_prompt: 30
+
+podcasts:
+  my_podcast.rss: "https://www.example.com/original/podcast/rss/feed.rss"
 
 output:
   fade_ms: 3000
   min_ad_segement_separation_seconds: 60
   min_ad_segment_length_seconds: 14
   min_confidence: 0.8
-
-podcasts:
-  my_podcast.rss: "https://www.example.com/original/podcast/rss/feed.rss"

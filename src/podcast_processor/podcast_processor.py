@@ -89,10 +89,11 @@ class PodcastProcessor:
             user_prompt_template = self.get_user_prompt_template(
                 self.config["processing"]["user_prompt_template_path"]
             )
+            system_prompt = self.get_system_prompt(self.config["processing"]["system_prompt_path"])
             self.classify(
                 transcript_segments,
                 env["OPENAI_MODEL"] if "OPENAI_MODEL" in env else "gpt-4o",
-                self.config["processing"]["system_prompt"],
+                system_prompt,
                 user_prompt_template,
                 self.config["processing"]["num_segments_to_input_to_prompt"],
                 task,
@@ -222,6 +223,10 @@ class PodcastProcessor:
         elapsed = end - start
         self.logger.info(f"Transcription completed in {elapsed}")
         return result["segments"]
+    
+    def get_system_prompt(self, system_prompt_path):
+        with open(system_prompt_path, "r") as f:
+            return f.read()
 
     def get_user_prompt_template(self, prompt_template_path):
         with open(prompt_template_path, "r") as f:
