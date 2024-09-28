@@ -90,7 +90,7 @@ def rss(podcast_rss):
     logging.info(f"getting rss for {podcast_rss}...")
     if podcast_rss == "favicon.ico":
         abort(404)
-    if podcast_rss in config["podcasts"]:
+    if "podcasts" in config and podcast_rss in config["podcasts"]:
         url = config["podcasts"][podcast_rss]
     else:
         url = fix_url(podcast_rss)
