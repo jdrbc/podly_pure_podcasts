@@ -1,4 +1,4 @@
-name: Python Linting and Formatting
+name: Python Linting, Formatting, and Testing
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  lint-and-format:
+  lint-format-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -39,3 +39,5 @@ jobs:
     - name: Run isort
       run: pipenv run isort --check-only .
 
+    - name: Run pytest
+      run: pipenv run pytest

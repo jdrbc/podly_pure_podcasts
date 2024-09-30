@@ -5,9 +5,10 @@ import re
 import threading
 import urllib.parse
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Optional, Tuple, cast
 
 import feedparser  # type: ignore[import-untyped]
+import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
 import requests
 import validators
@@ -37,37 +38,37 @@ DOWNLOAD_DIR = "in"
 
 
 @app.route("/download/<path:episode_name>")
-def download(episode_name):
+def download(episode_name: str) -> flask.Response:
     episode_name = urllib.parse.unquote(episode_name)
     podcast_title, episode_url = get_args(request.url)
     logging.info(f"Downloading episode {episode_name} from podcast {podcast_title}...")
     if episode_url is None or not validators.url(episode_url):
-        return "Invalid episode URL", 404
+        return flask.make_response(("Invalid episode URL", 404))
 
     download_path = download_episode(podcast_title, episode_name, episode_url)
     if download_path is None:
-        return "Failed to download episode", 500
+        return flask.make_response(("Failed to download episode", 500))
     task = PodcastProcessorTask(podcast_title, download_path, episode_name)
     processor = PodcastProcessor(config)
     output_path = processor.process(task)
     if output_path is None:
-        return "Failed to process episode", 500
+        return flask.make_response(("Failed to process episode", 500))
 
     try:
         return send_file(path_or_file=Path(output_path).resolve())
     except Exception as e:  # pylint: disable=broad-exception-caught
         logging.error(f"Error sending file: {e}")
-        return "Error sending file", 500
+        return flask.make_response(("Error sending file", 500))
 
 
-def get_args(full_request_url):
+def get_args(full_request_url: str) -> Tuple[str, str]:
     args = urllib.parse.parse_qs(
         urllib.parse.urlparse(full_request_url.replace(PARAM_SEP, "&")).query
     )
     return args["podcast_title"][0], args["episode_url"][0]
 
 
-def fix_url(url):
+def fix_url(url: str) -> str:
     url = re.sub(r"(http(s)?):/([^/])", r"\1://\3", url)
     if not url.startswith("http://") and not url.startswith("https://"):
         url = "https://" + url
@@ -75,7 +76,7 @@ def fix_url(url):
 
 
 @app.get("/<path:podcast_rss>")
-def rss(podcast_rss):
+def rss(podcast_rss: str) -> flask.Response:
     logging.info(f"getting rss for {podcast_rss}...")
     if podcast_rss == "favicon.ico":
         abort(404)
@@ -116,7 +117,9 @@ def rss(podcast_rss):
         lastBuildDate=datetime.datetime.now(),
         items=transformed_items,
     )
-    return rss_feed.to_xml("utf-8"), 200, {"Content-Type": "application/xml"}
+    return flask.make_response(
+        (rss_feed.to_xml("utf-8"), 200, {"Content-Type": "application/xml"})
+    )
 
 
 def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
@@ -136,11 +139,13 @@ def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
     )
 
 
-def remove_odd_characters(title):
+def remove_odd_characters(title: str) -> str:
     return re.sub(r"[^a-zA-Z0-9\s]", "", title)
 
 
-def download_episode(podcast_title, episode_name, episode_url):
+def download_episode(
+    podcast_title: str, episode_name: str, episode_url: str
+) -> Optional[str]:
     download_path = get_and_make_download_path(podcast_title, episode_name)
     if not os.path.exists(download_path):
         # Download the podcast episode
@@ -164,16 +169,18 @@ def download_episode(podcast_title, episode_name, episode_url):
     return download_path
 
 
-def get_and_make_download_path(podcast_title, episode_name):
+def get_and_make_download_path(podcast_title: str, episode_name: str) -> str:
     if not os.path.exists(f"{DOWNLOAD_DIR}/{podcast_title}"):
         os.makedirs(f"{DOWNLOAD_DIR}/{podcast_title}")
     return f"{DOWNLOAD_DIR}/{podcast_title}/{episode_name}"
 
 
-def find_audio_link(entry) -> Optional[str]:
+def find_audio_link(entry: Any) -> Optional[str]:
     for link in entry.links:
         if link.type == "audio/mpeg":
-            return link.href
+            href = link.href
+            assert isinstance(href, str)
+            return href
 
     return None
 

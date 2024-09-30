@@ -1,22 +1,19 @@
 import gc
 import json
 import logging
-import math
 import os
 import pickle
-import shutil
 import threading
 from typing import Any, Dict, List, Tuple
 
 import yaml
 from jinja2 import Template
 from openai import OpenAI
+from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
 from .env_settings import populate_env_settings
-
-Segment = Any
-
+from .transcribe import RemoteWhisperTranscriber, Transcriber
 
 env_settings = populate_env_settings()
 
@@ -40,6 +37,7 @@ class PodcastProcessorTask:
 class PodcastProcessor:
     lock_lock = threading.Lock()
     locks: Dict[str, threading.Lock] = {}
+    transcriber: Transcriber
 
     def __init__(
         self,
@@ -56,6 +54,7 @@ class PodcastProcessor:
             base_url=env_settings.openai_base_url,
             api_key=env_settings.openai_api_key,
         )
+        self.transcriber = RemoteWhisperTranscriber(self.logger, self.client)
 
     def init_pickle_transcripts(self) -> Any:
         pickle_path = "transcripts.pickle"
@@ -68,7 +67,7 @@ class PodcastProcessor:
                 return pickle.load(f)
 
     def update_pickle_transcripts(
-        self, task: PodcastProcessorTask, result: List[Segment]
+        self, task: PodcastProcessorTask, result: List[TranscriptionSegment]
     ) -> None:
         with open("transcripts.pickle", "wb") as f:
             self.pickle_transcripts[task.pickle_id()] = result
@@ -140,76 +139,30 @@ class PodcastProcessor:
         self,
         task: PodcastProcessorTask,
         transcript_file_path: str,
-    ) -> List[Segment]:
+    ) -> List[TranscriptionSegment]:
         self.logger.info(
             f"Transcribing audio from {task.audio_path} into {transcript_file_path}"
         )
         # check pickle
         if task.pickle_id() in self.pickle_transcripts:
             self.logger.info("Transcript already transcribed")
-            transcript = self.pickle_transcripts[task.pickle_id()]
-            # used to store whole transcript, saves people from having to delete pickle on upgrade
-            if "segments" in transcript:
-                return transcript["segments"]
-
+            transcript: List[TranscriptionSegment] = self.pickle_transcripts[
+                task.pickle_id()
+            ]
             return transcript
 
-        segments = self.remote_whisper(task)
+        segments = self.transcriber.transcribe(task.audio_path)
 
         for segment in segments:
-            segment["start"] = round(segment["start"], 1)
-            segment["end"] = round(segment["end"], 1)
+            segment.start = round(segment.start, 1)
+            segment.end = round(segment.end, 1)
 
         with open(transcript_file_path + "/transcript.txt", "w") as f:
             for segment in segments:
-                f.write(f"{segment['start']}{segment['text']}\n")
+                f.write(f"{segment.start}{segment.text}\n")
 
         self.update_pickle_transcripts(task, segments)
         return segments
-
-    def remote_whisper(self, task: PodcastProcessorTask) -> List[Segment]:
-        self.logger.info("Using remote whisper")
-        self.split_file(task.audio_path)
-        all_segments = []
-        for i in range(0, len(os.listdir(f"{task.audio_path}_parts")), 1):
-            segments = self.get_segments_for_chunk(f"{task.audio_path}_parts/{i}.mp3")
-            all_segments.extend(segments)
-        # clean up
-        shutil.rmtree(f"{task.audio_path}_parts")
-        return all_segments
-
-    def get_segments_for_chunk(self, chunk_path: str) -> List[Segment]:
-        with open(chunk_path, "rb") as f:
-            model_extra = self.client.audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                timestamp_granularities=["segment"],
-                language="en",
-                response_format="verbose_json",
-            ).model_extra
-
-            assert model_extra is not None
-
-            return model_extra["segments"]
-
-    def split_file(
-        self, audio_path: str, chunk_size_bytes: int = 24 * 1024 * 1024
-    ) -> None:
-        if not os.path.exists(audio_path + "_parts"):
-            os.makedirs(audio_path + "_parts")
-        audio = AudioSegment.from_mp3(audio_path)
-        duration_milliseconds = len(audio)
-        chunk_duration = (
-            chunk_size_bytes / os.path.getsize(audio_path)
-        ) * duration_milliseconds
-        chunk_duration = int(chunk_duration)
-
-        num_chunks = math.ceil(duration_milliseconds / chunk_duration)
-        for i in range(num_chunks):
-            start_time = i * chunk_duration
-            end_time = (i + 1) * chunk_duration
-            chunk = audio[start_time:end_time]
-            chunk.export(f"{audio_path}_parts/{i}.mp3", format="mp3")
 
     def get_user_prompt_template(self, prompt_template_path: str) -> Template:
         with open(prompt_template_path, "r") as f:
@@ -218,7 +171,7 @@ class PodcastProcessor:
     def classify(
         self,
         *,
-        transcript_segments: List[Segment],
+        transcript_segments: List[TranscriptionSegment],
         model: str,
         system_prompt: str,
         user_prompt_template: Template,
@@ -232,7 +185,7 @@ class PodcastProcessor:
             start = i
             end = min(i + num_segments_to_input_to_prompt, len(transcript_segments))
 
-            target_dir = f"{classification_path}/{transcript_segments[start]['start']}_{transcript_segments[end-1]['end']}"  # pylint: disable=line-too-long
+            target_dir = f"{classification_path}/{transcript_segments[start].start}_{transcript_segments[end-1].end}"  # pylint: disable=line-too-long
             if not os.path.exists(target_dir):
                 os.makedirs(target_dir)
             else:
@@ -241,7 +194,7 @@ class PodcastProcessor:
                 )
                 continue
             excerpts = [
-                f"[{segment['start']}] {segment['text']}"
+                f"[{segment.start}] {segment.text}"
                 for segment in transcript_segments[start:end]
             ]
 
@@ -280,9 +233,9 @@ class PodcastProcessor:
         return content
 
     def get_ad_segments(
-        self, segments: List[Segment], classification_path: str
+        self, segments: List[TranscriptionSegment], classification_path: str
     ) -> List[Tuple[float, float]]:
-        segments_by_start = {segment["start"]: segment for segment in segments}
+        segments_by_start = {segment.start: segment for segment in segments}
         ad_segments = []
         for classification_dir in sorted(
             os.listdir(classification_path),
@@ -319,7 +272,7 @@ class PodcastProcessor:
                     if len(ad_segment_starts) == 0:
                         continue
                     for ad_segment_start in ad_segment_starts:
-                        ad_segment_end = segments_by_start[ad_segment_start]["end"]
+                        ad_segment_end = segments_by_start[ad_segment_start].end
                         ad_segments.append((ad_segment_start, ad_segment_end))
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     self.logger.error(
@@ -403,7 +356,7 @@ class PodcastProcessor:
         return new_audio
 
 
-def main():
+def main() -> None:
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger("global_logger")
 

@@ -20,7 +20,7 @@ def get_or_die(source: Dict[str, Optional[str]], key: str) -> str:
     return value_in_dict
 
 
-def get_or_default(env: Dict[str, Optional[str]], key: str, default: str):
+def get_or_default(env: Dict[str, Optional[str]], key: str, default: str) -> str:
     value = env.get(key, default)
     return value or default
 
