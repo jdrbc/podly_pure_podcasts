@@ -23,6 +23,7 @@ zeroconf = "*"
 waitress = "*"
 validators = "*"
 beartype = "*"
+openai-whisper = "*"
 
 [dev-packages]
 black = "*"
