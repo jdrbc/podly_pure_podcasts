@@ -5,11 +5,14 @@ import yaml
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 
-from podcast_processor.transcribe import RemoteWhisperTranscriber
+from podcast_processor.transcribe import (
+    LocalWhisperTranscriber,
+    RemoteWhisperTranscriber,
+)
 
 
 @pytest.mark.skip
-def test_transcribe() -> None:
+def test_remote_transcribe() -> None:
     logger = logging.getLogger("global_logger")
     with open("config/config.yml", "r") as f:
         config = yaml.safe_load(f)
@@ -24,6 +27,14 @@ def test_transcribe() -> None:
     transcriber = RemoteWhisperTranscriber(logger, client)
 
     transcription = transcriber.transcribe("file.mp3")
+    assert transcription == []
+
+
+# @pytest.mark.skip
+def test_local_transcribe() -> None:
+    logger = logging.getLogger("global_logger")
+    transcriber = LocalWhisperTranscriber(logger, "base")
+    transcription = transcriber.transcribe("src/tests/file.mp3")
     assert transcription == []
 
 
