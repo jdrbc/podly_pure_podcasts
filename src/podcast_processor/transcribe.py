@@ -2,9 +2,11 @@ import logging
 import math
 import os
 import shutil
+import time
 from abc import ABC, abstractmethod
 from typing import List, Tuple
 
+import whisper  # type: ignore[import-untyped]
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydub import AudioSegment  # type: ignore[import-untyped]
@@ -14,6 +16,33 @@ class Transcriber(ABC):
     @abstractmethod
     def transcribe(self, path: str) -> List[TranscriptionSegment]:
         pass
+
+
+class LocalWhisperTranscriber(Transcriber):
+    def __init__(self, logger: logging.Logger, whisper_model: str):
+        self.logger = logger
+        self.whisper_model = whisper_model
+
+    def transcribe(self, audio_file_path: str) -> List[TranscriptionSegment]:
+        self.logger.info("Using local whisper")
+        models = whisper.available_models()
+        self.logger.info(f"Available models: {models}")
+
+        model = whisper.load_model(name=self.whisper_model)
+
+        self.logger.info("Beginning transcription")
+        start = time.time()
+        result = model.transcribe(audio_file_path, fp16=False, language="English")
+        end = time.time()
+        elapsed = end - start
+        self.logger.info(f"Transcription completed in {elapsed}")
+        _ = result["segments"]
+
+        # TODO FIXME
+
+        x: List[TranscriptionSegment] = []
+
+        return x
 
 
 class RemoteWhisperTranscriber(Transcriber):

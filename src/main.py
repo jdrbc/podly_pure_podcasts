@@ -126,8 +126,11 @@ def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
     if audio_link is None:
         return None
 
+    server = config["server"] if "server" in config else ""
+    assert isinstance(server, str)
+
     return (
-        (config["server"] if "server" in config else "")
+        server
         + url_for(
             "download",
             episode_name=f"{remove_odd_characters(entry.title)}.mp3",
