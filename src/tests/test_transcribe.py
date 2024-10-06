@@ -1,20 +1,25 @@
 import logging
 
 import pytest
+import yaml
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 
-from podcast_processor.env_settings import populate_env_settings
 from podcast_processor.transcribe import RemoteWhisperTranscriber
 
 
 @pytest.mark.skip
 def test_transcribe() -> None:
     logger = logging.getLogger("global_logger")
-    env_settings = populate_env_settings()
+    with open("config/config.yml", "r") as f:
+        config = yaml.safe_load(f)
     client = OpenAI(
-        base_url=env_settings.openai_base_url,
-        api_key=env_settings.openai_api_key,
+        base_url=(
+            config["openai_base_url"]
+            if "openai_base_url" in config
+            else "https://api.openai.com/v1"
+        ),
+        api_key=config["openai_api_key"],
     )
     transcriber = RemoteWhisperTranscriber(logger, client)
 
