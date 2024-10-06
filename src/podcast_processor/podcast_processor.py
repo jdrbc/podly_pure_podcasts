@@ -107,7 +107,9 @@ class PodcastProcessor:
             user_prompt_template = self.get_user_prompt_template(
                 self.config["processing"]["user_prompt_template_path"]
             )
-
+            system_prompt = self.get_system_prompt(
+                self.config["processing"]["system_prompt_path"]
+            )
             self.classify(
                 transcript_segments=transcript_segments,
                 model=(
@@ -115,7 +117,7 @@ class PodcastProcessor:
                     if "openai_model" in self.config
                     else "gpt-4o"
                 ),
-                system_prompt=self.config["processing"]["system_prompt_path"],
+                system_prompt=system_prompt,
                 user_prompt_template=user_prompt_template,
                 num_segments_to_input_to_prompt=self.config["processing"][
                     "num_segments_to_input_to_prompt"
@@ -183,6 +185,10 @@ class PodcastProcessor:
 
         self.update_pickle_transcripts(task, segments)
         return segments
+
+    def get_system_prompt(self, system_prompt_path: str) -> str:
+        with open(system_prompt_path, "r") as f:
+            return f.read()
 
     def get_user_prompt_template(self, prompt_template_path: str) -> Template:
         with open(prompt_template_path, "r") as f:
