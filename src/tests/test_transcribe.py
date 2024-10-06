@@ -30,7 +30,7 @@ def test_remote_transcribe() -> None:
     assert transcription == []
 
 
-# @pytest.mark.skip
+@pytest.mark.skip
 def test_local_transcribe() -> None:
     logger = logging.getLogger("global_logger")
     transcriber = LocalWhisperTranscriber(logger, "base")

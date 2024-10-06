@@ -9,10 +9,14 @@ from typing import Any, Dict, List, Tuple
 import yaml
 from jinja2 import Template
 from openai import OpenAI
-from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
-from .transcribe import LocalWhisperTranscriber, RemoteWhisperTranscriber, Transcriber
+from .transcribe import (
+    LocalWhisperTranscriber,
+    RemoteWhisperTranscriber,
+    Segment,
+    Transcriber,
+)
 
 
 class PodcastProcessorTask:
@@ -80,7 +84,7 @@ class PodcastProcessor:
                 return pickle.load(f)
 
     def update_pickle_transcripts(
-        self, task: PodcastProcessorTask, result: List[TranscriptionSegment]
+        self, task: PodcastProcessorTask, result: List[Segment]
     ) -> None:
         with open("transcripts.pickle", "wb") as f:
             self.pickle_transcripts[task.pickle_id()] = result
@@ -157,16 +161,14 @@ class PodcastProcessor:
         self,
         task: PodcastProcessorTask,
         transcript_file_path: str,
-    ) -> List[TranscriptionSegment]:
+    ) -> List[Segment]:
         self.logger.info(
             f"Transcribing audio from {task.audio_path} into {transcript_file_path}"
         )
         # check pickle
         if task.pickle_id() in self.pickle_transcripts:
             self.logger.info("Transcript already transcribed")
-            transcript: List[TranscriptionSegment] = self.pickle_transcripts[
-                task.pickle_id()
-            ]
+            transcript: List[Segment] = self.pickle_transcripts[task.pickle_id()]
             return transcript
 
         segments = self.transcriber.transcribe(task.audio_path)
@@ -189,7 +191,7 @@ class PodcastProcessor:
     def classify(
         self,
         *,
-        transcript_segments: List[TranscriptionSegment],
+        transcript_segments: List[Segment],
         model: str,
         system_prompt: str,
         user_prompt_template: Template,
@@ -259,7 +261,7 @@ class PodcastProcessor:
         return content
 
     def get_ad_segments(
-        self, segments: List[TranscriptionSegment], classification_path: str
+        self, segments: List[Segment], classification_path: str
     ) -> List[Tuple[float, float]]:
         segments_by_start = {segment.start: segment for segment in segments}
         ad_segments = []

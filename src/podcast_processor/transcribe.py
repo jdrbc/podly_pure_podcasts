@@ -4,18 +4,41 @@ import os
 import shutil
 import time
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import whisper  # type: ignore[import-untyped]
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
+from pydantic import BaseModel
 from pydub import AudioSegment  # type: ignore[import-untyped]
+
+
+class Segment(BaseModel):
+    start: float
+    end: float
+    text: str
 
 
 class Transcriber(ABC):
     @abstractmethod
-    def transcribe(self, path: str) -> List[TranscriptionSegment]:
+    def transcribe(self, path: str) -> List[Segment]:
         pass
+
+
+class LocalTranscriptSegment(BaseModel):
+    id: int
+    seek: int
+    start: float
+    end: float
+    text: str
+    tokens: List[int]
+    temperature: float
+    avg_logprob: float
+    compression_ratio: float
+    no_speech_prob: float
+
+    def to_segment(self) -> Segment:
+        return Segment(start=self.start, end=self.end, text=self.text)
 
 
 class LocalWhisperTranscriber(Transcriber):
@@ -23,7 +46,17 @@ class LocalWhisperTranscriber(Transcriber):
         self.logger = logger
         self.whisper_model = whisper_model
 
-    def transcribe(self, audio_file_path: str) -> List[TranscriptionSegment]:
+    @staticmethod
+    def convert_to_pydantic(
+        transcript_data: List[Any],
+    ) -> List[LocalTranscriptSegment]:
+        return [LocalTranscriptSegment(**item) for item in transcript_data]
+
+    @staticmethod
+    def local_seg_to_seg(local_segments: List[LocalTranscriptSegment]) -> List[Segment]:
+        return [seg.to_segment() for seg in local_segments]
+
+    def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using local whisper")
         models = whisper.available_models()
         self.logger.info(f"Available models: {models}")
@@ -36,13 +69,10 @@ class LocalWhisperTranscriber(Transcriber):
         end = time.time()
         elapsed = end - start
         self.logger.info(f"Transcription completed in {elapsed}")
-        _ = result["segments"]
+        segments = result["segments"]
+        typed_segments = self.convert_to_pydantic(segments)
 
-        # TODO FIXME
-
-        x: List[TranscriptionSegment] = []
-
-        return x
+        return self.local_seg_to_seg(typed_segments)
 
 
 class RemoteWhisperTranscriber(Transcriber):
@@ -50,13 +80,13 @@ class RemoteWhisperTranscriber(Transcriber):
         self.logger = logger
         self.openai_client = openai_client
 
-    def transcribe(self, audio_file_path: str) -> List[TranscriptionSegment]:
+    def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using remote whisper")
         audio_chunk_path = audio_file_path + "_parts"
 
         chunks = self.split_file(audio_file_path, audio_chunk_path)
 
-        all_segments = []
+        all_segments: List[TranscriptionSegment] = []
 
         for chunk in chunks:
             chunk_path, offset = chunk
@@ -64,7 +94,18 @@ class RemoteWhisperTranscriber(Transcriber):
             all_segments.extend(self.add_offset_to_segments(segments, offset))
 
         shutil.rmtree(audio_chunk_path)
-        return all_segments
+        return self.convert_segments(all_segments)
+
+    @staticmethod
+    def convert_segments(segments: List[TranscriptionSegment]) -> List[Segment]:
+        return [
+            Segment(
+                start=seg.start,
+                end=seg.end,
+                text=seg.text,
+            )
+            for seg in segments
+        ]
 
     @staticmethod
     def add_offset_to_segments(
