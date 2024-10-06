@@ -13,19 +13,18 @@ import PyRSS2Gen  # type: ignore[import-untyped]
 import requests
 import validators
 import yaml
-from dotenv import dotenv_values
 from flask import Flask, abort, request, send_file, url_for
 from waitress import serve
 
 from logger import setup_logger
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 
-if not os.path.exists(".env"):
-    raise FileNotFoundError("No .env file found.")
+if not os.path.exists("config/config.yml"):
+    raise FileNotFoundError(
+        "No config/config.yml file found. Please copy from config/config.yml.example"
+    )
 
 PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
-
-env = dotenv_values(".env")
 
 stop = threading.Event()
 
@@ -80,7 +79,7 @@ def rss(podcast_rss: str) -> flask.Response:
     logging.info(f"getting rss for {podcast_rss}...")
     if podcast_rss == "favicon.ico":
         abort(404)
-    if podcast_rss in config["podcasts"]:
+    if "podcasts" in config and podcast_rss in config["podcasts"]:
         url = config["podcasts"][podcast_rss]
     else:
         url = fix_url(podcast_rss)
@@ -128,11 +127,11 @@ def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
         return None
 
     return (
-        (env["SERVER"] if "SERVER" in env and env["SERVER"] is not None else "")
+        (config["server"] if "server" in config else "")
         + url_for(
             "download",
             episode_name=f"{remove_odd_characters(entry.title)}.mp3",
-            _external="SERVER" not in env,
+            _external="server" not in config,
         )
         + f"?podcast_title={urllib.parse.quote('[podly] ' + remove_odd_characters(podcast_title))}"
         + f"{PARAM_SEP}episode_url={urllib.parse.quote(audio_link)}"
@@ -186,11 +185,11 @@ def find_audio_link(entry: Any) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    for key in env:
-        if key == "OPENAI_API_KEY":
+    for key in config:
+        if key == "openai_api_key":
             logger.info(f"{key}: ********")
         else:
-            logger.info(f"{key}: {env[key]}")
+            logger.info(f"{key}: {config[key]}")
 
     if not os.path.exists("processing"):
         os.makedirs("processing")
@@ -202,14 +201,6 @@ if __name__ == "__main__":
     serve(
         app,
         host="0.0.0.0",
-        threads=(
-            int(env["THREADS"])
-            if "THREADS" in env and env["THREADS"] is not None
-            else 1
-        ),
-        port=(
-            int(env["SERVER_PORT"])
-            if "SERVER_PORT" in env and env["SERVER_PORT"] is not None
-            else 5001
-        ),
+        threads=int(config["threads"] if "threads" in config else 1),
+        port=int(config["server_port"]) if "server_port" in config else 5001,
     )

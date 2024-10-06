@@ -4,6 +4,7 @@ import logging
 import os
 import pickle
 import threading
+
 from typing import Any, Dict, List, Tuple
 
 import yaml
@@ -16,6 +17,12 @@ from .env_settings import populate_env_settings
 from .transcribe import RemoteWhisperTranscriber, Transcriber
 
 env_settings = populate_env_settings()
+
+
+import time
+import gc
+import math
+import shutil
 
 
 class PodcastProcessorTask:
@@ -90,16 +97,21 @@ class PodcastProcessor:
             user_prompt_template = self.get_user_prompt_template(
                 self.config["processing"]["user_prompt_template_path"]
             )
+            system_prompt = self.get_system_prompt(
+                self.config["processing"]["system_prompt_path"]
+            )
             self.classify(
-                transcript_segments=transcript_segments,
-                model=env_settings.openai_model,
-                system_prompt=self.config["processing"]["system_prompt"],
-                user_prompt_template=user_prompt_template,
-                num_segments_to_input_to_prompt=self.config["processing"][
-                    "num_segments_to_input_to_prompt"
-                ],
-                task=task,
-                classification_path=classification_dir,
+                transcript_segments,
+                (
+                    self.config["openai_model"]
+                    if "openai_model" in self.config
+                    else "gpt-4o"
+                ),
+                system_prompt,
+                user_prompt_template,
+                self.config["processing"]["num_segments_to_input_to_prompt"],
+                task,
+                classification_dir,
             )
             ad_segments = self.get_ad_segments(transcript_segments, classification_dir)
             audio = AudioSegment.from_file(task.audio_path)
@@ -151,7 +163,11 @@ class PodcastProcessor:
             ]
             return transcript
 
-        segments = self.transcriber.transcribe(task.audio_path)
+        segments = (
+            self.remote_whisper(task)
+            if "REMOTE_WHISPER" in self.config
+            else self.local_whisper(task)
+        )
 
         for segment in segments:
             segment.start = round(segment.start, 1)
@@ -164,7 +180,30 @@ class PodcastProcessor:
         self.update_pickle_transcripts(task, segments)
         return segments
 
-    def get_user_prompt_template(self, prompt_template_path: str) -> Template:
+    def local_whisper(self, task):
+        import whisper
+
+        self.logger.info("Using local whisper")
+        models = whisper.available_models()
+        self.logger.info(f"Available models: {models}")
+
+        model = whisper.load_model(
+            name=(
+                self.config["whisper_model"]
+                if "whisper_model" in self.config
+                else "base"
+            ),
+        )
+
+        self.logger.info("Beginning transcription")
+        start = time.time()
+        result = model.transcribe(task.audio_path, fp16=False, language="English")
+        end = time.time()
+        elapsed = end - start
+        self.logger.info(f"Transcription completed in {elapsed}")
+        return result["segments"]
+
+    def get_user_prompt_template(self, prompt_template_path):
         with open(prompt_template_path, "r") as f:
             return Template(f.read())
 
@@ -224,8 +263,16 @@ class PodcastProcessor:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=env_settings.openai_max_tokens,
-            timeout=env_settings.openai_timeout,
+            max_tokens=(
+                self.config["openai_max_tokens"]
+                if "openai_max_tokens" in self.config
+                else 4096
+            ),
+            timeout=(
+                self.config["openai_timeout"]
+                if "openai_timeout" in self.config
+                else 300
+            ),
         )
 
         content = response.choices[0].message.content

@@ -12,12 +12,12 @@ Podly will:
 
 ## Usage
 
-- `.env.example` into new file `.env`. Update `OPENAI_API_KEY` with your key.
+- `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
 - Start the server & note the URL.
   - For example, `192.168.0.2:5001`
 - Open a podcast app & subscribe to a podcast by appending the RSS to the podly endpoint.
   - For example, to subscribe to `https://mypodcast.com/rss.xml`
-  - Subscribe to `http://192.168.0.2:5001:5001/https://mypodcast.com/rss.xml`
+  - Subscribe to `http://192.168.0.2:5001/https://mypodcast.com/rss.xml`
 - Select an episode & download
 - Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 
@@ -29,7 +29,8 @@ Install ffmpeg
 sudo apt install ffmpeg
 ```
 
-Copy `.env.example` into new file `.env`. Update `OPENAI_API_KEY` with your key.
+Copy `config/config.yml.example` into new file `config/config.yml`.  Update `openai_api_key` with your key.
+
 
 ```shell
 pip install pipenv
@@ -41,7 +42,7 @@ python src/main.py
 
 ## Remote Setup
 
-Podly works out of the box when running locally (see [Usage](#usage)). To run it on a remote server add SERVER to .env
+Podly works out of the box when running locally (see [Usage](#usage)). To run it on a remote server add SERVER to config/config.yml
 
 ```
 SERVER=http://my.domain.com
@@ -105,22 +106,35 @@ sudo systemctl enable podly.service
 
 ## Environment Variables
 
-If you're using OpenAI only the `OPENAI_API_KEY` is required.
+If you're using OpenAI only the `openai_api_key` is required.
 
 ### OpenAI
 
 ```shell
-OPENAI_API_KEY='sk-1234567890abcdef1234567890abcdef'
-OPENAI_API_BASE='https://api.openai.com/v1' # optional
-OPENAI_MODEL='gpt-4o' # optional
+openai_api_key='sk-1234567890abcdef1234567890abcdef'
+openai_base_url='https://api.openai.com/v1' # optional
+openai_model='gpt-4o' # optional
 ```
 
 ### Ollama
 
 ```shell
-OPENAI_API_BASE='http://127.0.0.1:11434/v1'
-OPENAI_TIMEOUT=300
-OPENAI_MAX_TOKENS=4096
-OPENAI_API_KEY='ollama'
-OPENAI_MODEL='phi3:14b-medium-4k-instruct-q5_K_M'
+openai_base_url='http://127.0.0.1:11434/v1'
+openai_timeout=300
+openai_max_tokens=4096
+openai_api_key='ollama'
+openai_model='phi3:14b-medium-4k-instruct-q5_K_M'
 ```
+
+### Whisper
+
+```shell
+whisper_model='base.en' # optional
+```
+
+To use OpenAI API instead of local model
+
+```shell
+REMOTE_WHISPER=TRUE # optional
+```
+
