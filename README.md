@@ -137,3 +137,4 @@ To use OpenAI API instead of local model
 ```shell
 REMOTE_WHISPER=TRUE # optional
 ```
+

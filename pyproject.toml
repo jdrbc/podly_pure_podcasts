@@ -1,0 +1,26 @@
+[tool.pylint]
+init-hook = 'import sys; sys.path.append("./src")'
+
+disable = [
+    "logging-fstring-interpolation",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "too-many-arguments",
+    "too-many-locals",
+    "unspecified-encoding",
+]
+
+[tool.mypy]
+warn_unused_ignores = true
+strict = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
+line_length = 88
