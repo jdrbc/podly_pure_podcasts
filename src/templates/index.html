@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/logos/favicon-48x48.png') }}"
+      sizes="48x48"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="{{ url_for('static', filename='images/logos/favicon.svg') }}"
+    />
+    <link
+      rel="shortcut icon"
+      href="{{ url_for('static', filename='images/logos/favicon.ico') }}"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="{{ url_for('static', filename='images/logos/apple-touch-icon.png') }}"
+    />
+    <meta name="apple-mobile-web-app-title" content="Podly" />
+    <link
+      rel="manifest"
+      href="{{ url_for('static', filename='site.webmanifest') }}"
+    />
+    <title>Podly</title>
+  </head>
+  <body>
+    <div style="text-align: center">
+      <img
+        src="{{ url_for('static', filename='images/logos/logo_with_text.png') }}"
+        alt="Podly Logo"
+        style="width: 500px"
+      />
+    </div>
+    <p align="center">Ad-block for podcasts. Create an ad-free RSS feed.</p>
+
+    <div style="width: 500px; margin: 0 auto">
+      <h2>Usage</h2>
+      <ul>
+        <li>
+          Open a podcast app & subscribe to a podcast by appending the RSS to
+          the Podly endpoint. For example, to subscribe to
+          <code>https://mypodcast.com/rss.xml</code>, subscribe to
+          <code>http://192.168.0.2:5001/https://mypodcast.com/rss.xml</code>
+        </li>
+        <li>Select an episode & download</li>
+        <li>
+          Wait patiently. Transcription is the slowest part & takes about 1
+          minute per 15 minutes of podcast on an M3 MacBook.
+        </li>
+      </ul>
+    </div>
+  </body>
+</html>

@@ -1,14 +1,23 @@
-# Podly Pure Podcasts
+<h2 align="center">
+<img width="50%" src="src/static/images/logos/logo_with_text.png" />
 
-Ad-block for podcasts. Create a private ad-free RSS feed.
+</h2>
 
-Podly will:
+<p align="center">
+<p align="center">Ad-block for podcasts. Create an ad-free RSS feed.</p>
 
-- download the requested episode
-- transcribe the episode
-- have Chat GPT label ad segments
-- remove the ad segments
-- deliver the ad-free version of the podcast to you
+## Overview
+
+Podly uses Whisper and Chat GPT to remove ads from podcasts.
+
+Here's how it works:
+
+- You request an episode
+- Podly downloads the requested episode
+- Whisper transcribes the episode
+- Chat GPT labels ad segments
+- Podly removes the ad segments
+- Podly delivers the ad-free version of the podcast to you
 
 ## Usage
 
@@ -29,8 +38,7 @@ Install ffmpeg
 sudo apt install ffmpeg
 ```
 
-Copy `config/config.yml.example` into new file `config/config.yml`.  Update `openai_api_key` with your key.
-
+Copy `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
 
 ```shell
 pip install pipenv
@@ -137,4 +145,3 @@ To use OpenAI API instead of local model
 ```shell
 REMOTE_WHISPER=TRUE # optional
 ```
-
