@@ -24,14 +24,17 @@ class OutputConfig(BaseModel):
 class Config(BaseModel):
     openai_api_key: Optional[str]
     openai_base_url: str = "https://api.openai.com/v1"
+    openai_max_tokens: int = 4096
+    openai_model: str = "gpt-4o"
+    openai_timeout: int = 300
     output: OutputConfig
     podcasts: Dict[str, str]
     processing: ProcessingConfig
     remote_whisper: bool = False
-    whisper_model: str = "base"
     server: Optional[str] = None
-    threads: int = 1
     server_port: int = 5001
+    threads: int = 1
+    whisper_model: str = "base"
 
     def print_redacted(self) -> None:
         # TODO REDACT API KEY FOR LOGABILITY
