@@ -1,4 +1,22 @@
-from config import Config, get_config, ProcessingConfig, OutputConfig
+from pydantic_core import ValidationError
+import pytest
+from config import (
+    Config,
+    get_config,
+    ProcessingConfig,
+    OutputConfig,
+    get_config_from_str,
+)
+
+
+def test_broken_config():
+    # config is invalid because missing some required fields
+    invalid_config = """
+openai_api_key: asdfasdf
+    """
+
+    with pytest.raises(ValueError):
+        get_config_from_str(invalid_config)
 
 
 def test_example_config():
@@ -21,5 +39,11 @@ def test_example_config():
             min_ad_segment_length_seconds=14,
             min_confidence=0.8,
         ),
+        openai_base_url="https://api.openai.com/v1",
+        remote_whisper=False,
+        whisper_model="base",
+        server=None,
+        threads=1,
+        server_port=5001,
     )
     assert get_config("config/config.yml.example") == expected_config

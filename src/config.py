@@ -52,4 +52,5 @@ def get_config(path: str) -> Config:
 
 def get_config_from_str(config_str: str) -> Config:
     config_dict = yaml.safe_load(config_str)
-    return Config.model_validate(config_dict)
+
+    return Config(**config_dict)
