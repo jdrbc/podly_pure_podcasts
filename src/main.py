@@ -185,7 +185,7 @@ def find_audio_link(entry: Any) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    print("Config:\n", json.dumps(config.redacted(), indent=2))
+    print("Config:\n", json.dumps(config.redacted().model_dump(), indent=2))
 
     if not os.path.exists("processing"):
         os.makedirs("processing")
