@@ -1,10 +1,9 @@
-from typing import Dict, Optional
-from pydantic import BaseModel
+from __future__ import annotations
+
 import os
+from typing import Dict, Optional
+
 import yaml
-
-
-from typing import Optional
 from pydantic import BaseModel
 
 
@@ -36,9 +35,13 @@ class Config(BaseModel):
     threads: int = 1
     whisper_model: str = "base"
 
-    def print_redacted(self) -> None:
-        # TODO REDACT API KEY FOR LOGABILITY
-        print(self)
+    def redacted(self) -> Config:
+        return self.model_copy(
+            update={
+                "openai_api_key": "X" * 10,
+            },
+            deep=True,
+        )
 
 
 def get_config(path: str) -> Config:

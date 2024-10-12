@@ -9,9 +9,9 @@ from typing import Any, Dict, List, Tuple
 import yaml
 from jinja2 import Template
 from openai import OpenAI
-from pydub import AudioSegment
+from pydub import AudioSegment  # type: ignore[import-untyped]
 
-from config import Config  # type: ignore[import-untyped]
+from config import Config
 
 from .transcribe import (
     LocalWhisperTranscriber,
@@ -109,7 +109,7 @@ class PodcastProcessor:
                 model=self.config.openai_model,
                 system_prompt=system_prompt,
                 user_prompt_template=user_prompt_template,
-                num_segments_to_input_to_prompt=self.config.processing.num_segments_to_input_to_prompt,
+                num_segments_per_prompt=self.config.processing.num_segments_to_input_to_prompt,
                 task=task,
                 classification_path=classification_dir,
             )
@@ -120,7 +120,7 @@ class PodcastProcessor:
                 audio=audio,
                 ad_segments=ad_segments,
                 min_ad_segment_length_seconds=self.config.output.min_ad_segment_length_seconds,
-                min_ad_segement_separation_seconds=self.config.output.min_ad_segement_separation_seconds,
+                min_ad_segement_separation_seconds=self.config.output.min_ad_segement_separation_seconds,  # pylint: disable=line-too-long
                 fade_ms=self.config.output.fade_ms,
             ).export(
                 f'{final_audio_path}/{task.audio_path.split("/")[-1]}', format="mp3"
@@ -185,15 +185,15 @@ class PodcastProcessor:
         model: str,
         system_prompt: str,
         user_prompt_template: Template,
-        num_segments_to_input_to_prompt: int,
+        num_segments_per_prompt: int,
         task: PodcastProcessorTask,
         classification_path: str,
     ) -> None:
         self.logger.info(f"Identifying ad segments for {task.audio_path}")
         self.logger.info(f"processing {len(transcript_segments)} transcript segments")
-        for i in range(0, len(transcript_segments), num_segments_to_input_to_prompt):
+        for i in range(0, len(transcript_segments), num_segments_per_prompt):
             start = i
-            end = min(i + num_segments_to_input_to_prompt, len(transcript_segments))
+            end = min(i + num_segments_per_prompt, len(transcript_segments))
 
             target_dir = f"{classification_path}/{transcript_segments[start].start}_{transcript_segments[end-1].end}"  # pylint: disable=line-too-long
             if not os.path.exists(target_dir):

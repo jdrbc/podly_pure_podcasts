@@ -1,15 +1,15 @@
-from pydantic_core import ValidationError
 import pytest
+
 from config import (
     Config,
-    get_config,
-    ProcessingConfig,
     OutputConfig,
+    ProcessingConfig,
+    get_config,
     get_config_from_str,
 )
 
 
-def test_broken_config():
+def test_broken_config() -> None:
     # config is invalid because missing some required fields
     invalid_config = """
 openai_api_key: asdfasdf
@@ -19,7 +19,7 @@ openai_api_key: asdfasdf
         get_config_from_str(invalid_config)
 
 
-def test_example_config():
+def test_example_config() -> None:
     # this way if we add some new fields to the config we'll be forced to also
     # update the example.
 
