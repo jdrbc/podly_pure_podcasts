@@ -9,7 +9,9 @@ from typing import Any, Dict, List, Tuple
 import yaml
 from jinja2 import Template
 from openai import OpenAI
-from pydub import AudioSegment  # type: ignore[import-untyped]
+from pydub import AudioSegment
+
+from config import Config  # type: ignore[import-untyped]
 
 from .transcribe import (
     LocalWhisperTranscriber,
@@ -42,32 +44,24 @@ class PodcastProcessor:
 
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: Config,
         processing_dir: str = "processing",
     ) -> None:
         super().__init__()
         self.logger = logging.getLogger("global_logger")
         self.processing_dir = processing_dir
         self.output_dir = "srv"
-        self.config: Dict[str, Any] = config
+        self.config: Config = config
         self.pickle_transcripts: Dict[str, Any] = self.init_pickle_transcripts()
         self.client = OpenAI(
-            base_url=(
-                self.config["openai_base_url"]
-                if "openai_base_url" in self.config
-                else "https://api.openai.com/v1"
-            ),
-            api_key=self.config["openai_api_key"],
+            base_url=self.config.openai_base_url,
+            api_key=self.config.openai_api_key,
         )
 
-        if "REMOTE_WHISPER" in self.config:
+        if self.config.remote_whisper:
             self.transcriber = RemoteWhisperTranscriber(self.logger, self.client)
         else:
-            local_whisper_model_name = (
-                self.config["whisper_model"]
-                if "whisper_model" in self.config
-                else "base"
-            )
+            local_whisper_model_name = self.config.whisper_model
 
             self.transcriber = LocalWhisperTranscriber(
                 self.logger, local_whisper_model_name
