@@ -10,7 +10,6 @@ from pytest_mock import MockerFixture
 
 @pytest.fixture(autouse=True)
 def mock_whisper_fixture(mocker: MockerFixture) -> None:
-    mocker.patch("podcast_processor.transcribe.whisper", new=MagicMock())
     mocker.patch.dict("sys.modules", {"whisper": MagicMock()})
 
 
