@@ -21,7 +21,7 @@ class Segment(BaseModel):
 
 class Transcriber(ABC):
     @abstractmethod
-    def transcribe(self, path: str) -> List[Segment]:
+    def transcribe(self, audio_file_path: str) -> List[Segment]:
         pass
 
 

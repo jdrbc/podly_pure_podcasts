@@ -11,6 +11,8 @@ from jinja2 import Template
 from openai import OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
+from config import Config
+
 from .transcribe import (
     LocalWhisperTranscriber,
     RemoteWhisperTranscriber,
@@ -42,32 +44,24 @@ class PodcastProcessor:
 
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: Config,
         processing_dir: str = "processing",
     ) -> None:
         super().__init__()
         self.logger = logging.getLogger("global_logger")
         self.processing_dir = processing_dir
         self.output_dir = "srv"
-        self.config: Dict[str, Any] = config
+        self.config: Config = config
         self.pickle_transcripts: Dict[str, Any] = self.init_pickle_transcripts()
         self.client = OpenAI(
-            base_url=(
-                self.config["openai_base_url"]
-                if "openai_base_url" in self.config
-                else "https://api.openai.com/v1"
-            ),
-            api_key=self.config["openai_api_key"],
+            base_url=self.config.openai_base_url,
+            api_key=self.config.openai_api_key,
         )
 
-        if "REMOTE_WHISPER" in self.config:
+        if self.config.remote_whisper:
             self.transcriber = RemoteWhisperTranscriber(self.logger, self.client)
         else:
-            local_whisper_model_name = (
-                self.config["whisper_model"]
-                if "whisper_model" in self.config
-                else "base"
-            )
+            local_whisper_model_name = self.config.whisper_model
 
             self.transcriber = LocalWhisperTranscriber(
                 self.logger, local_whisper_model_name
@@ -105,23 +99,17 @@ class PodcastProcessor:
                 transcript_dir,
             )
             user_prompt_template = self.get_user_prompt_template(
-                self.config["processing"]["user_prompt_template_path"]
+                self.config.processing.user_prompt_template_path
             )
             system_prompt = self.get_system_prompt(
-                self.config["processing"]["system_prompt_path"]
+                self.config.processing.system_prompt_path
             )
             self.classify(
                 transcript_segments=transcript_segments,
-                model=(
-                    self.config["openai_model"]
-                    if "openai_model" in self.config
-                    else "gpt-4o"
-                ),
+                model=self.config.openai_model,
                 system_prompt=system_prompt,
                 user_prompt_template=user_prompt_template,
-                num_segments_to_input_to_prompt=self.config["processing"][
-                    "num_segments_to_input_to_prompt"
-                ],
+                num_segments_per_prompt=self.config.processing.num_segments_to_input_to_prompt,
                 task=task,
                 classification_path=classification_dir,
             )
@@ -131,13 +119,9 @@ class PodcastProcessor:
             self.create_new_audio_without_ads(
                 audio=audio,
                 ad_segments=ad_segments,
-                min_ad_segment_length_seconds=self.config["output"][
-                    "min_ad_segment_length_seconds"
-                ],
-                min_ad_segement_separation_seconds=self.config["output"][
-                    "min_ad_segement_separation_seconds"
-                ],
-                fade_ms=self.config["output"]["fade_ms"],
+                min_ad_segment_length_seconds=self.config.output.min_ad_segment_length_seconds,
+                min_ad_segement_separation_seconds=self.config.output.min_ad_segement_separation_seconds,  # pylint: disable=line-too-long
+                fade_ms=self.config.output.fade_ms,
             ).export(
                 f'{final_audio_path}/{task.audio_path.split("/")[-1]}', format="mp3"
             )
@@ -201,15 +185,15 @@ class PodcastProcessor:
         model: str,
         system_prompt: str,
         user_prompt_template: Template,
-        num_segments_to_input_to_prompt: int,
+        num_segments_per_prompt: int,
         task: PodcastProcessorTask,
         classification_path: str,
     ) -> None:
         self.logger.info(f"Identifying ad segments for {task.audio_path}")
         self.logger.info(f"processing {len(transcript_segments)} transcript segments")
-        for i in range(0, len(transcript_segments), num_segments_to_input_to_prompt):
+        for i in range(0, len(transcript_segments), num_segments_per_prompt):
             start = i
-            end = min(i + num_segments_to_input_to_prompt, len(transcript_segments))
+            end = min(i + num_segments_per_prompt, len(transcript_segments))
 
             target_dir = f"{classification_path}/{transcript_segments[start].start}_{transcript_segments[end-1].end}"  # pylint: disable=line-too-long
             if not os.path.exists(target_dir):
@@ -250,16 +234,8 @@ class PodcastProcessor:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=(
-                self.config["openai_max_tokens"]
-                if "openai_max_tokens" in self.config
-                else 4096
-            ),
-            timeout=(
-                self.config["openai_timeout"]
-                if "openai_timeout" in self.config
-                else 300
-            ),
+            max_tokens=self.config.openai_max_tokens,
+            timeout=self.config.openai_timeout,
         )
 
         content = response.choices[0].message.content
@@ -290,7 +266,7 @@ class PodcastProcessor:
                     identification_json = json.loads(identification)
                     if "confidence" in identification_json:
                         confidence = identification_json["confidence"]
-                        if confidence < self.config["output"]["min_confidence"]:
+                        if confidence < self.config.output.min_confidence:
                             continue
                     ad_segment_starts = identification_json["ad_segments"]
                     # filter out ad segments outside of the start/end, and that

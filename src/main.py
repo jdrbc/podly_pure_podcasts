@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import os
 import re
@@ -12,17 +13,15 @@ import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
 import requests
 import validators
-import yaml
 from flask import Flask, abort, request, render_template, send_file, url_for
 from waitress import serve
 
+from config import get_config
 from logger import setup_logger
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 
-if not os.path.exists("config/config.yml"):
-    raise FileNotFoundError(
-        "No config/config.yml file found. Please copy from config/config.yml.example"
-    )
+config = get_config("config/config.yml")
+
 
 PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
 
@@ -31,8 +30,6 @@ stop = threading.Event()
 app = Flask(__name__)
 setup_logger("global_logger", "config/app.log")
 logger = logging.getLogger("global_logger")
-with open("config/config.yml", "r") as f:
-    config = yaml.safe_load(f)
 DOWNLOAD_DIR = "in"
 
 
@@ -84,8 +81,8 @@ def rss(podcast_rss: str) -> flask.Response:
     logging.info(f"getting rss for {podcast_rss}...")
     if podcast_rss == "favicon.ico":
         abort(404)
-    if "podcasts" in config and podcast_rss in config["podcasts"]:
-        url = config["podcasts"][podcast_rss]
+    if podcast_rss in config.podcasts:
+        url = config.podcasts[podcast_rss]
     else:
         url = fix_url(podcast_rss)
     if not validators.url(url):
@@ -131,7 +128,7 @@ def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
     if audio_link is None:
         return None
 
-    server = config["server"] if "server" in config else ""
+    server = config.server if config.server is not None else ""
     assert isinstance(server, str)
 
     return (
@@ -139,7 +136,7 @@ def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
         + url_for(
             "download",
             episode_name=f"{remove_odd_characters(entry.title)}.mp3",
-            _external="server" not in config,
+            _external=config.server is None,
         )
         + f"?podcast_title={urllib.parse.quote('[podly] ' + remove_odd_characters(podcast_title))}"
         + f"{PARAM_SEP}episode_url={urllib.parse.quote(audio_link)}"
@@ -193,11 +190,7 @@ def find_audio_link(entry: Any) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    for key in config:
-        if key == "openai_api_key":
-            logger.info(f"{key}: ********")
-        else:
-            logger.info(f"{key}: {config[key]}")
+    print("Config:\n", json.dumps(config.redacted().model_dump(), indent=2))
 
     if not os.path.exists("processing"):
         os.makedirs("processing")
@@ -209,6 +202,6 @@ if __name__ == "__main__":
     serve(
         app,
         host="0.0.0.0",
-        threads=int(config["threads"] if "threads" in config else 1),
-        port=int(config["server_port"]) if "server_port" in config else 5001,
+        threads=config.threads,
+        port=config.server_port,
     )
