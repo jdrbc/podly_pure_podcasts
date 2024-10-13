@@ -13,7 +13,7 @@ import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
 import requests
 import validators
-from flask import Flask, abort, request, send_file, url_for
+from flask import Flask, abort, request, render_template, send_file, url_for
 from waitress import serve
 
 from config import get_config
@@ -31,6 +31,11 @@ app = Flask(__name__)
 setup_logger("global_logger", "config/app.log")
 logger = logging.getLogger("global_logger")
 DOWNLOAD_DIR = "in"
+
+
+@app.route("/")
+def index() -> str:
+    return render_template("index.html")
 
 
 @app.route("/download/<path:episode_name>")
