@@ -13,7 +13,7 @@ import PyRSS2Gen  # type: ignore[import-untyped]
 import requests
 import validators
 import yaml
-from flask import Flask, abort, request, send_file, url_for
+from flask import Flask, abort, request, render_template, send_file, url_for
 from waitress import serve
 
 from logger import setup_logger
@@ -34,6 +34,11 @@ logger = logging.getLogger("global_logger")
 with open("config/config.yml", "r") as f:
     config = yaml.safe_load(f)
 DOWNLOAD_DIR = "in"
+
+
+@app.route("/")
+def index() -> str:
+    return render_template("index.html")
 
 
 @app.route("/download/<path:episode_name>")
