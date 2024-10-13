@@ -13,7 +13,7 @@ import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
 import requests
 import validators
-from flask import Flask, abort, request, render_template, send_file, url_for
+from flask import Flask, abort, render_template, request, send_file, url_for
 from waitress import serve
 
 from config import get_config

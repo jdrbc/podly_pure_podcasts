@@ -25,6 +25,7 @@ validators = "*"
 beartype = "*"
 openai-whisper = "*"
 dill = "*"
+isort = "*"
 
 [dev-packages]
 black = "*"
