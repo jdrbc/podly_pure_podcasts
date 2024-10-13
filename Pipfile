@@ -35,6 +35,7 @@ types-requests = "*"
 types-waitress = "*"
 pylint = "*"
 pytest = "*"
+pytest-mock = "*"
 
 [requires]
 python_version = "3.11"

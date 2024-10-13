@@ -1,14 +1,22 @@
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
+from pytest_mock import MockerFixture
 
 from podcast_processor.transcribe import (
     LocalWhisperTranscriber,
     RemoteWhisperTranscriber,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_whisper_fixture(mocker: MockerFixture) -> None:
+    mocker.patch("podcast_processor.transcribe.whisper", new=MagicMock())
+    mocker.patch.dict("sys.modules", {"whisper": MagicMock()})
 
 
 @pytest.mark.skip
