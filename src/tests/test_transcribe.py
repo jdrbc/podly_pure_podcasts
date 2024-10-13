@@ -7,11 +7,6 @@ from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pytest_mock import MockerFixture
 
-from podcast_processor.transcribe import (
-    LocalWhisperTranscriber,
-    RemoteWhisperTranscriber,
-)
-
 
 @pytest.fixture(autouse=True)
 def mock_whisper_fixture(mocker: MockerFixture) -> None:
@@ -21,6 +16,8 @@ def mock_whisper_fixture(mocker: MockerFixture) -> None:
 
 @pytest.mark.skip
 def test_remote_transcribe() -> None:
+    from podcast_processor.transcribe import RemoteWhisperTranscriber
+
     logger = logging.getLogger("global_logger")
     with open("config/config.yml", "r") as f:
         config = yaml.safe_load(f)
@@ -40,6 +37,8 @@ def test_remote_transcribe() -> None:
 
 @pytest.mark.skip
 def test_local_transcribe() -> None:
+    from podcast_processor.transcribe import LocalWhisperTranscriber
+
     logger = logging.getLogger("global_logger")
     transcriber = LocalWhisperTranscriber(logger, "base")
     transcription = transcriber.transcribe("src/tests/file.mp3")
@@ -47,6 +46,8 @@ def test_local_transcribe() -> None:
 
 
 def test_offset() -> None:
+    from podcast_processor.transcribe import RemoteWhisperTranscriber
+
     assert RemoteWhisperTranscriber.add_offset_to_segments(
         [
             TranscriptionSegment(
