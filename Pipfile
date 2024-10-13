@@ -24,6 +24,8 @@ waitress = "*"
 validators = "*"
 beartype = "*"
 openai-whisper = "*"
+flask-sqlalchemy = "*"
+flask-migrate = "*"
 
 [dev-packages]
 black = "*"
@@ -33,6 +35,7 @@ types-requests = "*"
 types-waitress = "*"
 pylint = "*"
 pytest = "*"
+types-flask-migrate = "*"
 
 [requires]
 python_version = "3.11"
