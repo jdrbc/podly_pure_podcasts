@@ -24,6 +24,7 @@ waitress = "*"
 validators = "*"
 beartype = "*"
 openai-whisper = "*"
+dill = "*"
 
 [dev-packages]
 black = "*"
