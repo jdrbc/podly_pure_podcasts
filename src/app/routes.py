@@ -28,8 +28,8 @@ PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
 
 
 @main_bp.route("/")
-def index() -> str:
-    return flask.render_template("index.html")
+def index() -> flask.Response:
+    return flask.make_response(flask.render_template("index.html"), 200)
 
 
 @main_bp.route("/download/<path:episode_name>")

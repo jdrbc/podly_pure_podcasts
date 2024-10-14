@@ -2,10 +2,9 @@ from flask_sqlalchemy import SQLAlchemy
 
 from app import db
 
-assert isinstance(db, SQLAlchemy)
 
-
-class Feed(db.Model):
+# mypy typing issue https://github.com/python/mypy/issues/17918
+class Feed(db.Model):  # type: ignore
     # TODO FIXME
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
