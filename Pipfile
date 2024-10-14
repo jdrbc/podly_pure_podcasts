@@ -24,8 +24,8 @@ waitress = "*"
 validators = "*"
 beartype = "*"
 openai-whisper = "*"
-dill = "*"
-isort = "*"
+flask-sqlalchemy = "*"
+flask-migrate = "*"
 
 [dev-packages]
 black = "*"
@@ -35,6 +35,9 @@ types-requests = "*"
 types-waitress = "*"
 pylint = "*"
 pytest = "*"
+dill = "*"
+isort = "*"
+types-flask-migrate = "*"
 pytest-mock = "*"
 
 [requires]

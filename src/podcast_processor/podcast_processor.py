@@ -11,7 +11,7 @@ from jinja2 import Template
 from openai import OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
-from config import Config
+from shared.config import Config
 
 from .transcribe import (
     LocalWhisperTranscriber,

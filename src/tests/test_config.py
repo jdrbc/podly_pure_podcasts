@@ -1,6 +1,6 @@
 import pytest
 
-from config import (
+from shared.config import (
     Config,
     OutputConfig,
     ProcessingConfig,
