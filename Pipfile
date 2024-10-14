@@ -35,7 +35,10 @@ types-requests = "*"
 types-waitress = "*"
 pylint = "*"
 pytest = "*"
+dill = "*"
+isort = "*"
 types-flask-migrate = "*"
+pytest-mock = "*"
 
 [requires]
 python_version = "3.11"
