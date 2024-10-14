@@ -27,6 +27,11 @@ DOWNLOAD_DIR = "in"
 PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
 
 
+@main_bp.route("/")
+def index() -> str:
+    return flask.render_template("index.html")
+
+
 @main_bp.route("/download/<path:episode_name>")
 def download(episode_name: str) -> flask.Response:
     episode_name = urllib.parse.unquote(episode_name)
