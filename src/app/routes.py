@@ -13,11 +13,9 @@ import requests
 import validators
 from flask import Blueprint, abort, request, send_file, url_for
 
-from app import config, logger, db
-from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
-
+from app import config, db, logger
 from app.models import Feed
-
+from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 
 main_bp = Blueprint("main", __name__)
 

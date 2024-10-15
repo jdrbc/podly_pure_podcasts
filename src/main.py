@@ -2,7 +2,6 @@ from waitress import serve
 
 from app import config, create_app
 
-
 app = create_app()
 
 
