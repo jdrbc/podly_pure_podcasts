@@ -39,6 +39,7 @@ dill = "*"
 isort = "*"
 types-flask-migrate = "*"
 pytest-mock = "*"
+watchdog = "*"
 
 [requires]
 python_version = "3.11"

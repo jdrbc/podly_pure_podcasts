@@ -13,12 +13,9 @@ import requests
 import validators
 from flask import Blueprint, abort, request, send_file, url_for
 
-from app import config, logger
+from app import config, db, logger
+from app.models import Feed
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
-
-# from app import db
-# from app.models import Post, User
-
 
 main_bp = Blueprint("main", __name__)
 
@@ -30,6 +27,16 @@ PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
 @main_bp.route("/")
 def index() -> flask.Response:
     return flask.make_response(flask.render_template("index.html"), 200)
+
+
+@main_bp.route("/db_test")
+def db_test() -> flask.Response:
+    print("DB Test")
+    new_record = Feed()
+    db.session.add(new_record)
+    db.session.commit()
+    row_count = Feed.query.count()
+    return flask.make_response(f"Row count: {row_count}", 200)
 
 
 @main_bp.route("/download/<path:episode_name>")

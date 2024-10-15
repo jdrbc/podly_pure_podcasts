@@ -43,3 +43,4 @@ config/app.log
 *.pickle
 .env
 config/config.yml
+*.db
