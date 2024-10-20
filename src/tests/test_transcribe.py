@@ -15,7 +15,10 @@ def mock_whisper_fixture(mocker: MockerFixture) -> None:
 
 @pytest.mark.skip
 def test_remote_transcribe() -> None:
-    from podcast_processor.transcribe import RemoteWhisperTranscriber
+    # import here instead of the toplevel because torch is not installed properly in CI.
+    from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel
+        RemoteWhisperTranscriber,
+    )
 
     logger = logging.getLogger("global_logger")
     with open("config/config.yml", "r") as f:
@@ -36,7 +39,10 @@ def test_remote_transcribe() -> None:
 
 @pytest.mark.skip
 def test_local_transcribe() -> None:
-    from podcast_processor.transcribe import LocalWhisperTranscriber
+    # import here instead of the toplevel because torch is not installed properly in CI.
+    from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel
+        LocalWhisperTranscriber,
+    )
 
     logger = logging.getLogger("global_logger")
     transcriber = LocalWhisperTranscriber(logger, "base")
@@ -45,7 +51,10 @@ def test_local_transcribe() -> None:
 
 
 def test_offset() -> None:
-    from podcast_processor.transcribe import RemoteWhisperTranscriber
+    # import here instead of the toplevel because torch is not installed properly in CI.
+    from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel
+        RemoteWhisperTranscriber,
+    )
 
     assert RemoteWhisperTranscriber.add_offset_to_segments(
         [
