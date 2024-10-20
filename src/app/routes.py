@@ -1,9 +1,11 @@
 import datetime
 import logging
-import feedparser
-import PyRSS2Gen  # type: ignore[import-untyped]
+
+import feedparser  # type: ignore[import-untyped]
 import flask
-from flask import Blueprint, abort, request, jsonify, url_for
+import PyRSS2Gen  # type: ignore[import-untyped]
+from flask import Blueprint, jsonify, request, url_for
+
 from app import db
 from app.models import Feed, Post
 
@@ -52,7 +54,7 @@ def store_feed(feed_data: feedparser.FeedParserDict) -> Feed:
 def refresh_feed(feed: Feed) -> None:
     logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
-    existing_posts = {post.download_url for post in feed.posts}
+    existing_posts = {post.download_url for post in feed.posts}  # type: ignore[attr-defined]
     for entry in feed_data.entries:
         if entry.link not in existing_posts:
             post = Post(
@@ -75,7 +77,7 @@ def refresh_feed(feed: Feed) -> None:
 def generate_feed_xml(feed: Feed) -> str:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = []
-    for post in feed.posts:
+    for post in feed.posts:  # type: ignore[attr-defined]
         items.append(
             PyRSS2Gen.RSSItem(
                 title=post.title,
@@ -97,7 +99,7 @@ def generate_feed_xml(feed: Feed) -> str:
         items=items,
     )
     logger.info(f"XML generated for feed with ID: {feed.id}")
-    return rss_feed.to_xml("utf-8")
+    return str(rss_feed.to_xml("utf-8"), "utf-8")
 
 
 @main_bp.route("/v1/feed", methods=["POST"])
@@ -105,13 +107,13 @@ def add_feed() -> flask.Response:
     data = request.get_json()
     if not data or "url" not in data:
         logger.error("URL is required")
-        return jsonify({"error": "URL is required"}), 400
+        return flask.make_response(jsonify({"error": "URL is required"}), 400)
 
     url = data["url"]
     feed_data = fetch_feed(url)
     if "title" not in feed_data.feed:
         logger.error("Invalid feed URL")
-        return jsonify({"error": "Invalid feed URL"}), 400
+        return flask.make_response(jsonify({"error": "Invalid feed URL"}), 400)
 
     feed = Feed.query.filter_by(rss_url=url).first()
     if feed:
@@ -120,14 +122,14 @@ def add_feed() -> flask.Response:
         feed = store_feed(feed_data)
 
     logger.info(f"Feed added with ID: {feed.id}")
-    return jsonify({"id": feed.id, "title": feed.title}), 201
+    return flask.make_response(jsonify({"id": feed.id, "title": feed.title}), 201)
 
 
-@main_bp.route("/v1/feed/<int:id>", methods=["GET"])
-def get_feed(id: int) -> flask.Response:
-    logger.info(f"Fetching feed with ID: {id}")
-    feed = Feed.query.get_or_404(id)
+@main_bp.route("/v1/feed/<int:e_id>", methods=["GET"])
+def get_feed(e_id: int) -> flask.Response:
+    logger.info(f"Fetching feed with ID: {e_id}")
+    feed = Feed.query.get_or_404(e_id)
     refresh_feed(feed)
     feed_xml = generate_feed_xml(feed)
-    logger.info(f"Feed with ID: {id} fetched and XML generated")
+    logger.info(f"Feed with ID: {e_id} fetched and XML generated")
     return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})

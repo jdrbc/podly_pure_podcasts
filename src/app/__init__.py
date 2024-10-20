@@ -32,10 +32,10 @@ def create_app() -> Flask:
 
     # Import models (so that alembic can detect them)
     from app import models  # pylint: disable=import-outside-toplevel, unused-import
+    from app.old_routes import old_bp  # pylint: disable=import-outside-toplevel
 
     # Import and register the routes (views)
     from app.routes import main_bp  # pylint: disable=import-outside-toplevel
-    from app.old_routes import old_bp  # pylint: disable=import-outside-toplevel
 
     app.register_blueprint(main_bp)
     app.register_blueprint(old_bp)
