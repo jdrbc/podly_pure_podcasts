@@ -13,8 +13,7 @@ import requests
 import validators
 from flask import Blueprint, abort, request, send_file, url_for
 
-from app import config, db, logger
-from app.models import Feed
+from app import config, logger
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 
 main_bp = Blueprint("main", __name__)
@@ -29,16 +28,7 @@ def index() -> flask.Response:
     return flask.make_response(flask.render_template("index.html"), 200)
 
 
-@main_bp.route("/db_test")
-def db_test() -> flask.Response:
-    print("DB Test")
-    new_record = Feed()
-    db.session.add(new_record)
-    db.session.commit()
-    row_count = Feed.query.count()
-    return flask.make_response(f"Row count: {row_count}", 200)
-
-
+# kept for backwards compatibility where download link is full url
 @main_bp.route("/download/<path:episode_name>")
 def download(episode_name: str) -> flask.Response:
     episode_name = urllib.parse.unquote(episode_name)
@@ -77,11 +67,13 @@ def fix_url(url: str) -> str:
     return url
 
 
+# kept for backwards compatibility,
 @main_bp.get("/<path:podcast_rss>")
 def rss(podcast_rss: str) -> flask.Response:
     logging.info(f"getting rss for {podcast_rss}...")
     if podcast_rss == "favicon.ico":
         abort(404)
+    # short URL for user favorite podcast
     if podcast_rss in config.podcasts:
         url = config.podcasts[podcast_rss]
     else:
