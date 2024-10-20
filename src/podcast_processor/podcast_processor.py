@@ -260,7 +260,7 @@ class PodcastProcessor:
 
                 try:
                     prediction = clean_and_parse_model_output(identification)
-                except Exception as e:
+                except Exception as e:  # pylint: disable=broad-exception-caught
                     self.logger.error(
                         f"Error parsing ad segment: {e} for {identification}"
                     )
