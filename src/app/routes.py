@@ -1,183 +1,135 @@
 import datetime
 import logging
-import os
-import re
-import urllib.parse
-from pathlib import Path
-from typing import Any, Optional, Tuple, cast
 
 import feedparser  # type: ignore[import-untyped]
 import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
-import requests
-import validators
-from flask import Blueprint, abort, request, send_file, url_for
+from flask import Blueprint, jsonify, request, url_for
 
-from app import config, logger
-from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
+from app import db
+from app.models import Feed, Post
 
-# from app import db
-# from app.models import Post, User
-
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 main_bp = Blueprint("main", __name__)
 
 
-DOWNLOAD_DIR = "in"
-PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
+def fetch_feed(url: str) -> feedparser.FeedParserDict:
+    logger.info(f"Fetching feed from URL: {url}")
+    return feedparser.parse(url)
 
 
-@main_bp.route("/")
-def index() -> flask.Response:
-    return flask.make_response(flask.render_template("index.html"), 200)
-
-
-@main_bp.route("/download/<path:episode_name>")
-def download(episode_name: str) -> flask.Response:
-    episode_name = urllib.parse.unquote(episode_name)
-    podcast_title, episode_url = get_args(request.url)
-    logging.info(f"Downloading episode {episode_name} from podcast {podcast_title}...")
-    if episode_url is None or not validators.url(episode_url):
-        return flask.make_response(("Invalid episode URL", 404))
-
-    download_path = download_episode(podcast_title, episode_name, episode_url)
-    if download_path is None:
-        return flask.make_response(("Failed to download episode", 500))
-    task = PodcastProcessorTask(podcast_title, download_path, episode_name)
-    processor = PodcastProcessor(config)
-    output_path = processor.process(task)
-    if output_path is None:
-        return flask.make_response(("Failed to process episode", 500))
-
-    try:
-        return send_file(path_or_file=Path(output_path).resolve())
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logging.error(f"Error sending file: {e}")
-        return flask.make_response(("Error sending file", 500))
-
-
-def get_args(full_request_url: str) -> Tuple[str, str]:
-    args = urllib.parse.parse_qs(
-        urllib.parse.urlparse(full_request_url.replace(PARAM_SEP, "&")).query
+def store_feed(feed_data: feedparser.FeedParserDict) -> Feed:
+    logger.info(f"Storing feed: {feed_data.feed.title}")
+    feed = Feed(
+        title=feed_data.feed.title,
+        description=feed_data.feed.get("description", ""),
+        author=feed_data.feed.get("author", ""),
+        rss_url=feed_data.href,
     )
-    return args["podcast_title"][0], args["episode_url"][0]
+    db.session.add(feed)
+    db.session.commit()
+
+    for entry in feed_data.entries:
+        post = Post(
+            feed_id=feed.id,
+            download_url=entry.link,
+            title=entry.title,
+            description=entry.get("description", ""),
+            release_date=(
+                datetime.datetime(*entry.published_parsed[:6])
+                if entry.get("published_parsed")
+                else None
+            ),
+            duration=int(entry.get("itunes_duration", 0)),
+        )
+        db.session.add(post)
+    db.session.commit()
+    logger.info(f"Feed stored with ID: {feed.id}")
+    return feed
 
 
-def fix_url(url: str) -> str:
-    url = re.sub(r"(http(s)?):/([^/])", r"\1://\3", url)
-    if not url.startswith("http://") and not url.startswith("https://"):
-        url = "https://" + url
-    return url
-
-
-@main_bp.get("/<path:podcast_rss>")
-def rss(podcast_rss: str) -> flask.Response:
-    logging.info(f"getting rss for {podcast_rss}...")
-    if podcast_rss == "favicon.ico":
-        abort(404)
-    if podcast_rss in config.podcasts:
-        url = config.podcasts[podcast_rss]
-    else:
-        url = fix_url(podcast_rss)
-    if not validators.url(url):
-        abort(404)
-    feed = feedparser.parse(url)
-    feed = cast(feedparser.FeedParserDict, feed)
-    if "feed" not in feed or "title" not in feed.feed:
-        abort(404)
-    transformed_items = []
-    for entry in feed.entries:
-        dl_link = get_download_link(entry, feed.feed.title)
-        if dl_link is None:
-            continue
-
-        transformed_items.append(
-            PyRSS2Gen.RSSItem(
+def refresh_feed(feed: Feed) -> None:
+    logger.info(f"Refreshing feed with ID: {feed.id}")
+    feed_data = fetch_feed(feed.rss_url)
+    existing_posts = {post.download_url for post in feed.posts}  # type: ignore[attr-defined]
+    for entry in feed_data.entries:
+        if entry.link not in existing_posts:
+            post = Post(
+                feed_id=feed.id,
+                download_url=entry.link,
                 title=entry.title,
-                link=dl_link,
-                description=entry.description,
-                guid=PyRSS2Gen.Guid(dl_link),
-                enclosure=PyRSS2Gen.Enclosure(
-                    dl_link,
-                    str(entry.get("enclosures", [{}])[0].get("length", 0)),
-                    "audio/mp3",
+                description=entry.get("description", ""),
+                release_date=(
+                    datetime.datetime(*entry.published_parsed[:6])
+                    if entry.get("published_parsed")
+                    else None
                 ),
-                pubDate=datetime.datetime(*entry.published_parsed[:6]),
+                duration=int(entry.get("itunes_duration", 0)),
+            )
+            db.session.add(post)
+    db.session.commit()
+    logger.info(f"Feed with ID: {feed.id} refreshed")
+
+
+def generate_feed_xml(feed: Feed) -> str:
+    logger.info(f"Generating XML for feed with ID: {feed.id}")
+    items = []
+    for post in feed.posts:  # type: ignore[attr-defined]
+        items.append(
+            PyRSS2Gen.RSSItem(
+                title=post.title,
+                link=post.download_url,
+                description=post.description,
+                guid=PyRSS2Gen.Guid(post.download_url),
+                pubDate=(
+                    post.release_date.strftime("%a, %d %b %Y %H:%M:%S %z")
+                    if post.release_date
+                    else None
+                ),
             )
         )
     rss_feed = PyRSS2Gen.RSS2(
-        title="[podly] " + feed.feed.title,
-        link=request.url_root,
-        description=feed.feed.description,
+        title=feed.title,
+        link=url_for("main.get_feed", id=feed.id, _external=True),
+        description=feed.description,
         lastBuildDate=datetime.datetime.now(),
-        items=transformed_items,
+        items=items,
     )
-    return flask.make_response(
-        (rss_feed.to_xml("utf-8"), 200, {"Content-Type": "application/xml"})
-    )
+    logger.info(f"XML generated for feed with ID: {feed.id}")
+    return str(rss_feed.to_xml("utf-8"), "utf-8")
 
 
-def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
-    audio_link = find_audio_link(entry)
-    if audio_link is None:
-        return None
+@main_bp.route("/v1/feed", methods=["POST"])
+def add_feed() -> flask.Response:
+    data = request.get_json()
+    if not data or "url" not in data:
+        logger.error("URL is required")
+        return flask.make_response(jsonify({"error": "URL is required"}), 400)
 
-    server = config.server if config.server is not None else ""
-    assert isinstance(server, str)
+    url = data["url"]
+    feed_data = fetch_feed(url)
+    if "title" not in feed_data.feed:
+        logger.error("Invalid feed URL")
+        return flask.make_response(jsonify({"error": "Invalid feed URL"}), 400)
 
-    return (
-        server
-        + url_for(
-            "main.download",
-            episode_name=f"{remove_odd_characters(entry.title)}.mp3",
-            _external=config.server is None,
-        )
-        + f"?podcast_title={urllib.parse.quote('[podly] ' + remove_odd_characters(podcast_title))}"
-        + f"{PARAM_SEP}episode_url={urllib.parse.quote(audio_link)}"
-    )
-
-
-def remove_odd_characters(title: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9\s]", "", title)
-
-
-def download_episode(
-    podcast_title: str, episode_name: str, episode_url: str
-) -> Optional[str]:
-    download_path = get_and_make_download_path(podcast_title, episode_name)
-    if not os.path.exists(download_path):
-        # Download the podcast episode
-        audio_link = fix_url(episode_url)
-        if audio_link is None or not validators.url(audio_link):
-            abort(404)
-
-        logger.info(f"Downloading {audio_link} into {download_path}...")
-        response = requests.get(audio_link)  # pylint: disable=missing-timeout
-        if response.status_code == 200:
-            with open(download_path, "wb") as file:
-                file.write(response.content)
-                logger.info("Download complete.")
-        else:
-            logger.info(
-                f"Failed to download the podcast episode, response: {response.status_code}"
-            )
-            return None
+    feed = Feed.query.filter_by(rss_url=url).first()
+    if feed:
+        refresh_feed(feed)
     else:
-        logger.info("Episode already downloaded.")
-    return download_path
+        feed = store_feed(feed_data)
+
+    logger.info(f"Feed added with ID: {feed.id}")
+    return flask.make_response(jsonify({"id": feed.id, "title": feed.title}), 201)
 
 
-def get_and_make_download_path(podcast_title: str, episode_name: str) -> str:
-    if not os.path.exists(f"{DOWNLOAD_DIR}/{podcast_title}"):
-        os.makedirs(f"{DOWNLOAD_DIR}/{podcast_title}")
-    return f"{DOWNLOAD_DIR}/{podcast_title}/{episode_name}"
-
-
-def find_audio_link(entry: Any) -> Optional[str]:
-    for link in entry.links:
-        if link.type == "audio/mpeg":
-            href = link.href
-            assert isinstance(href, str)
-            return href
-
-    return None
+@main_bp.route("/v1/feed/<int:e_id>", methods=["GET"])
+def get_feed(e_id: int) -> flask.Response:
+    logger.info(f"Fetching feed with ID: {e_id}")
+    feed = Feed.query.get_or_404(e_id)
+    refresh_feed(feed)
+    feed_xml = generate_feed_xml(feed)
+    logger.info(f"Feed with ID: {e_id} fetched and XML generated")
+    return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})

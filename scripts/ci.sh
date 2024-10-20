@@ -7,4 +7,4 @@ pipenv run isort .
 pipenv run mypy .
 pipenv run pylint .
 
-pipenv run pytest
+pipenv run pytest --disable-warnings

@@ -23,7 +23,7 @@ def create_app() -> Flask:
     app = Flask(__name__)
 
     # Configure the app (for example, SQLite for development)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///example.db"
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     # Initialize the sqlalchemy object with the Flask app context
@@ -32,11 +32,16 @@ def create_app() -> Flask:
 
     # Import models (so that alembic can detect them)
     from app import models  # pylint: disable=import-outside-toplevel, unused-import
+    from app.old_routes import old_bp  # pylint: disable=import-outside-toplevel
 
     # Import and register the routes (views)
     from app.routes import main_bp  # pylint: disable=import-outside-toplevel
 
     app.register_blueprint(main_bp)
+    app.register_blueprint(old_bp)
+
+    with app.app_context():
+        db.create_all()
 
     return app
 
