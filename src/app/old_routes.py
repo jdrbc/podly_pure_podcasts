@@ -16,20 +16,15 @@ from flask import Blueprint, abort, request, send_file, url_for
 from app import config, logger
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 
-main_bp = Blueprint("main", __name__)
+old_bp = Blueprint("old", __name__)
 
 
 DOWNLOAD_DIR = "in"
 PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
 
 
-@main_bp.route("/")
-def index() -> flask.Response:
-    return flask.make_response(flask.render_template("index.html"), 200)
-
-
 # kept for backwards compatibility where download link is full url
-@main_bp.route("/download/<path:episode_name>")
+@old_bp.route("/download/<path:episode_name>")
 def download(episode_name: str) -> flask.Response:
     episode_name = urllib.parse.unquote(episode_name)
     podcast_title, episode_url = get_args(request.url)
@@ -68,7 +63,7 @@ def fix_url(url: str) -> str:
 
 
 # kept for backwards compatibility,
-@main_bp.get("/<path:podcast_rss>")
+@old_bp.get("/<path:podcast_rss>")
 def rss(podcast_rss: str) -> flask.Response:
     logging.info(f"getting rss for {podcast_rss}...")
     if podcast_rss == "favicon.ico":
@@ -127,7 +122,7 @@ def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
     return (
         server
         + url_for(
-            "main.download",
+            "old.download",
             episode_name=f"{remove_odd_characters(entry.title)}.mp3",
             _external=config.server is None,
         )

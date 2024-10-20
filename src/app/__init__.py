@@ -34,9 +34,11 @@ def create_app() -> Flask:
     from app import models  # pylint: disable=import-outside-toplevel, unused-import
 
     # Import and register the routes (views)
-    from app.old_routes import main_bp  # pylint: disable=import-outside-toplevel
+    from app.routes import main_bp  # pylint: disable=import-outside-toplevel
+    from app.old_routes import old_bp  # pylint: disable=import-outside-toplevel
 
     app.register_blueprint(main_bp)
+    app.register_blueprint(old_bp)
 
     with app.app_context():
         db.create_all()
