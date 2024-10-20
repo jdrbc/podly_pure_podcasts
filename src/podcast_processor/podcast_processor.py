@@ -1,5 +1,4 @@
 import gc
-import json
 import logging
 import os
 import pickle
@@ -11,6 +10,7 @@ from jinja2 import Template
 from openai import OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
+from podcast_processor.model_output import clean_and_parse_model_output
 from shared.config import Config
 
 from .transcribe import (
@@ -257,37 +257,34 @@ class PodcastProcessor:
                 prompt_start_timestamp = float(classification_dir.split("_")[0])
                 prompt_end_timestamp = float(classification_dir.split("_")[1])
                 identification = id_file.read()
-                identification = identification.replace("```json", "")
-                identification = identification.replace("```", "")
-                identification = identification.replace("'", '"')
-                identification = identification.replace("\n", "")
-                identification = identification.strip()
+
                 try:
-                    identification_json = json.loads(identification)
-                    if "confidence" in identification_json:
-                        confidence = identification_json["confidence"]
-                        if confidence < self.config.output.min_confidence:
-                            continue
-                    ad_segment_starts = identification_json["ad_segments"]
-                    # filter out ad segments outside of the start/end, and that
-                    # do not exist in segments_by_start
-                    ad_segment_starts = [
-                        start
-                        for start in ad_segment_starts
-                        if start  # pylint: disable=chained-comparison
-                        >= prompt_start_timestamp
-                        and start <= prompt_end_timestamp
-                        and start in segments_by_start
-                    ]
-                    if len(ad_segment_starts) == 0:
-                        continue
-                    for ad_segment_start in ad_segment_starts:
-                        ad_segment_end = segments_by_start[ad_segment_start].end
-                        ad_segments.append((ad_segment_start, ad_segment_end))
-                except Exception as e:  # pylint: disable=broad-exception-caught
+                    prediction = clean_and_parse_model_output(identification)
+                except Exception as e:
                     self.logger.error(
                         f"Error parsing ad segment: {e} for {identification}"
                     )
+                    continue
+
+                if prediction.confidence < self.config.output.min_confidence:
+                    continue
+
+                ad_segment_starts = prediction.ad_segments
+                # filter out ad segments outside of the start/end, and that
+                # do not exist in segments_by_start
+                ad_segment_starts = [
+                    start
+                    for start in ad_segment_starts
+                    if start  # pylint: disable=chained-comparison
+                    >= prompt_start_timestamp
+                    and start <= prompt_end_timestamp
+                    and start in segments_by_start
+                ]
+
+                for ad_segment_start in ad_segment_starts:
+                    ad_segment_end = segments_by_start[ad_segment_start].end
+                    ad_segments.append((ad_segment_start, ad_segment_end))
+
         return ad_segments
 
     def get_ad_fade_out(
