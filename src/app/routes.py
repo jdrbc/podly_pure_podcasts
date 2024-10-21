@@ -1,5 +1,6 @@
 import datetime
 import logging
+from typing import Any
 
 import feedparser  # type: ignore[import-untyped]
 import flask
@@ -14,6 +15,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 main_bp = Blueprint("main", __name__)
+
+
+@main_bp.route("/")
+def index() -> flask.Response:
+    return flask.make_response(flask.render_template("index.html"), 200)
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
@@ -74,7 +80,7 @@ def refresh_feed(feed: Feed) -> None:
     logger.info(f"Feed with ID: {feed.id} refreshed")
 
 
-def generate_feed_xml(feed: Feed) -> str:
+def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = []
     for post in feed.posts:  # type: ignore[attr-defined]
@@ -93,13 +99,13 @@ def generate_feed_xml(feed: Feed) -> str:
         )
     rss_feed = PyRSS2Gen.RSS2(
         title=feed.title,
-        link=url_for("main.get_feed", id=feed.id, _external=True),
+        link=url_for("main.get_feed", f_id=feed.id, _external=True),
         description=feed.description,
         lastBuildDate=datetime.datetime.now(),
         items=items,
     )
     logger.info(f"XML generated for feed with ID: {feed.id}")
-    return str(rss_feed.to_xml("utf-8"), "utf-8")
+    return rss_feed.to_xml("utf-8")
 
 
 @main_bp.route("/v1/feed", methods=["POST"])
@@ -125,11 +131,11 @@ def add_feed() -> flask.Response:
     return flask.make_response(jsonify({"id": feed.id, "title": feed.title}), 201)
 
 
-@main_bp.route("/v1/feed/<int:e_id>", methods=["GET"])
-def get_feed(e_id: int) -> flask.Response:
-    logger.info(f"Fetching feed with ID: {e_id}")
-    feed = Feed.query.get_or_404(e_id)
+@main_bp.route("/v1/feed/<int:f_id>", methods=["GET"])
+def get_feed(f_id: int) -> flask.Response:
+    logger.info(f"Fetching feed with ID: {f_id}")
+    feed = Feed.query.get_or_404(f_id)
     refresh_feed(feed)
     feed_xml = generate_feed_xml(feed)
-    logger.info(f"Feed with ID: {e_id} fetched and XML generated")
+    logger.info(f"Feed with ID: {f_id} fetched and XML generated")
     return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})

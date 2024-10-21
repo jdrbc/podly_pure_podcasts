@@ -13,31 +13,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
 
-    - name: Install pipenv
-      run: pip install pipenv
+      - name: Install pipenv
+        run: pip install pipenv
 
-    - name: Install dependencies
-      run: pipenv install --dev
+      - name: Install dependencies
+        run: pipenv install --dev
 
-    - name: Run mypy
-      run: pipenv run mypy .
+      - name: Run mypy
+        run: pipenv run mypy .  --exclude 'migrations'
 
-    - name: Run pylint
-      run: pipenv run pylint .
+      - name: Run pylint
+        run: pipenv run pylint --ignore=migrations .
 
-    - name: Run black
-      run: pipenv run black --check .
+      - name: Run black
+        run: pipenv run black --check .
 
-    - name: Run isort
-      run: pipenv run isort --check-only .
+      - name: Run isort
+        run: pipenv run isort --check-only .
 
-    - name: Run pytest
-      run: pipenv run pytest
+      - name: Run pytest
+        run: pipenv run pytest

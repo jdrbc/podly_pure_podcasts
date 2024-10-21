@@ -4,7 +4,7 @@
 pipenv run black .
 pipenv run isort .
 
-pipenv run mypy .
-pipenv run pylint .
+pipenv run mypy . --exclude 'migrations'
+pipenv run pylint --ignore=migrations .
 
 pipenv run pytest --disable-warnings
