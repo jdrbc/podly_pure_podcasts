@@ -3,7 +3,7 @@ import logging
 import os
 
 from flask import Flask
-from flask_migrate import Migrate
+from flask_migrate import Migrate, upgrade
 from flask_sqlalchemy import SQLAlchemy
 
 from app.logger import setup_logger
@@ -30,8 +30,6 @@ def create_app() -> Flask:
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # Import models (so that alembic can detect them)
-    from app import models  # pylint: disable=import-outside-toplevel, unused-import
     from app.old_routes import old_bp  # pylint: disable=import-outside-toplevel
 
     # Import and register the routes (views)
@@ -40,14 +38,17 @@ def create_app() -> Flask:
     app.register_blueprint(main_bp)
     app.register_blueprint(old_bp)
 
+    from app import models  # pylint: disable=import-outside-toplevel, unused-import
+
     with app.app_context():
         db.create_all()
+        upgrade()
 
     return app
 
 
 db = SQLAlchemy()
-migrate = Migrate()
+migrate = Migrate(directory="./src/migrations")
 config = get_config("config/config.yml")
 
 
