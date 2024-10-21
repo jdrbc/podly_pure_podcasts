@@ -1,14 +1,18 @@
 import datetime
 import logging
+import re
+from pathlib import Path
 from typing import Any
 
 import feedparser  # type: ignore[import-untyped]
 import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
-from flask import Blueprint, jsonify, request, url_for
+from flask import Blueprint, jsonify, request, send_file, url_for
 
-from app import db
+from app import config, db, logger
 from app.models import Feed, Post
+from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
+from shared.podcast_downloader import download_episode, find_audio_link
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +24,33 @@ main_bp = Blueprint("main", __name__)
 @main_bp.route("/")
 def index() -> flask.Response:
     return flask.make_response(flask.render_template("index.html"), 200)
+
+
+@main_bp.route("/v1/post/<int:p_id>", methods=["GET"])
+def download_post(p_id: int) -> flask.Response:
+    post = Post.query.get_or_404(p_id)
+
+    # Download the episode
+    download_path = download_episode(
+        post.feed.title,
+        re.sub(r"[^a-zA-Z0-9\s]", "", post.title) + ".mp3",
+        post.download_url,
+    )
+    if download_path is None:
+        return flask.make_response(("Failed to download episode", 500))
+
+    # Process the episode
+    task = PodcastProcessorTask(post.title, download_path, post.title)
+    processor = PodcastProcessor(config)
+    output_path = processor.process(task)
+    if output_path is None:
+        return flask.make_response(("Failed to process episode", 500))
+
+    try:
+        return send_file(path_or_file=Path(output_path).resolve())
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error(f"Error sending file: {e}")
+        return flask.make_response(("Error sending file", 500))
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
@@ -41,7 +72,7 @@ def store_feed(feed_data: feedparser.FeedParserDict) -> Feed:
     for entry in feed_data.entries:
         post = Post(
             feed_id=feed.id,
-            download_url=entry.link,
+            download_url=find_audio_link(entry),
             title=entry.title,
             description=entry.get("description", ""),
             release_date=(
@@ -87,7 +118,7 @@ def generate_feed_xml(feed: Feed) -> Any:
         items.append(
             PyRSS2Gen.RSSItem(
                 title=post.title,
-                link=post.download_url,
+                link=url_for("main.download_post", p_id=post.id, _external=True),
                 description=post.description,
                 guid=PyRSS2Gen.Guid(post.download_url),
                 pubDate=(
@@ -98,7 +129,7 @@ def generate_feed_xml(feed: Feed) -> Any:
             )
         )
     rss_feed = PyRSS2Gen.RSS2(
-        title=feed.title,
+        title="[podly] " + feed.title,
         link=url_for("main.get_feed", f_id=feed.id, _external=True),
         description=feed.description,
         lastBuildDate=datetime.datetime.now(),
