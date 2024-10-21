@@ -1,6 +1,5 @@
 import datetime
 import logging
-import os
 import re
 import urllib.parse
 from pathlib import Path
@@ -9,17 +8,16 @@ from typing import Any, Optional, Tuple, cast
 import feedparser  # type: ignore[import-untyped]
 import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
-import requests
 import validators
 from flask import Blueprint, abort, request, send_file, url_for
 
-from app import config, logger
+from app import config
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
+from shared.podcast_downloader import download_episode, find_audio_link
 
 old_bp = Blueprint("old", __name__)
 
 
-DOWNLOAD_DIR = "in"
 PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
 
 
@@ -32,7 +30,7 @@ def download(episode_name: str) -> flask.Response:
     if episode_url is None or not validators.url(episode_url):
         return flask.make_response(("Invalid episode URL", 404))
 
-    download_path = download_episode(podcast_title, episode_name, episode_url)
+    download_path = download_episode(podcast_title, episode_name, fix_url(episode_url))
     if download_path is None:
         return flask.make_response(("Failed to download episode", 500))
     task = PodcastProcessorTask(podcast_title, download_path, episode_name)
@@ -133,45 +131,3 @@ def get_download_link(entry: Any, podcast_title: str) -> Optional[str]:
 
 def remove_odd_characters(title: str) -> str:
     return re.sub(r"[^a-zA-Z0-9\s]", "", title)
-
-
-def download_episode(
-    podcast_title: str, episode_name: str, episode_url: str
-) -> Optional[str]:
-    download_path = get_and_make_download_path(podcast_title, episode_name)
-    if not os.path.exists(download_path):
-        # Download the podcast episode
-        audio_link = fix_url(episode_url)
-        if audio_link is None or not validators.url(audio_link):
-            abort(404)
-
-        logger.info(f"Downloading {audio_link} into {download_path}...")
-        response = requests.get(audio_link)  # pylint: disable=missing-timeout
-        if response.status_code == 200:
-            with open(download_path, "wb") as file:
-                file.write(response.content)
-                logger.info("Download complete.")
-        else:
-            logger.info(
-                f"Failed to download the podcast episode, response: {response.status_code}"
-            )
-            return None
-    else:
-        logger.info("Episode already downloaded.")
-    return download_path
-
-
-def get_and_make_download_path(podcast_title: str, episode_name: str) -> str:
-    if not os.path.exists(f"{DOWNLOAD_DIR}/{podcast_title}"):
-        os.makedirs(f"{DOWNLOAD_DIR}/{podcast_title}")
-    return f"{DOWNLOAD_DIR}/{podcast_title}/{episode_name}"
-
-
-def find_audio_link(entry: Any) -> Optional[str]:
-    for link in entry.links:
-        if link.type == "audio/mpeg":
-            href = link.href
-            assert isinstance(href, str)
-            return href
-
-    return None
