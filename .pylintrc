@@ -1,0 +1,27 @@
+[MASTER]
+disable=
+    C0114, # missing-module-docstring
+    C0115, # missing-class-docstring
+    C0116, # missing-function-docstring
+    R0913, # too-many-arguments
+    R0914, # too-many-locals
+    R0903, # too-few-public-methods
+    W1203, # logging-fstring-interpolation
+    W1514, # using-constant-test
+    E0401, # import-error
+
+
+[SIMILARITIES]
+
+# Minimum lines number of a similarity.
+min-similarity-lines=10
+
+# Ignore comments when computing similarities.
+ignore-comments=yes
+
+# Ignore docstrings when computing similarities.
+ignore-docstrings=yes
+
+# Ignore imports when computing similarities.
+ignore-imports=no
+
