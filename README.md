@@ -1,5 +1,5 @@
 <h2 align="center">
-<img width="50%" src="src/static/images/logos/logo_with_text.png" />
+<img width="50%" src="src/app/static/images/logos/logo_with_text.png" />
 
 </h2>
 
@@ -145,3 +145,15 @@ To use OpenAI API instead of local model
 ```shell
 REMOTE_WHISPER=TRUE # optional
 ```
+
+## Database Update
+
+The database should automatically configure & upgrade on launch.
+
+After data model change run:
+
+```
+pipenv run flask --app ./src/main.py db migrate -m "[change description]"
+```
+
+On next launch the database should update.

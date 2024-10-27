@@ -9,14 +9,10 @@ import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
 from flask import Blueprint, jsonify, request, send_file, url_for
 
-from app import config, db, logger
+from app import config, db
 from app.models import Feed, Post
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 from shared.podcast_downloader import download_episode, find_audio_link
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 main_bp = Blueprint("main", __name__)
 
@@ -26,9 +22,11 @@ def index() -> flask.Response:
     return flask.make_response(flask.render_template("index.html"), 200)
 
 
-@main_bp.route("/v1/post/<int:p_id>", methods=["GET"])
-def download_post(p_id: int) -> flask.Response:
-    post = Post.query.get_or_404(p_id)
+@main_bp.route("/v1/post/<string:p_guid>", methods=["GET"])
+def download_post(p_guid: str) -> flask.Response:
+    post = Post.query.filter_by(guid=p_guid).first()
+    if post is None:
+        return flask.make_response(("Post not found", 404))
 
     # Download the episode
     download_path = download_episode(
@@ -49,17 +47,17 @@ def download_post(p_id: int) -> flask.Response:
     try:
         return send_file(path_or_file=Path(output_path).resolve())
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error(f"Error sending file: {e}")
+        logging.error(f"Error sending file: {e}")
         return flask.make_response(("Error sending file", 500))
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
-    logger.info(f"Fetching feed from URL: {url}")
+    logging.info(f"Fetching feed from URL: {url}")
     return feedparser.parse(url)
 
 
 def store_feed(feed_data: feedparser.FeedParserDict) -> Feed:
-    logger.info(f"Storing feed: {feed_data.feed.title}")
+    logging.info(f"Storing feed: {feed_data.feed.title}")
     feed = Feed(
         title=feed_data.feed.title,
         description=feed_data.feed.get("description", ""),
@@ -70,55 +68,47 @@ def store_feed(feed_data: feedparser.FeedParserDict) -> Feed:
     db.session.commit()
 
     for entry in feed_data.entries:
-        post = Post(
-            feed_id=feed.id,
-            download_url=find_audio_link(entry),
-            title=entry.title,
-            description=entry.get("description", ""),
-            release_date=(
-                datetime.datetime(*entry.published_parsed[:6])
-                if entry.get("published_parsed")
-                else None
-            ),
-            duration=int(entry.get("itunes_duration", 0)),
-        )
-        db.session.add(post)
+        db.session.add(make_post(feed, entry))
     db.session.commit()
-    logger.info(f"Feed stored with ID: {feed.id}")
+    logging.info(f"Feed stored with ID: {feed.id}")
     return feed
 
 
 def refresh_feed(feed: Feed) -> None:
-    logger.info(f"Refreshing feed with ID: {feed.id}")
+    logging.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
-    existing_posts = {post.download_url for post in feed.posts}  # type: ignore[attr-defined]
+    existing_posts = {post.guid for post in feed.posts}  # type: ignore[attr-defined]
     for entry in feed_data.entries:
-        if entry.link not in existing_posts:
-            post = Post(
-                feed_id=feed.id,
-                download_url=entry.link,
-                title=entry.title,
-                description=entry.get("description", ""),
-                release_date=(
-                    datetime.datetime(*entry.published_parsed[:6])
-                    if entry.get("published_parsed")
-                    else None
-                ),
-                duration=int(entry.get("itunes_duration", 0)),
-            )
-            db.session.add(post)
+        if entry.id not in existing_posts:
+            db.session.add(make_post(feed, entry))
     db.session.commit()
-    logger.info(f"Feed with ID: {feed.id} refreshed")
+    logging.info(f"Feed with ID: {feed.id} refreshed")
+
+
+def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
+    return Post(
+        feed_id=feed.id,
+        guid=entry.id,
+        download_url=find_audio_link(entry),
+        title=entry.title,
+        description=entry.get("description", ""),
+        release_date=(
+            datetime.datetime(*entry.published_parsed[:6])
+            if entry.get("published_parsed")
+            else None
+        ),
+        duration=int(entry.get("itunes_duration", 0)),
+    )
 
 
 def generate_feed_xml(feed: Feed) -> Any:
-    logger.info(f"Generating XML for feed with ID: {feed.id}")
+    logging.info(f"Generating XML for feed with ID: {feed.id}")
     items = []
     for post in feed.posts:  # type: ignore[attr-defined]
         items.append(
             PyRSS2Gen.RSSItem(
                 title=post.title,
-                link=url_for("main.download_post", p_id=post.id, _external=True),
+                link=url_for("main.download_post", p_guid=post.guid, _external=True),
                 description=post.description,
                 guid=PyRSS2Gen.Guid(post.download_url),
                 pubDate=(
@@ -135,7 +125,7 @@ def generate_feed_xml(feed: Feed) -> Any:
         lastBuildDate=datetime.datetime.now(),
         items=items,
     )
-    logger.info(f"XML generated for feed with ID: {feed.id}")
+    logging.info(f"XML generated for feed with ID: {feed.id}")
     return rss_feed.to_xml("utf-8")
 
 
@@ -143,13 +133,13 @@ def generate_feed_xml(feed: Feed) -> Any:
 def add_feed() -> flask.Response:
     data = request.get_json()
     if not data or "url" not in data:
-        logger.error("URL is required")
+        logging.error("URL is required")
         return flask.make_response(jsonify({"error": "URL is required"}), 400)
 
     url = data["url"]
     feed_data = fetch_feed(url)
     if "title" not in feed_data.feed:
-        logger.error("Invalid feed URL")
+        logging.error("Invalid feed URL")
         return flask.make_response(jsonify({"error": "Invalid feed URL"}), 400)
 
     feed = Feed.query.filter_by(rss_url=url).first()
@@ -158,15 +148,15 @@ def add_feed() -> flask.Response:
     else:
         feed = store_feed(feed_data)
 
-    logger.info(f"Feed added with ID: {feed.id}")
+    logging.info(f"Feed added with ID: {feed.id}")
     return flask.make_response(jsonify({"id": feed.id, "title": feed.title}), 201)
 
 
 @main_bp.route("/v1/feed/<int:f_id>", methods=["GET"])
 def get_feed(f_id: int) -> flask.Response:
-    logger.info(f"Fetching feed with ID: {f_id}")
+    logging.info(f"Fetching feed with ID: {f_id}")
     feed = Feed.query.get_or_404(f_id)
     refresh_feed(feed)
     feed_xml = generate_feed_xml(feed)
-    logger.info(f"Feed with ID: {f_id} fetched and XML generated")
+    logging.info(f"Feed with ID: {f_id} fetched and XML generated")
     return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})
