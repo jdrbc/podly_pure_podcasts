@@ -145,3 +145,15 @@ To use OpenAI API instead of local model
 ```shell
 REMOTE_WHISPER=TRUE # optional
 ```
+
+## Database Update
+
+The database should automatically configure & upgrade on launch.
+
+After data model change run:
+
+```
+pipenv run flask --app ./src/main.py db migrate -m "[change description]"
+```
+
+On next launch the database should update.
