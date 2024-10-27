@@ -19,7 +19,9 @@ main_bp = Blueprint("main", __name__)
 
 @main_bp.route("/")
 def index() -> flask.Response:
-    return flask.make_response(flask.render_template("index.html"), 200)
+    feeds = Feed.query.all()
+
+    return flask.make_response(flask.render_template("index.html", feeds=feeds), 200)
 
 
 @main_bp.route("/v1/post/<string:p_guid>", methods=["GET"])

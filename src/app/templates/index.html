@@ -56,5 +56,39 @@
         </li>
       </ul>
     </div>
+    <div style="width: 500px; margin: 0 auto">
+      <h2>Feeds</h2>
+      {% for feed in feeds %}
+      <details>
+        <summary>{{ feed.title }}</summary>
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Download</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for post in feed.posts %}
+            <tr>
+              <td>{{ post.title }}</td>
+              <td>
+                <a href="{{ url_for('main.download_post', p_guid=post.guid) }}"
+                  >Download</a
+                >
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="2">No posts available.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% else %}
+      <p>No feeds available.</p>
+      {% endfor %}
+    </div>
   </body>
 </html>
