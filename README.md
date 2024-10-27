@@ -1,5 +1,5 @@
 <h2 align="center">
-<img width="50%" src="src/static/images/logos/logo_with_text.png" />
+<img width="50%" src="src/app/static/images/logos/logo_with_text.png" />
 
 </h2>
 
