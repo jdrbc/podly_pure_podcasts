@@ -57,10 +57,22 @@
       </ul>
     </div>
     <div style="width: 500px; margin: 0 auto">
+      <h2>Add New Feed</h2>
+      <form method="post" action="{{ url_for('main.add_feed') }}">
+        <label for="feed_url">Feed URL:</label>
+        <input type="text" id="feed_url" name="url" required />
+        <button type="submit">Add Feed</button>
+      </form>
+    </div>
+    <div style="width: 500px; margin: 0 auto">
       <h2>Feeds</h2>
       {% for feed in feeds %}
       <details>
-        <summary>{{ feed.title }}</summary>
+        <summary>
+          <a href="{{ url_for('main.get_feed', f_id=feed.id) }}"
+            >{{ feed.title }}</a
+          >
+        </summary>
         <table>
           <thead>
             <tr>
