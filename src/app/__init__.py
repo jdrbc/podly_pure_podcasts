@@ -10,6 +10,10 @@ from app.logger import setup_logger
 from shared.config import get_config
 
 
+setup_logger("global_logger", "config/app.log")
+logger = logging.getLogger("global_logger")
+
+
 def setup_dirs() -> None:
     if not os.path.exists("processing"):
         os.makedirs("processing")
@@ -50,11 +54,6 @@ def create_app() -> Flask:
 db = SQLAlchemy()
 migrate = Migrate(directory="./src/migrations")
 config = get_config("config/config.yml")
-
-
-setup_logger("global_logger", "config/app.log")
-logger = logging.getLogger("global_logger")
-
 
 setup_dirs()
 print("Config:\n", json.dumps(config.redacted().model_dump(), indent=2))

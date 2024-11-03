@@ -1,4 +1,4 @@
-import logging
+from app import logger
 import os
 from typing import Any, Optional
 
@@ -19,19 +19,19 @@ def download_episode(
         if audio_link is None or not validators.url(audio_link):
             abort(404)
 
-        logging.info(f"Downloading {audio_link} into {download_path}...")
+        logger.info(f"Downloading {audio_link} into {download_path}...")
         response = requests.get(audio_link)  # pylint: disable=missing-timeout
         if response.status_code == 200:
             with open(download_path, "wb") as file:
                 file.write(response.content)
-                logging.info("Download complete.")
+                logger.info("Download complete.")
         else:
-            logging.info(
+            logger.info(
                 f"Failed to download the podcast episode, response: {response.status_code}"
             )
             return None
     else:
-        logging.info("Episode already downloaded.")
+        logger.info("Episode already downloaded.")
     return download_path
 
 
