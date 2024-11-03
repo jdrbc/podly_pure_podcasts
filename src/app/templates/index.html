@@ -72,6 +72,9 @@
           <a href="{{ url_for('main.get_feed', f_id=feed.id) }}"
             >{{ feed.title }}</a
           >
+          <button id="refresh-button" onclick="refresh('{{feed.id}}')">
+            Refresh
+          </button>
         </summary>
         <table>
           <thead>
@@ -102,5 +105,13 @@
       <p>No feeds available.</p>
       {% endfor %}
     </div>
+
+    <script>
+      function refresh(feedId) {
+        fetch("{{ url_for('main.get_feed', f_id='0')}}" + feedId)
+          .then((_) => window.location.reload())
+          .catch((error) => console.error("Error:", error));
+      }
+    </script>
   </body>
 </html>

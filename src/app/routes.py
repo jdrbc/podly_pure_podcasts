@@ -81,6 +81,7 @@ def refresh_feed(feed: Feed) -> None:
     existing_posts = {post.guid for post in feed.posts}  # type: ignore[attr-defined]
     for entry in feed_data.entries:
         if entry.id not in existing_posts:
+            logger.debug(f"found new podcast: {entry.title}")
             db.session.add(make_post(feed, entry))
     db.session.commit()
     logger.info(f"Feed with ID: {feed.id} refreshed")
