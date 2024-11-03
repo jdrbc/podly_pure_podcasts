@@ -9,7 +9,6 @@ from flask_sqlalchemy import SQLAlchemy
 from app.logger import setup_logger
 from shared.config import get_config
 
-
 setup_logger("global_logger", "config/app.log")
 logger = logging.getLogger("global_logger")
 

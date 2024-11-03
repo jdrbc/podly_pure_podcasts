@@ -1,5 +1,4 @@
 import datetime
-from app import logger
 import re
 from pathlib import Path
 from typing import Any
@@ -9,7 +8,7 @@ import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
 from flask import Blueprint, jsonify, request, send_file, url_for
 
-from app import config, db
+from app import config, db, logger
 from app.models import Feed, Post
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 from shared.podcast_downloader import download_episode, find_audio_link

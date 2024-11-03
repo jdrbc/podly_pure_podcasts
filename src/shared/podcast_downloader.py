@@ -1,10 +1,12 @@
-from app import logger
+import logging
 import os
 from typing import Any, Optional
 
 import requests
 import validators
 from flask import abort
+
+logger = logging.getLogger(__name__)
 
 DOWNLOAD_DIR = "in"
 

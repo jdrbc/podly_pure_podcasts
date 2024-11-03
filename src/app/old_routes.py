@@ -1,5 +1,4 @@
 import datetime
-from app import logger
 import re
 import urllib.parse
 from pathlib import Path
@@ -11,7 +10,7 @@ import PyRSS2Gen  # type: ignore[import-untyped]
 import validators
 from flask import Blueprint, abort, request, send_file, url_for
 
-from app import config
+from app import config, logger
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 from shared.podcast_downloader import download_episode, find_audio_link
 
