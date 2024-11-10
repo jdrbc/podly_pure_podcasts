@@ -56,5 +56,62 @@
         </li>
       </ul>
     </div>
+    <div style="width: 500px; margin: 0 auto">
+      <h2>Add New Feed</h2>
+      <form method="post" action="{{ url_for('main.add_feed') }}">
+        <label for="feed_url">Feed URL:</label>
+        <input type="text" id="feed_url" name="url" required />
+        <button type="submit">Add Feed</button>
+      </form>
+    </div>
+    <div style="width: 500px; margin: 0 auto">
+      <h2>Feeds</h2>
+      {% for feed in feeds %}
+      <details>
+        <summary>
+          <a href="{{ url_for('main.get_feed', f_id=feed.id) }}"
+            >{{ feed.title }}</a
+          >
+          <button id="refresh-button" onclick="refresh('{{feed.id}}')">
+            Refresh
+          </button>
+        </summary>
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Download</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for post in feed.posts %}
+            <tr>
+              <td>{{ post.title }}</td>
+              <td>
+                <a href="{{ url_for('main.download_post', p_guid=post.guid) }}"
+                  >Download</a
+                >
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="2">No posts available.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% else %}
+      <p>No feeds available.</p>
+      {% endfor %}
+    </div>
+
+    <script>
+      function refresh(feedId) {
+        fetch("{{ url_for('main.get_feed', f_id='0')}}" + feedId)
+          .then((_) => window.location.reload())
+          .catch((error) => console.error("Error:", error));
+      }
+    </script>
   </body>
 </html>

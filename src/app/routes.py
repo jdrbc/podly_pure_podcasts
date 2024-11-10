@@ -1,5 +1,4 @@
 import datetime
-import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -9,7 +8,7 @@ import flask
 import PyRSS2Gen  # type: ignore[import-untyped]
 from flask import Blueprint, jsonify, request, send_file, url_for
 
-from app import config, db
+from app import config, db, logger
 from app.models import Feed, Post
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 from shared.podcast_downloader import download_episode, find_audio_link
@@ -19,7 +18,9 @@ main_bp = Blueprint("main", __name__)
 
 @main_bp.route("/")
 def index() -> flask.Response:
-    return flask.make_response(flask.render_template("index.html"), 200)
+    feeds = Feed.query.all()
+
+    return flask.make_response(flask.render_template("index.html", feeds=feeds), 200)
 
 
 @main_bp.route("/v1/post/<string:p_guid>", methods=["GET"])
@@ -47,17 +48,17 @@ def download_post(p_guid: str) -> flask.Response:
     try:
         return send_file(path_or_file=Path(output_path).resolve())
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logging.error(f"Error sending file: {e}")
+        logger.error(f"Error sending file: {e}")
         return flask.make_response(("Error sending file", 500))
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
-    logging.info(f"Fetching feed from URL: {url}")
+    logger.info(f"Fetching feed from URL: {url}")
     return feedparser.parse(url)
 
 
 def store_feed(feed_data: feedparser.FeedParserDict) -> Feed:
-    logging.info(f"Storing feed: {feed_data.feed.title}")
+    logger.info(f"Storing feed: {feed_data.feed.title}")
     feed = Feed(
         title=feed_data.feed.title,
         description=feed_data.feed.get("description", ""),
@@ -70,19 +71,20 @@ def store_feed(feed_data: feedparser.FeedParserDict) -> Feed:
     for entry in feed_data.entries:
         db.session.add(make_post(feed, entry))
     db.session.commit()
-    logging.info(f"Feed stored with ID: {feed.id}")
+    logger.info(f"Feed stored with ID: {feed.id}")
     return feed
 
 
 def refresh_feed(feed: Feed) -> None:
-    logging.info(f"Refreshing feed with ID: {feed.id}")
+    logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
     existing_posts = {post.guid for post in feed.posts}  # type: ignore[attr-defined]
     for entry in feed_data.entries:
         if entry.id not in existing_posts:
+            logger.debug(f"found new podcast: {entry.title}")
             db.session.add(make_post(feed, entry))
     db.session.commit()
-    logging.info(f"Feed with ID: {feed.id} refreshed")
+    logger.info(f"Feed with ID: {feed.id} refreshed")
 
 
 def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
@@ -102,7 +104,7 @@ def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
 
 
 def generate_feed_xml(feed: Feed) -> Any:
-    logging.info(f"Generating XML for feed with ID: {feed.id}")
+    logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = []
     for post in feed.posts:  # type: ignore[attr-defined]
         items.append(
@@ -125,21 +127,22 @@ def generate_feed_xml(feed: Feed) -> Any:
         lastBuildDate=datetime.datetime.now(),
         items=items,
     )
-    logging.info(f"XML generated for feed with ID: {feed.id}")
+    logger.info(f"XML generated for feed with ID: {feed.id}")
     return rss_feed.to_xml("utf-8")
 
 
 @main_bp.route("/v1/feed", methods=["POST"])
 def add_feed() -> flask.Response:
-    data = request.get_json()
+    data = request.form
+
     if not data or "url" not in data:
-        logging.error("URL is required")
+        logger.error("URL is required")
         return flask.make_response(jsonify({"error": "URL is required"}), 400)
 
     url = data["url"]
     feed_data = fetch_feed(url)
     if "title" not in feed_data.feed:
-        logging.error("Invalid feed URL")
+        logger.error("Invalid feed URL")
         return flask.make_response(jsonify({"error": "Invalid feed URL"}), 400)
 
     feed = Feed.query.filter_by(rss_url=url).first()
@@ -148,15 +151,15 @@ def add_feed() -> flask.Response:
     else:
         feed = store_feed(feed_data)
 
-    logging.info(f"Feed added with ID: {feed.id}")
+    logger.info(f"Feed added with ID: {feed.id}")
     return flask.make_response(jsonify({"id": feed.id, "title": feed.title}), 201)
 
 
 @main_bp.route("/v1/feed/<int:f_id>", methods=["GET"])
 def get_feed(f_id: int) -> flask.Response:
-    logging.info(f"Fetching feed with ID: {f_id}")
+    logger.info(f"Fetching feed with ID: {f_id}")
     feed = Feed.query.get_or_404(f_id)
     refresh_feed(feed)
     feed_xml = generate_feed_xml(feed)
-    logging.info(f"Feed with ID: {f_id} fetched and XML generated")
+    logger.info(f"Feed with ID: {f_id} fetched and XML generated")
     return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})

@@ -1,5 +1,4 @@
 import datetime
-import logging
 import re
 import urllib.parse
 from pathlib import Path
@@ -11,7 +10,7 @@ import PyRSS2Gen  # type: ignore[import-untyped]
 import validators
 from flask import Blueprint, abort, request, send_file, url_for
 
-from app import config
+from app import config, logger
 from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
 from shared.podcast_downloader import download_episode, find_audio_link
 
@@ -26,7 +25,7 @@ PARAM_SEP = "PODLYPARAMSEP"  # had some issues with ampersands in the URL
 def download(episode_name: str) -> flask.Response:
     episode_name = urllib.parse.unquote(episode_name)
     podcast_title, episode_url = get_args(request.url)
-    logging.info(f"Downloading episode {episode_name} from podcast {podcast_title}...")
+    logger.info(f"Downloading episode {episode_name} from podcast {podcast_title}...")
     if episode_url is None or not validators.url(episode_url):
         return flask.make_response(("Invalid episode URL", 404))
 
@@ -42,7 +41,7 @@ def download(episode_name: str) -> flask.Response:
     try:
         return send_file(path_or_file=Path(output_path).resolve())
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logging.error(f"Error sending file: {e}")
+        logger.error(f"Error sending file: {e}")
         return flask.make_response(("Error sending file", 500))
 
 
@@ -63,7 +62,7 @@ def fix_url(url: str) -> str:
 # kept for backwards compatibility,
 @old_bp.get("/<path:podcast_rss>")
 def rss(podcast_rss: str) -> flask.Response:
-    logging.info(f"getting rss for {podcast_rss}...")
+    logger.info(f"getting rss for {podcast_rss}...")
     if podcast_rss == "favicon.ico":
         abort(404)
     # short URL for user favorite podcast

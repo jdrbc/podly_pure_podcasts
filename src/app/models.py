@@ -9,7 +9,9 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     author = db.Column(db.Text)
     rss_url = db.Column(db.Text, unique=True, nullable=False)
 
-    posts = db.relationship("Post", backref="feed", lazy=True)
+    posts = db.relationship(
+        "Post", backref="feed", lazy=True, order_by="Post.release_date.desc()"
+    )
 
     def __repr__(self) -> str:
         return f"<Feed {self.title}>"
