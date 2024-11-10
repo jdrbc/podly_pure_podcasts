@@ -133,10 +133,7 @@ def generate_feed_xml(feed: Feed) -> Any:
 
 @main_bp.route("/v1/feed", methods=["POST"])
 def add_feed() -> flask.Response:
-    if request.is_json:
-        data = request.get_json()
-    else:
-        data = request.form
+    data = request.form
 
     if not data or "url" not in data:
         logger.error("URL is required")
