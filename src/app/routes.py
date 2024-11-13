@@ -29,6 +29,9 @@ def download_post(p_guid: str) -> flask.Response:
     if post is None:
         return flask.make_response(("Post not found", 404))
 
+    if config.require_episode_whitelist and not post.whitelisted:
+        return flask.make_response(("Episode not whitelisted", 403))
+
     # Download the episode
     download_path = download_episode(
         post.feed.title,

@@ -26,6 +26,7 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     description = db.Column(db.Text)
     release_date = db.Column(db.Date)
     duration = db.Column(db.Integer)
+    whitelisted = db.Column(db.Boolean, default=False, nullable=False)
 
     transcript = db.relationship("Transcript", uselist=False, backref="post")
 
