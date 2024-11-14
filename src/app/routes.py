@@ -22,6 +22,7 @@ def index() -> flask.Response:
 
     return flask.make_response(flask.render_template("index.html", feeds=feeds), 200)
 
+
 @main_bp.route("/v1/whitelist_post/<string:p_guid>", methods=["GET"])
 def whitelist_post(p_guid: str) -> flask.Response:
     post = Post.query.filter_by(guid=p_guid).first()
@@ -32,6 +33,7 @@ def whitelist_post(p_guid: str) -> flask.Response:
     db.session.commit()
 
     return flask.make_response(("Post has been whitelisted", 200))
+
 
 @main_bp.route("/v1/post/<string:p_guid>", methods=["GET"])
 def download_post(p_guid: str) -> flask.Response:
