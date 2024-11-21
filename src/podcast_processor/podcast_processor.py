@@ -7,7 +7,9 @@ from typing import Any, Dict, List, Tuple
 
 import yaml
 from jinja2 import Template
-from openai import OpenAI
+from openai import OpenAI, APIError
+import time
+from typing import Optional
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
 from podcast_processor.model_output import clean_and_parse_model_output
@@ -191,18 +193,19 @@ class PodcastProcessor:
     ) -> None:
         self.logger.info(f"Identifying ad segments for {task.audio_path}")
         self.logger.info(f"processing {len(transcript_segments)} transcript segments")
+
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
             start = i
             end = min(i + num_segments_per_prompt, len(transcript_segments))
 
-            target_dir = f"{classification_path}/{transcript_segments[start].start}_{transcript_segments[end-1].end}"  # pylint: disable=line-too-long
-            if not os.path.exists(target_dir):
-                os.makedirs(target_dir)
-            else:
-                self.logger.info(
-                    f"Responses for segments {start} to {end} already received"
-                )
+            target_dir = f"{classification_path}/{transcript_segments[start].start}_{transcript_segments[end-1].end}"
+            os.makedirs(target_dir, exist_ok=True)
+
+            # Check if we already have a valid identification
+            if os.path.exists(f"{target_dir}/identification.txt"):
+                self.logger.info(f"Responses for segments {start} to {end} already received")
                 continue
+
             excerpts = [
                 f"[{segment.start}] {segment.text}"
                 for segment in transcript_segments[start:end]
@@ -219,28 +222,70 @@ class PodcastProcessor:
                 podcast_topic=task.podcast_description,
                 transcript="\n".join(excerpts),
             )
-            identification = self.call_model(model, system_prompt, user_prompt)
-            with open(f"{target_dir}/identification.txt", "w") as f:
-                f.write(identification)
-            with open(f"{target_dir}/prompt.txt", "w") as f:
-                f.write(user_prompt)
 
-    def call_model(self, model: str, system_prompt: str, user_prompt: str) -> str:
-        # log the request
-        self.logger.info(f"Calling model: {model}")
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=self.config.openai_max_tokens,
-            timeout=self.config.openai_timeout,
-        )
+            # Create a temporary file to indicate processing is in progress
+            with open(f"{target_dir}/.in_progress", "w") as f:
+                f.write("Processing")
 
-        content = response.choices[0].message.content
-        assert content is not None
-        return content
+            try:
+                identification = self.call_model(model, system_prompt, user_prompt)
+                if identification:
+                    with open(f"{target_dir}/identification.txt", "w") as f:
+                        f.write(identification)
+                    with open(f"{target_dir}/prompt.txt", "w") as f:
+                        f.write(user_prompt)
+                else:
+                    self.logger.error(f"Failed to get identification for segments {start} to {end}")
+                    # Create an empty identification file to prevent endless retries
+                    with open(f"{target_dir}/identification.txt", "w") as f:
+                        f.write('{"ad_segments": [], "confidence": 0.0}')
+            finally:
+                # Clean up the in_progress file
+                if os.path.exists(f"{target_dir}/.in_progress"):
+                    os.remove(f"{target_dir}/.in_progress")
+
+    def call_model(self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3) -> Optional[str]:
+        attempt = 0
+        last_error = None
+
+        while attempt < max_retries:
+            try:
+                self.logger.info(f"Calling model: {model} (attempt {attempt + 1}/{max_retries})")
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=self.config.openai_max_tokens,
+                    timeout=self.config.openai_timeout,
+                )
+
+                content = response.choices[0].message.content
+                assert content is not None
+                return content
+
+            except APIError as e:
+                last_error = e
+                self.logger.error(f"OpenAI API error (attempt {attempt + 1}): {e}")
+                if e.status_code == 500:
+                    # Add exponential backoff for retries
+                    wait_time = (2 ** attempt) * 1  # 1, 2, 4 seconds
+                    time.sleep(wait_time)
+                    attempt += 1
+                    continue
+                else:
+                    # For non-500 errors, raise immediately
+                    raise
+            except Exception as e:
+                self.logger.error(f"Unexpected error calling model: {e}")
+                raise
+
+        # If we get here, we've exhausted our retries
+        self.logger.error(f"Failed to call model after {max_retries} attempts")
+        if last_error:
+            raise last_error
+        return None
 
     def get_ad_segments(
         self, segments: List[Segment], classification_path: str
