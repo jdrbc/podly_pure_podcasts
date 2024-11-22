@@ -3,13 +3,12 @@ import logging
 import os
 import pickle
 import threading
-from typing import Any, Dict, List, Tuple
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 from jinja2 import Template
-from openai import OpenAI, APIError
-import time
-from typing import Optional
+from openai import APIError, OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
 from podcast_processor.model_output import clean_and_parse_model_output
@@ -198,12 +197,19 @@ class PodcastProcessor:
             start = i
             end = min(i + num_segments_per_prompt, len(transcript_segments))
 
-            target_dir = f"{classification_path}/{transcript_segments[start].start}_{transcript_segments[end-1].end}"
+            target_dir = (
+                f"{classification_path}/"
+                f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
+            )
+            identification_path = f"{target_dir}/identification.txt"
+            prompt_path = f"{target_dir}/prompt.txt"
             os.makedirs(target_dir, exist_ok=True)
 
             # Check if we already have a valid identification
             if os.path.exists(f"{target_dir}/identification.txt"):
-                self.logger.info(f"Responses for segments {start} to {end} already received")
+                self.logger.info(
+                    f"Responses for segments {start} to {end} already received"
+                )
                 continue
 
             excerpts = [
@@ -223,19 +229,21 @@ class PodcastProcessor:
                 transcript="\n".join(excerpts),
             )
 
-            # Create a temporary file to indicate processing is in progress
-            with open(f"{target_dir}/.in_progress", "w") as f:
-                f.write("Processing")
-
             try:
+                # Create a temporary file to indicate processing is in progress
+                with open(f"{target_dir}/.in_progress", "w") as f:
+                    f.write("Processing")
+
                 identification = self.call_model(model, system_prompt, user_prompt)
                 if identification:
-                    with open(f"{target_dir}/identification.txt", "w") as f:
+                    with open(identification_path, "w") as f:
                         f.write(identification)
-                    with open(f"{target_dir}/prompt.txt", "w") as f:
+                    with open(prompt_path, "w") as f:
                         f.write(user_prompt)
                 else:
-                    self.logger.error(f"Failed to get identification for segments {start} to {end}")
+                    self.logger.error(
+                        f"Failed to get identification for segments {start} to {end}"
+                    )
                     # Create an empty identification file to prevent endless retries
                     with open(f"{target_dir}/identification.txt", "w") as f:
                         f.write('{"ad_segments": [], "confidence": 0.0}')
@@ -244,13 +252,17 @@ class PodcastProcessor:
                 if os.path.exists(f"{target_dir}/.in_progress"):
                     os.remove(f"{target_dir}/.in_progress")
 
-    def call_model(self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3) -> Optional[str]:
+    def call_model(
+        self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3
+    ) -> Optional[str]:
         attempt = 0
         last_error = None
 
         while attempt < max_retries:
             try:
-                self.logger.info(f"Calling model: {model} (attempt {attempt + 1}/{max_retries})")
+                self.logger.info(
+                    f"Calling model: {model} (attempt {attempt + 1}/{max_retries})"
+                )
                 response = self.client.chat.completions.create(
                     model=model,
                     messages=[
@@ -268,15 +280,14 @@ class PodcastProcessor:
             except APIError as e:
                 last_error = e
                 self.logger.error(f"OpenAI API error (attempt {attempt + 1}): {e}")
-                if e.status_code == 500:
+                if getattr(e, "code", None) == 500:
                     # Add exponential backoff for retries
-                    wait_time = (2 ** attempt) * 1  # 1, 2, 4 seconds
+                    wait_time = (2**attempt) * 1  # 1, 2, 4 seconds
                     time.sleep(wait_time)
                     attempt += 1
                     continue
-                else:
-                    # For non-500 errors, raise immediately
-                    raise
+                # For non-500 errors, raise immediately
+                raise
             except Exception as e:
                 self.logger.error(f"Unexpected error calling model: {e}")
                 raise

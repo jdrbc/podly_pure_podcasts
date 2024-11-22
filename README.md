@@ -162,3 +162,46 @@ pipenv run flask --app ./src/main.py db migrate -m "[change description]"
 ```
 
 On next launch the database should update.
+
+## Contributing
+
+We welcome contributions to Podly! Here's how you can help:
+
+### Development Setup
+
+1. Fork the repository
+2. Clone your fork:
+   ```bash
+   git clone https://github.com/yourusername/podly.git
+   ```
+3. Create a new branch for your feature:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+### Running Tests
+
+Before submitting a pull request, you can run the same tests that run in CI locally using:
+
+```bash
+scripts/ci.sh
+```
+
+This will run all the necessary checks including:
+- Type checking with mypy
+- Code formatting checks
+- Unit tests
+- Linting
+
+### Pull Request Process
+
+1. Ensure all tests pass locally
+2. Update the documentation if needed
+3. Create a Pull Request with a clear description of the changes
+4. Link any related issues
+
+### Code Style
+
+- We use black for code formatting
+- Type hints are required for all new code
+- Follow existing patterns in the codebase
