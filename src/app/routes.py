@@ -1,5 +1,4 @@
 import datetime
-import re
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +9,7 @@ from flask import Blueprint, jsonify, request, send_file, url_for
 
 from app import config, db, logger
 from app.models import Feed, Post
-from podcast_processor.podcast_processor import PodcastProcessor, PodcastProcessorTask
+from podcast_processor.podcast_processor import PodcastProcessor
 from shared.podcast_downloader import download_episode, find_audio_link
 
 main_bp = Blueprint("main", __name__)
@@ -20,28 +19,55 @@ main_bp = Blueprint("main", __name__)
 def index() -> flask.Response:
     feeds = Feed.query.all()
 
-    return flask.make_response(flask.render_template("index.html", feeds=feeds), 200)
+    return flask.make_response(
+        flask.render_template("index.html", feeds=feeds, config=config), 200
+    )
 
 
-@main_bp.route("/v1/post/<string:p_guid>", methods=["GET"])
+def get_transcript(p_guid: str) -> flask.Response:
+    post = Post.query.filter_by(guid=p_guid).first()
+    if post is None:
+        return flask.make_response(("Post not found", 404))
+    transcript_content = post.transcript.get_human_readable_content().replace(
+        "\n", "<br/>"
+    )
+    return flask.make_response(transcript_content, 200)
+
+
+@main_bp.route("/whitelist_post/<string:p_guid>", methods=["GET"])
+def whitelist_post(p_guid: str) -> flask.Response:
+    logger.info(f"Whitelisting post with GUID: {p_guid}")
+    post = Post.query.filter_by(guid=p_guid).first()
+    if post is None:
+        return flask.make_response(("Post not found", 404))
+
+    post.whitelisted = not post.whitelisted
+    db.session.commit()
+
+    return index()
+
+
+@main_bp.route("/post/<string:p_guid>", methods=["GET"])
 def download_post(p_guid: str) -> flask.Response:
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(("Post not found", 404))
 
+    if config.require_episode_whitelist and not post.whitelisted:
+        return flask.make_response(("Episode not whitelisted", 403))
+
     # Download the episode
-    download_path = download_episode(
-        post.feed.title,
-        re.sub(r"[^a-zA-Z0-9\s]", "", post.title) + ".mp3",
-        post.download_url,
-    )
+    download_path = download_episode(post)
+
     if download_path is None:
         return flask.make_response(("Failed to download episode", 500))
 
+    post.unprocessed_audio_path = download_path
+    db.session.commit()
+
     # Process the episode
-    task = PodcastProcessorTask(post.title, download_path, post.title)
     processor = PodcastProcessor(config)
-    output_path = processor.process(task)
+    output_path = processor.process(post)
     if output_path is None:
         return flask.make_response(("Failed to process episode", 500))
 
@@ -131,7 +157,7 @@ def generate_feed_xml(feed: Feed) -> Any:
     return rss_feed.to_xml("utf-8")
 
 
-@main_bp.route("/v1/feed", methods=["POST"])
+@main_bp.route("/feed", methods=["POST"])
 def add_feed() -> flask.Response:
     data = request.form
 
@@ -155,7 +181,7 @@ def add_feed() -> flask.Response:
     return flask.make_response(jsonify({"id": feed.id, "title": feed.title}), 201)
 
 
-@main_bp.route("/v1/feed/<int:f_id>", methods=["GET"])
+@main_bp.route("/feed/<int:f_id>", methods=["GET"])
 def get_feed(f_id: int) -> flask.Response:
     logger.info(f"Fetching feed with ID: {f_id}")
     feed = Feed.query.get_or_404(f_id)

@@ -34,6 +34,7 @@ class Config(BaseModel):
     server_port: int = 5001
     threads: int = 1
     whisper_model: str = "base"
+    require_episode_whitelist: bool = False
 
     def redacted(self) -> Config:
         return self.model_copy(

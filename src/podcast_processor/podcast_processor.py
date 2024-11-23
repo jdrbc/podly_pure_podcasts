@@ -1,15 +1,17 @@
 import gc
+import json
 import logging
 import os
-import pickle
 import threading
-from typing import Any, Dict, List, Tuple
+import time
+from typing import Dict, List, Optional, Tuple, cast
 
-import yaml
 from jinja2 import Template
-from openai import OpenAI
+from openai import APIError, OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
+from app import db
+from app.models import Post, Transcript
 from podcast_processor.model_output import clean_and_parse_model_output
 from shared.config import Config
 
@@ -21,20 +23,8 @@ from .transcribe import (
 )
 
 
-class PodcastProcessorTask:
-    def __init__(self, podcast_title: str, audio_path: str, podcast_description: str):
-        self.podcast_title = podcast_title
-        self.audio_path = audio_path
-        self.podcast_description = podcast_description
-
-    def pickle_id(self) -> str:
-        return f"{self.podcast_title}_{self.audio_path}"
-
-    def __str__(self) -> str:
-        return f"ProcessTask: {self.audio_path}"
-
-    def get_output_path(self) -> str:
-        return f"srv/{self.podcast_title}/{self.audio_path.split('/')[-1]}"
+def get_post_processed_audio_path(post: Post) -> str:
+    return f"srv/{post.feed.title}/{post.unprocessed_audio_path.split('/')[-1]}"
 
 
 class PodcastProcessor:
@@ -52,7 +42,6 @@ class PodcastProcessor:
         self.processing_dir = processing_dir
         self.output_dir = "srv"
         self.config: Config = config
-        self.pickle_transcripts: Dict[str, Any] = self.init_pickle_transcripts()
         self.client = OpenAI(
             base_url=self.config.openai_base_url,
             api_key=self.config.openai_api_key,
@@ -67,35 +56,21 @@ class PodcastProcessor:
                 self.logger, local_whisper_model_name
             )
 
-    def init_pickle_transcripts(self) -> Any:
-        pickle_path = "transcripts.pickle"
-        if not os.path.exists(pickle_path):
-            with open(pickle_path, "wb") as f:
-                pickle.dump({}, f)
-                return {}
-        else:
-            with open(pickle_path, "rb") as f:
-                return pickle.load(f)
-
-    def update_pickle_transcripts(
-        self, task: PodcastProcessorTask, result: List[Segment]
-    ) -> None:
-        with open("transcripts.pickle", "wb") as f:
-            self.pickle_transcripts[task.pickle_id()] = result
-            pickle.dump(self.pickle_transcripts, f)
-
-    def process(self, task: PodcastProcessorTask) -> str:
+    def process(self, post: Post) -> str:
+        processed_audio_path = get_post_processed_audio_path(post)
         with PodcastProcessor.lock_lock:
-            if task.get_output_path() not in PodcastProcessor.locks:
-                PodcastProcessor.locks[task.get_output_path()] = threading.Lock()
+            if processed_audio_path not in PodcastProcessor.locks:
+                PodcastProcessor.locks[processed_audio_path] = threading.Lock()
 
-        with PodcastProcessor.locks[task.get_output_path()]:
-            if os.path.exists(task.get_output_path()):
-                self.logger.info(f"Audio already processed: {task}")
-                return task.get_output_path()
-            transcript_dir, classification_dir, final_audio_path = self.make_dirs(task)
+        with PodcastProcessor.locks[processed_audio_path]:
+            if os.path.exists(processed_audio_path):
+                self.logger.info(f"Audio already processed: {post}")
+                return processed_audio_path
+            transcript_dir, classification_dir = self.make_dirs(
+                post, processed_audio_path
+            )
             transcript_segments = self.transcribe(
-                task,
+                post,
                 transcript_dir,
             )
             user_prompt_template = self.get_user_prompt_template(
@@ -110,11 +85,11 @@ class PodcastProcessor:
                 system_prompt=system_prompt,
                 user_prompt_template=user_prompt_template,
                 num_segments_per_prompt=self.config.processing.num_segments_to_input_to_prompt,
-                task=task,
+                post=post,
                 classification_path=classification_dir,
             )
             ad_segments = self.get_ad_segments(transcript_segments, classification_dir)
-            audio = AudioSegment.from_file(task.audio_path)
+            audio = AudioSegment.from_file(post.unprocessed_audio_path)
             assert isinstance(audio, AudioSegment)
             self.create_new_audio_without_ads(
                 audio=audio,
@@ -122,53 +97,56 @@ class PodcastProcessor:
                 min_ad_segment_length_seconds=self.config.output.min_ad_segment_length_seconds,
                 min_ad_segement_separation_seconds=self.config.output.min_ad_segement_separation_seconds,  # pylint: disable=line-too-long
                 fade_ms=self.config.output.fade_ms,
-            ).export(
-                f'{final_audio_path}/{task.audio_path.split("/")[-1]}', format="mp3"
-            )
-            self.logger.info(f"Processing task: {task} complete")
-            return task.get_output_path()
+            ).export(processed_audio_path, format="mp3")
+            self.logger.info(f"Processing podcast: {post} complete")
+            post.processed_audio_path = processed_audio_path
+            db.session.commit()
 
-    def make_dirs(self, task: PodcastProcessorTask) -> Tuple[str, str, str]:
-        audio_processing_dir = f'{self.processing_dir}/{task.podcast_title}/{task.audio_path.split("/")[-1]}'  # pylint: disable=line-too-long
+            return processed_audio_path
+
+    def make_dirs(self, post: Post, processed_audio_path: str) -> Tuple[str, str]:
+        audio_processing_dir = f'{self.processing_dir}/{post.feed.title}/{post.unprocessed_audio_path.split("/")[-1]}'  # pylint: disable=line-too-long
         transcript_dir = f"{audio_processing_dir}/transcription"
         classification_dir = f"{audio_processing_dir}/classification"
-        final_audio_path = f"{self.output_dir}/{task.podcast_title}"
-        if not os.path.exists(final_audio_path):
-            os.makedirs(final_audio_path)
+        processed_audio_dir = os.path.dirname(processed_audio_path)
+        if not os.path.exists(processed_audio_dir):
+            os.makedirs(processed_audio_dir)
         if not os.path.exists(audio_processing_dir):
             os.makedirs(audio_processing_dir)
         if not os.path.exists(transcript_dir):
             os.makedirs(transcript_dir)
         if not os.path.exists(classification_dir):
             os.makedirs(classification_dir)
-        return transcript_dir, classification_dir, final_audio_path
+        return transcript_dir, classification_dir
 
     def transcribe(
         self,
-        task: PodcastProcessorTask,
+        post: Post,
         transcript_file_path: str,
     ) -> List[Segment]:
         self.logger.info(
-            f"Transcribing audio from {task.audio_path} into {transcript_file_path}"
+            f"Transcribing audio from {post.unprocessed_audio_path} into {transcript_file_path}"
         )
-        # check pickle
-        if task.pickle_id() in self.pickle_transcripts:
-            self.logger.info("Transcript already transcribed")
-            transcript: List[Segment] = self.pickle_transcripts[task.pickle_id()]
-            return transcript
+        # check db for transcript
+        transcript = Transcript.query.filter_by(post_id=post.id).first()
+        if transcript is not None:
+            return cast(List[Segment], transcript.get_segments())
 
-        segments = self.transcriber.transcribe(task.audio_path)
+        segments = self.transcriber.transcribe(post.unprocessed_audio_path)
 
         for segment in segments:
             segment.start = round(segment.start, 1)
             segment.end = round(segment.end, 1)
 
-        with open(transcript_file_path + "/transcript.txt", "w") as f:
-            for segment in segments:
-                f.write(f"{segment.start}{segment.text}\n")
-
-        self.update_pickle_transcripts(task, segments)
+        self.update_transcripts(post, segments)
         return segments
+
+    def update_transcripts(self, post: Post, result: List[Segment]) -> None:
+        post.transcript = Transcript(
+            post_id=post.id,
+            content=json.dumps([json.dumps(segment.to_dict()) for segment in result]),
+        )
+        db.session.commit()
 
     def get_system_prompt(self, system_prompt_path: str) -> str:
         with open(system_prompt_path, "r") as f:
@@ -186,23 +164,31 @@ class PodcastProcessor:
         system_prompt: str,
         user_prompt_template: Template,
         num_segments_per_prompt: int,
-        task: PodcastProcessorTask,
+        post: Post,
         classification_path: str,
     ) -> None:
-        self.logger.info(f"Identifying ad segments for {task.audio_path}")
+        self.logger.info(f"Identifying ad segments for {post.unprocessed_audio_path}")
         self.logger.info(f"processing {len(transcript_segments)} transcript segments")
+
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
             start = i
             end = min(i + num_segments_per_prompt, len(transcript_segments))
 
-            target_dir = f"{classification_path}/{transcript_segments[start].start}_{transcript_segments[end-1].end}"  # pylint: disable=line-too-long
-            if not os.path.exists(target_dir):
-                os.makedirs(target_dir)
-            else:
+            target_dir = (
+                f"{classification_path}/"
+                f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
+            )
+            identification_path = f"{target_dir}/identification.txt"
+            prompt_path = f"{target_dir}/prompt.txt"
+            os.makedirs(target_dir, exist_ok=True)
+
+            # Check if we already have a valid identification
+            if os.path.exists(f"{target_dir}/identification.txt"):
                 self.logger.info(
                     f"Responses for segments {start} to {end} already received"
                 )
                 continue
+
             excerpts = [
                 f"[{segment.start}] {segment.text}"
                 for segment in transcript_segments[start:end]
@@ -215,32 +201,79 @@ class PodcastProcessor:
 
             self.logger.info(f"Calling {model}")
             user_prompt = user_prompt_template.render(
-                podcast_title=task.podcast_title,
-                podcast_topic=task.podcast_description,
+                podcast_title=post.title,
+                podcast_topic=post.description,
                 transcript="\n".join(excerpts),
             )
-            identification = self.call_model(model, system_prompt, user_prompt)
-            with open(f"{target_dir}/identification.txt", "w") as f:
-                f.write(identification)
-            with open(f"{target_dir}/prompt.txt", "w") as f:
-                f.write(user_prompt)
 
-    def call_model(self, model: str, system_prompt: str, user_prompt: str) -> str:
-        # log the request
-        self.logger.info(f"Calling model: {model}")
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=self.config.openai_max_tokens,
-            timeout=self.config.openai_timeout,
-        )
+            try:
+                # Create a temporary file to indicate processing is in progress
+                with open(f"{target_dir}/.in_progress", "w") as f:
+                    f.write("Processing")
 
-        content = response.choices[0].message.content
-        assert content is not None
-        return content
+                identification = self.call_model(model, system_prompt, user_prompt)
+                if identification:
+                    with open(identification_path, "w") as f:
+                        f.write(identification)
+                    with open(prompt_path, "w") as f:
+                        f.write(user_prompt)
+                else:
+                    self.logger.error(
+                        f"Failed to get identification for segments {start} to {end}"
+                    )
+                    # Create an empty identification file to prevent endless retries
+                    with open(f"{target_dir}/identification.txt", "w") as f:
+                        f.write('{"ad_segments": [], "confidence": 0.0}')
+            finally:
+                # Clean up the in_progress file
+                if os.path.exists(f"{target_dir}/.in_progress"):
+                    os.remove(f"{target_dir}/.in_progress")
+
+    def call_model(
+        self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3
+    ) -> Optional[str]:
+        attempt = 0
+        last_error = None
+
+        while attempt < max_retries:
+            try:
+                self.logger.info(
+                    f"Calling model: {model} (attempt {attempt + 1}/{max_retries})"
+                )
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=self.config.openai_max_tokens,
+                    timeout=self.config.openai_timeout,
+                )
+
+                content = response.choices[0].message.content
+                assert content is not None
+                return content
+
+            except APIError as e:
+                last_error = e
+                self.logger.error(f"OpenAI API error (attempt {attempt + 1}): {e}")
+                if getattr(e, "code", None) == 500:
+                    # Add exponential backoff for retries
+                    wait_time = (2**attempt) * 1  # 1, 2, 4 seconds
+                    time.sleep(wait_time)
+                    attempt += 1
+                    continue
+                # For non-500 errors, raise immediately
+                raise
+            except Exception as e:
+                self.logger.error(f"Unexpected error calling model: {e}")
+                raise
+
+        # If we get here, we've exhausted our retries
+        self.logger.error(f"Failed to call model after {max_retries} attempts")
+        if last_error:
+            raise last_error
+        return None
 
     def get_ad_segments(
         self, segments: List[Segment], classification_path: str
@@ -251,39 +284,45 @@ class PodcastProcessor:
             os.listdir(classification_path),
             key=lambda filename: (len(filename), filename),
         ):
-            with open(
-                f"{classification_path}/{classification_dir}/identification.txt", "r"
-            ) as id_file:
-                prompt_start_timestamp = float(classification_dir.split("_")[0])
-                prompt_end_timestamp = float(classification_dir.split("_")[1])
-                identification = id_file.read()
+            try:
+                with open(
+                    f"{classification_path}/{classification_dir}/identification.txt",
+                    "r",
+                ) as id_file:
+                    prompt_start_timestamp = float(classification_dir.split("_")[0])
+                    prompt_end_timestamp = float(classification_dir.split("_")[1])
+                    identification = id_file.read()
 
-                try:
-                    prediction = clean_and_parse_model_output(identification)
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    self.logger.error(
-                        f"Error parsing ad segment: {e} for {identification}"
-                    )
-                    continue
+                    try:
+                        prediction = clean_and_parse_model_output(identification)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        self.logger.error(
+                            f"Error parsing ad segment: {e} for {identification}"
+                        )
+                        continue
 
-                if prediction.confidence < self.config.output.min_confidence:
-                    continue
+                    if prediction.confidence < self.config.output.min_confidence:
+                        continue
 
-                ad_segment_starts = prediction.ad_segments
-                # filter out ad segments outside of the start/end, and that
-                # do not exist in segments_by_start
-                ad_segment_starts = [
-                    start
-                    for start in ad_segment_starts
-                    if start  # pylint: disable=chained-comparison
-                    >= prompt_start_timestamp
-                    and start <= prompt_end_timestamp
-                    and start in segments_by_start
-                ]
+                    ad_segment_starts = prediction.ad_segments
+                    # filter out ad segments outside of the start/end, and that
+                    # do not exist in segments_by_start
+                    ad_segment_starts = [
+                        start
+                        for start in ad_segment_starts
+                        if start  # pylint: disable=chained-comparison
+                        >= prompt_start_timestamp
+                        and start <= prompt_end_timestamp
+                        and start in segments_by_start
+                    ]
 
-                for ad_segment_start in ad_segment_starts:
-                    ad_segment_end = segments_by_start[ad_segment_start].end
-                    ad_segments.append((ad_segment_start, ad_segment_end))
+                    for ad_segment_start in ad_segment_starts:
+                        ad_segment_end = segments_by_start[ad_segment_start].end
+                        ad_segments.append((ad_segment_start, ad_segment_end))
+            except FileNotFoundError:
+                self.logger.error(
+                    f"Identification file not found for {classification_dir}"
+                )
 
         return ad_segments
 
@@ -361,24 +400,3 @@ class PodcastProcessor:
         if last_end != audio.duration_seconds * 1000:
             new_audio += audio[last_end:]
         return new_audio
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("global_logger")
-
-    with open("config/config.yml", "r") as f:
-        config = yaml.safe_load(f)
-
-    task = PodcastProcessorTask(
-        "Example",
-        "in/example.mp3",
-        "Example podcast title",
-    )
-    processor = PodcastProcessor(config)
-    processor.process(task)
-    logger.info("PodcastProcessor done")
-
-
-if __name__ == "__main__":
-    main()

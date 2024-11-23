@@ -43,12 +43,19 @@
     <div style="width: 500px; margin: 0 auto">
       <h2>Usage</h2>
       <ul>
+        <li>Add an rss feed using the "Add New Feed" box below</li>
         <li>
-          Open a podcast app & subscribe to a podcast by appending the RSS to
-          the Podly endpoint. For example, to subscribe to
-          <code>https://mypodcast.com/rss.xml</code>, subscribe to
-          <code>http://192.168.0.2:5001/https://mypodcast.com/rss.xml</code>
+          Subscribe to the podly RSS feed
+          <ul>
+            <li>for example http://localhost:5001/feed/1</li>
+          </ul>
         </li>
+        <li>
+          Open a podcast app & subscribe to the podcast using the podly URL
+          whose link was added below. For example
+          <code>http://myserver:5001/feed/1</code>
+        </li>
+
         <li>Select an episode & download</li>
         <li>
           Wait patiently. Transcription is the slowest part & takes about 1
@@ -67,7 +74,7 @@
     <div style="width: 500px; margin: 0 auto">
       <h2>Feeds</h2>
       {% for feed in feeds %}
-      <details>
+      <details id="details-{{feed.id}}">
         <summary>
           <a href="{{ url_for('main.get_feed', f_id=feed.id) }}"
             >{{ feed.title }}</a
@@ -81,6 +88,10 @@
             <tr>
               <th>Title</th>
               <th>Download</th>
+
+              {% if config.require_episode_whitelist %}
+              <th>Whitelisted</th>
+              {% endif %}
             </tr>
           </thead>
           <tbody>
@@ -92,6 +103,21 @@
                   >Download</a
                 >
               </td>
+
+              {% if config.require_episode_whitelist %}
+              <td>
+                <input
+                  type="checkbox"
+                  {%
+                  if
+                  post.whitelisted
+                  %}checked{%
+                  endif
+                  %}
+                  onclick="toggleWhitelist('{{ post.guid }}')"
+                />
+              </td>
+              {% endif %}
             </tr>
             {% else %}
             <tr>
@@ -107,11 +133,45 @@
     </div>
 
     <script>
+      function toggleWhitelist(postGuid) {
+        console.log("toggling whitelist for post: " + postGuid);
+        fetch("{{ url_for('main.whitelist_post', p_guid='')}}" + postGuid)
+          .then((_) => window.location.reload())
+          .catch((error) => console.error("Error:", error));
+      }
       function refresh(feedId) {
         fetch("{{ url_for('main.get_feed', f_id='0')}}" + feedId)
           .then((_) => window.location.reload())
           .catch((error) => console.error("Error:", error));
       }
+      document.addEventListener("DOMContentLoaded", function () {
+        const detailsList = document.querySelectorAll("details");
+        detailsList.forEach(function (details) {
+          const id = details.id;
+          const isOpen = localStorage.getItem(id) === "true";
+          if (isOpen) {
+            details.open = true;
+          }
+
+          details.addEventListener("toggle", function () {
+            console.log("toggling details: " + id);
+            localStorage.setItem(id, details.open);
+          });
+        });
+      });
+      window.addEventListener("load", function () {
+        // Restore scroll position
+        const scrollPosition = localStorage.getItem("scrollPosition");
+        console.log("restoring scroll position: " + scrollPosition);
+        if (scrollPosition !== null) {
+          window.scrollTo(0, parseInt(scrollPosition));
+        }
+      });
+      window.addEventListener("beforeunload", function () {
+        // Save scroll position
+        console.log("saving scroll position: " + window.scrollY);
+        localStorage.setItem("scrollPosition", window.scrollY);
+      });
     </script>
   </body>
 </html>

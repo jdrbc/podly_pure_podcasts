@@ -18,6 +18,21 @@ class Segment(BaseModel):
     end: float
     text: str
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "start": self.start,
+            "end": self.end,
+            "text": self.text,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Segment":
+        return cls(
+            start=data["start"],
+            end=data["end"],
+            text=data["text"],
+        )
+
 
 class Transcriber(ABC):
     @abstractmethod
