@@ -60,7 +60,7 @@ class PodcastProcessor:
         )
 
         if self.config.remote_whisper:
-            self.transcriber = RemoteWhisperTranscriber(self.logger, self.client)
+            self.transcriber = RemoteWhisperTranscriber(self.logger, self.config)
         else:
             local_whisper_model_name = self.config.whisper_model
 

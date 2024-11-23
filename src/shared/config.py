@@ -19,7 +19,6 @@ class OutputConfig(BaseModel):
     min_ad_segment_length_seconds: int
     min_confidence: float
 
-
 class Config(BaseModel):
     openai_api_key: Optional[str]
     openai_base_url: str = "https://api.openai.com/v1"
@@ -29,11 +28,16 @@ class Config(BaseModel):
     output: OutputConfig
     podcasts: Dict[str, str]
     processing: ProcessingConfig
-    remote_whisper: bool = False
     server: Optional[str] = None
     server_port: int = 5001
     threads: int = 1
-    whisper_model: str = "base"
+    remote_whisper: bool = False
+    whisper_api_key: Optional[str] = None
+    whisper_base_url: Optional[str] = None 
+    remote_whisper_model: str = "whisper-1" # openai model, use your own maybe
+    whisper_language: str = "en"
+    faster_whisper_server: bool = False # for quirks specific to the faster whisper server
+    whisper_model: str = "base" # for local whisper
 
     def redacted(self) -> Config:
         return self.model_copy(
