@@ -19,6 +19,7 @@ from .transcribe import (
     LocalWhisperTranscriber,
     RemoteWhisperTranscriber,
     Segment,
+    TestWhisperTranscriber,
     Transcriber,
 )
 
@@ -47,7 +48,9 @@ class PodcastProcessor:
             api_key=self.config.openai_api_key,
         )
 
-        if self.config.remote_whisper:
+        if self.config.skip_processing_for_test:
+            self.transcriber = TestWhisperTranscriber(self.logger)
+        elif self.config.remote_whisper:
             self.transcriber = RemoteWhisperTranscriber(self.logger, self.client)
         else:
             local_whisper_model_name = self.config.whisper_model
@@ -66,13 +69,8 @@ class PodcastProcessor:
             if os.path.exists(processed_audio_path):
                 self.logger.info(f"Audio already processed: {post}")
                 return processed_audio_path
-            transcript_dir, classification_dir = self.make_dirs(
-                post, processed_audio_path
-            )
-            transcript_segments = self.transcribe(
-                post,
-                transcript_dir,
-            )
+            classification_dir = self.make_dirs(post, processed_audio_path)
+            transcript_segments = self.transcribe(post)
             user_prompt_template = self.get_user_prompt_template(
                 self.config.processing.user_prompt_template_path
             )
@@ -104,29 +102,16 @@ class PodcastProcessor:
 
             return processed_audio_path
 
-    def make_dirs(self, post: Post, processed_audio_path: str) -> Tuple[str, str]:
+    def make_dirs(self, post: Post, processed_audio_path: str) -> str:
         audio_processing_dir = f'{self.processing_dir}/{post.feed.title}/{post.unprocessed_audio_path.split("/")[-1]}'  # pylint: disable=line-too-long
-        transcript_dir = f"{audio_processing_dir}/transcription"
         classification_dir = f"{audio_processing_dir}/classification"
         processed_audio_dir = os.path.dirname(processed_audio_path)
-        if not os.path.exists(processed_audio_dir):
-            os.makedirs(processed_audio_dir)
-        if not os.path.exists(audio_processing_dir):
-            os.makedirs(audio_processing_dir)
-        if not os.path.exists(transcript_dir):
-            os.makedirs(transcript_dir)
-        if not os.path.exists(classification_dir):
-            os.makedirs(classification_dir)
-        return transcript_dir, classification_dir
+        os.makedirs(processed_audio_dir, exist_ok=True)
+        os.makedirs(audio_processing_dir, exist_ok=True)
+        os.makedirs(classification_dir, exist_ok=True)
+        return classification_dir
 
-    def transcribe(
-        self,
-        post: Post,
-        transcript_file_path: str,
-    ) -> List[Segment]:
-        self.logger.info(
-            f"Transcribing audio from {post.unprocessed_audio_path} into {transcript_file_path}"
-        )
+    def transcribe(self, post: Post) -> List[Segment]:
         # check db for transcript
         transcript = Transcript.query.filter_by(post_id=post.id).first()
         if transcript is not None:
@@ -144,7 +129,7 @@ class PodcastProcessor:
     def update_transcripts(self, post: Post, result: List[Segment]) -> None:
         post.transcript = Transcript(
             post_id=post.id,
-            content=json.dumps([json.dumps(segment.to_dict()) for segment in result]),
+            content=json.dumps([json.dumps(segment.dict()) for segment in result]),
         )
         db.session.commit()
 
@@ -211,7 +196,11 @@ class PodcastProcessor:
                 with open(f"{target_dir}/.in_progress", "w") as f:
                     f.write("Processing")
 
-                identification = self.call_model(model, system_prompt, user_prompt)
+                identification = (
+                    None
+                    if self.config.skip_processing_for_test
+                    else self.call_model(model, system_prompt, user_prompt)
+                )
                 if identification:
                     with open(identification_path, "w") as f:
                         f.write(identification)

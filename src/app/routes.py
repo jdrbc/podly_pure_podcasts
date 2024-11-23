@@ -1,18 +1,25 @@
-import datetime
+import re
 from pathlib import Path
-from typing import Any
 
-import feedparser  # type: ignore[import-untyped]
 import flask
-import PyRSS2Gen  # type: ignore[import-untyped]
+import validators
 from flask import Blueprint, jsonify, request, send_file, url_for
+from flask.typing import ResponseReturnValue
 
 from app import config, db, logger
+from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.models import Feed, Post
 from podcast_processor.podcast_processor import PodcastProcessor
-from shared.podcast_downloader import download_episode, find_audio_link
+from shared.podcast_downloader import download_episode
 
 main_bp = Blueprint("main", __name__)
+
+
+def fix_url(url: str) -> str:
+    url = re.sub(r"(http(s)?):/([^/])", r"\1://\3", url)
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+    return url
 
 
 @main_bp.route("/")
@@ -34,27 +41,32 @@ def get_transcript(p_guid: str) -> flask.Response:
     return flask.make_response(transcript_content, 200)
 
 
-@main_bp.route("/whitelist_post/<string:p_guid>", methods=["GET"])
-def whitelist_post(p_guid: str) -> flask.Response:
-    logger.info(f"Whitelisting post with GUID: {p_guid}")
+@main_bp.route("/set_whitelist/<string:p_guid>/<val>", methods=["GET"])
+def set_whitelist(p_guid: str, val: str) -> flask.Response:
+    logger.info(f"Setting whitelist status for post with GUID: {p_guid} to {val}")
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(("Post not found", 404))
 
-    post.whitelisted = not post.whitelisted
+    post.whitelisted = val.lower() == "true"
     db.session.commit()
 
     return index()
 
 
-@main_bp.route("/post/<string:p_guid>", methods=["GET"])
+@main_bp.route("/post/<string:p_guid>.mp3", methods=["GET"])
 def download_post(p_guid: str) -> flask.Response:
+    logger.info(f"request to download post with GUID: {p_guid}")
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
+        logger.warning(f"Post with GUID: {p_guid} not found")
         return flask.make_response(("Post not found", 404))
 
-    if config.require_episode_whitelist and not post.whitelisted:
+    if not post.whitelisted:
+        logger.warning(f"Post: {post.title} is not whitelisted")
         return flask.make_response(("Episode not whitelisted", 403))
+
+    logger.info(f"Downloading post: {post.title}")
 
     # Download the episode
     download_path = download_episode(post)
@@ -78,107 +90,28 @@ def download_post(p_guid: str) -> flask.Response:
         return flask.make_response(("Error sending file", 500))
 
 
-def fetch_feed(url: str) -> feedparser.FeedParserDict:
-    logger.info(f"Fetching feed from URL: {url}")
-    return feedparser.parse(url)
-
-
-def store_feed(feed_data: feedparser.FeedParserDict) -> Feed:
-    logger.info(f"Storing feed: {feed_data.feed.title}")
-    feed = Feed(
-        title=feed_data.feed.title,
-        description=feed_data.feed.get("description", ""),
-        author=feed_data.feed.get("author", ""),
-        rss_url=feed_data.href,
-    )
-    db.session.add(feed)
-    db.session.commit()
-
-    for entry in feed_data.entries:
-        db.session.add(make_post(feed, entry))
-    db.session.commit()
-    logger.info(f"Feed stored with ID: {feed.id}")
-    return feed
-
-
-def refresh_feed(feed: Feed) -> None:
-    logger.info(f"Refreshing feed with ID: {feed.id}")
-    feed_data = fetch_feed(feed.rss_url)
-    existing_posts = {post.guid for post in feed.posts}  # type: ignore[attr-defined]
-    for entry in feed_data.entries:
-        if entry.id not in existing_posts:
-            logger.debug(f"found new podcast: {entry.title}")
-            db.session.add(make_post(feed, entry))
-    db.session.commit()
-    logger.info(f"Feed with ID: {feed.id} refreshed")
-
-
-def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
-    return Post(
-        feed_id=feed.id,
-        guid=entry.id,
-        download_url=find_audio_link(entry),
-        title=entry.title,
-        description=entry.get("description", ""),
-        release_date=(
-            datetime.datetime(*entry.published_parsed[:6])
-            if entry.get("published_parsed")
-            else None
-        ),
-        duration=int(entry.get("itunes_duration", 0)),
-    )
-
-
-def generate_feed_xml(feed: Feed) -> Any:
-    logger.info(f"Generating XML for feed with ID: {feed.id}")
-    items = []
-    for post in feed.posts:  # type: ignore[attr-defined]
-        items.append(
-            PyRSS2Gen.RSSItem(
-                title=post.title,
-                link=url_for("main.download_post", p_guid=post.guid, _external=True),
-                description=post.description,
-                guid=PyRSS2Gen.Guid(post.download_url),
-                pubDate=(
-                    post.release_date.strftime("%a, %d %b %Y %H:%M:%S %z")
-                    if post.release_date
-                    else None
-                ),
-            )
-        )
-    rss_feed = PyRSS2Gen.RSS2(
-        title="[podly] " + feed.title,
-        link=url_for("main.get_feed", f_id=feed.id, _external=True),
-        description=feed.description,
-        lastBuildDate=datetime.datetime.now(),
-        items=items,
-    )
-    logger.info(f"XML generated for feed with ID: {feed.id}")
-    return rss_feed.to_xml("utf-8")
-
-
 @main_bp.route("/feed", methods=["POST"])
-def add_feed() -> flask.Response:
+def add_feed() -> ResponseReturnValue:
     data = request.form
 
     if not data or "url" not in data:
         logger.error("URL is required")
         return flask.make_response(jsonify({"error": "URL is required"}), 400)
 
-    url = data["url"]
-    feed_data = fetch_feed(url)
-    if "title" not in feed_data.feed:
-        logger.error("Invalid feed URL")
+    try:
+        add_or_refresh_feed(data["url"])
+        db.session.commit()
+        return flask.redirect(url_for("main.index"))
+    except ValueError as e:
+        logger.error(f"Error adding feed: {e}")
+        db.session.rollback()
         return flask.make_response(jsonify({"error": "Invalid feed URL"}), 400)
-
-    feed = Feed.query.filter_by(rss_url=url).first()
-    if feed:
-        refresh_feed(feed)
-    else:
-        feed = store_feed(feed_data)
-
-    logger.info(f"Feed added with ID: {feed.id}")
-    return flask.make_response(jsonify({"id": feed.id, "title": feed.title}), 201)
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error(f"Unexpected error: {e}")
+        db.session.rollback()
+        return flask.make_response(
+            jsonify({"error": "An unexpected error occurred"}), 500
+        )
 
 
 @main_bp.route("/feed/<int:f_id>", methods=["GET"])
@@ -188,4 +121,54 @@ def get_feed(f_id: int) -> flask.Response:
     refresh_feed(feed)
     feed_xml = generate_feed_xml(feed)
     logger.info(f"Feed with ID: {f_id} fetched and XML generated")
+    return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})
+
+
+@main_bp.route("/feed/<int:f_id>", methods=["DELETE"])
+def delete_feed(f_id: int) -> ResponseReturnValue:
+    logger.info(f"Deleting feed with ID: {f_id}")
+    feed = Feed.query.get_or_404(f_id)
+    for post in feed.posts:
+        db.session.delete(post)
+    db.session.delete(feed)
+    db.session.commit()
+    logger.info(f"Feed with ID: {f_id} deleted")
+    return flask.redirect(url_for("main.index"))
+
+
+# backwards compatibility for the old method of subscribing to feeds
+@main_bp.route("/<path:feed_alt_or_url>", methods=["GET"])
+def get_feed_by_alt_or_url(feed_alt_or_url: str) -> flask.Response:
+    # first try to serve ANY static file matching the path
+    try:
+        if "favicon.ico" in feed_alt_or_url:
+            return flask.send_from_directory("static", "favicon.ico")
+        return flask.send_from_directory("static", feed_alt_or_url)
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug(
+            f"no static file match on {feed_alt_or_url}, continuing with catch-all subscribe: {e}"
+        )
+
+    logger.info(f"Fetching feed with url/alt ID: {feed_alt_or_url}")
+    feed = Feed.query.filter_by(alt_id=feed_alt_or_url).first()
+    if feed is not None:
+        logger.info(f"Feed: {feed.title} found, refreshing")
+        refresh_feed(feed)
+        feed_xml = generate_feed_xml(feed)
+        logger.info(
+            f"Feed with alternate ID: {feed_alt_or_url} fetched and XML generated"
+        )
+        return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})
+
+    logger.debug("No existing feed found, checking URL")
+    feed_alt_or_url = fix_url(feed_alt_or_url)
+    if not validators.url(feed_alt_or_url):
+        logger.error("Invalid URL")
+        return flask.make_response(("Invalid URL", 400))
+    logger.info(f"Feed with URL: {feed_alt_or_url} not found, adding")
+    feed = add_or_refresh_feed(feed_alt_or_url)
+    feed_xml = generate_feed_xml(feed)
+    logger.info(
+        f"Feed with ID: {feed.id} added/refreshed via old method and XML generated"
+    )
     return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})

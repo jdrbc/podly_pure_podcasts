@@ -88,10 +88,7 @@
             <tr>
               <th>Title</th>
               <th>Download</th>
-
-              {% if config.require_episode_whitelist %}
               <th>Whitelisted</th>
-              {% endif %}
             </tr>
           </thead>
           <tbody>
@@ -104,7 +101,6 @@
                 >
               </td>
 
-              {% if config.require_episode_whitelist %}
               <td>
                 <input
                   type="checkbox"
@@ -114,10 +110,9 @@
                   %}checked{%
                   endif
                   %}
-                  onclick="toggleWhitelist('{{ post.guid }}')"
+                  onclick="setWhitelist('{{ post.guid }}', {{ post.whitelisted | lower }})"
                 />
               </td>
-              {% endif %}
             </tr>
             {% else %}
             <tr>
@@ -133,9 +128,12 @@
     </div>
 
     <script>
-      function toggleWhitelist(postGuid) {
-        console.log("toggling whitelist for post: " + postGuid);
-        fetch("{{ url_for('main.whitelist_post', p_guid='')}}" + postGuid)
+      function setWhitelist(postGuid, old_val) {
+        console.log("set whitelist for post: " + postGuid + " to: " + !old_val);
+        const url = "{{ url_for('main.set_whitelist', p_guid='0', val=False)}}"
+          .replace("0", postGuid)
+          .replace("/False", "/" + !old_val);
+        fetch(url)
           .then((_) => window.location.reload())
           .catch((error) => console.error("Error:", error));
       }

@@ -18,21 +18,6 @@ class Segment(BaseModel):
     end: float
     text: str
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "start": self.start,
-            "end": self.end,
-            "text": self.text,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Segment":
-        return cls(
-            start=data["start"],
-            end=data["end"],
-            text=data["text"],
-        )
-
 
 class Transcriber(ABC):
     @abstractmethod
@@ -54,6 +39,18 @@ class LocalTranscriptSegment(BaseModel):
 
     def to_segment(self) -> Segment:
         return Segment(start=self.start, end=self.end, text=self.text)
+
+
+class TestWhisperTranscriber(Transcriber):
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def transcribe(self, _: str) -> List[Segment]:
+        self.logger.info("Using test whisper")
+        return [
+            Segment(start=0, end=1, text="This is a test"),
+            Segment(start=1, end=2, text="This is another test"),
+        ]
 
 
 class LocalWhisperTranscriber(Transcriber):

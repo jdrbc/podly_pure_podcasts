@@ -29,12 +29,14 @@ class Config(BaseModel):
     output: OutputConfig
     podcasts: Dict[str, str]
     processing: ProcessingConfig
+    skip_processing_for_test: bool = False  # for testing
     remote_whisper: bool = False
     server: Optional[str] = None
     server_port: int = 5001
     threads: int = 1
     whisper_model: str = "base"
-    require_episode_whitelist: bool = False
+    automatically_whitelist_new_episodes: bool = True
+    number_of_episodes_to_whitelist_from_archive_of_new_feed: int = 1
 
     def redacted(self) -> Config:
         return self.model_copy(

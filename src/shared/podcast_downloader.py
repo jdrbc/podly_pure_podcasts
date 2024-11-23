@@ -47,11 +47,11 @@ def get_and_make_download_path(podcast_title: str, episode_name: str) -> str:
     return f"{DOWNLOAD_DIR}/{podcast_title}/{episode_name}"
 
 
-def find_audio_link(entry: Any) -> Optional[str]:
+def find_audio_link(entry: Any) -> str:
     for link in entry.links:
         if link.type == "audio/mpeg":
             href = link.href
             assert isinstance(href, str)
             return href
 
-    return None
+    return str(entry.id)

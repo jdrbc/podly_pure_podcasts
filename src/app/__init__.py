@@ -23,7 +23,7 @@ def setup_dirs() -> None:
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder="static")
 
     # Configure the app (for example, SQLite for development)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db"
@@ -41,7 +41,6 @@ def create_app() -> Flask:
     from app import models  # pylint: disable=import-outside-toplevel, unused-import
 
     with app.app_context():
-        db.create_all()
         upgrade()
 
     return app
@@ -50,6 +49,7 @@ def create_app() -> Flask:
 db = SQLAlchemy()
 migrate = Migrate(directory="./src/migrations")
 config = get_config("config/config.yml")
+
 
 setup_dirs()
 print("Config:\n", json.dumps(config.redacted().model_dump(), indent=2))

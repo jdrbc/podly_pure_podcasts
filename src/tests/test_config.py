@@ -42,6 +42,8 @@ def test_example_config() -> None:
         openai_base_url="https://api.openai.com/v1",
         remote_whisper=False,
         whisper_model="base",
+        automatically_whitelist_new_episodes=True,
+        number_of_episodes_to_whitelist_from_archive_of_new_feed=1,
         server=None,
         threads=1,
         server_port=5001,

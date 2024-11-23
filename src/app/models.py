@@ -8,6 +8,9 @@ from podcast_processor.transcribe import Segment
 # mypy typing issue https://github.com/python/mypy/issues/17918
 class Feed(db.Model):  # type: ignore[name-defined, misc]
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    alt_id = db.Column(
+        db.Text, nullable=True
+    )  # used for backwards compatibility with feeds defined in config.yml
     title = db.Column(db.Text, nullable=False)
     description = db.Column(db.Text)
     author = db.Column(db.Text)
@@ -25,7 +28,9 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=False)
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     guid = db.Column(db.Text, unique=True, nullable=False)
-    download_url = db.Column(db.Text, unique=True, nullable=False)
+    download_url = db.Column(
+        db.Text, unique=True, nullable=False
+    )  # remote download URL, not podly url
     title = db.Column(db.Text, nullable=False)
     unprocessed_audio_path = db.Column(db.Text)
     processed_audio_path = db.Column(db.Text)
@@ -52,10 +57,7 @@ class Transcript(db.Model):  # type: ignore[name-defined, misc]
     timestamp = db.Column(db.DateTime)
 
     def get_segments(self) -> List[Segment]:
-        return [
-            Segment.from_dict(json.loads(segment))
-            for segment in json.loads(self.content)
-        ]
+        return [Segment(**json.loads(segment)) for segment in json.loads(self.content)]
 
     def get_human_readable_content(self) -> str:
         segments = self.get_segments()
