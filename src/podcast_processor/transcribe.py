@@ -41,6 +41,18 @@ class LocalTranscriptSegment(BaseModel):
         return Segment(start=self.start, end=self.end, text=self.text)
 
 
+class TestWhisperTranscriber(Transcriber):
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def transcribe(self, _: str) -> List[Segment]:
+        self.logger.info("Using test whisper")
+        return [
+            Segment(start=0, end=1, text="This is a test"),
+            Segment(start=1, end=2, text="This is another test"),
+        ]
+
+
 class LocalWhisperTranscriber(Transcriber):
     def __init__(self, logger: logging.Logger, whisper_model: str):
         self.logger = logger

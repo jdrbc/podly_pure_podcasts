@@ -29,9 +29,10 @@ Here's how it works:
 - `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
 - Start the server & note the URL.
   - For example, `192.168.0.2:5001`
-- Open a podcast app & subscribe to a podcast by appending the RSS to the podly endpoint.
-  - For example, to subscribe to `https://mypodcast.com/rss.xml`
-  - Subscribe to `http://192.168.0.2:5001/https://mypodcast.com/rss.xml`
+- Open 192.168.0.2:5001 in your web browser
+- Add podcast RSS feeds to the interface
+- Open a podcast app & subscribe to the podly endpoint
+  - For example, `http://localhost:5001/feed/1`
 - Select an episode & download
 - Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 
