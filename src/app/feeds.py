@@ -108,7 +108,11 @@ def generate_feed_xml(feed: Feed) -> Any:
         items.append(
             PyRSS2Gen.RSSItem(
                 title=post.title,
-                link=url_for("main.download_post", p_guid=post.guid, _external=True),
+                link=url_for(
+                    "main.download_post",
+                    p_guid=post.guid,
+                    _external=config.server is None,
+                ),
                 description=post.description,
                 guid=post.guid,
                 pubDate=(
