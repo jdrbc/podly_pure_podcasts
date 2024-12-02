@@ -164,6 +164,14 @@ pipenv run flask --app ./src/main.py db migrate -m "[change description]"
 
 On next launch the database should update.
 
+## FAQ
+
+Q: How can I enable whisper GPU acceleration?
+
+A: You must install the CUDA version of PyTorch to the virtual environment.
+  
+```pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118```
+
 ## Contributing
 
 We welcome contributions to Podly! Here's how you can help:
