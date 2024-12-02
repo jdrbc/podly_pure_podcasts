@@ -9,6 +9,8 @@ app = create_app()
 
 def port_over_old_feeds() -> None:
     with app.app_context():
+        if config.podcasts is None:
+            return
         for podcast, url in config.podcasts.items():
             if not Feed.query.filter_by(rss_url=url).first():
                 feed = add_or_refresh_feed(url)
