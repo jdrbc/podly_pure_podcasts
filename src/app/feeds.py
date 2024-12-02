@@ -101,7 +101,7 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
         raise e
 
 
-def feed_item(post) -> PyRSS2Gen.RSSItem:
+def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     """
     Given a post, return the corresponding RSS item. Reference:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
@@ -135,7 +135,7 @@ def feed_item(post) -> PyRSS2Gen.RSSItem:
 
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
-    items = [feed_item(post) for post in feed.posts]
+    items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
         link=url_for("main.get_feed", f_id=feed.id, _external=True),
