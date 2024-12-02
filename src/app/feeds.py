@@ -101,28 +101,39 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
         raise e
 
 
+def feed_item(post) -> PyRSS2Gen.RSSItem:
+    """
+    Given a post, return the corresponding RSS item. Reference:
+    https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
+    """
+
+    audio_url = (config.server if config.server is not None else "") + url_for(
+        "main.download_post",
+        p_guid=post.guid,
+        _external=config.server is None,
+    )
+
+    item = PyRSS2Gen.RSSItem(
+        title=post.title,
+        enclosure=PyRSS2Gen.Enclosure(
+            url=audio_url,
+            type="audio/mpeg",
+        ),
+        description=post.description,
+        guid=post.guid,
+        pubDate=(
+            post.release_date.strftime("%a, %d %b %Y %H:%M:%S %z")
+            if post.release_date
+            else None
+        ),
+    )
+
+    return item
+
+
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
-    items = []
-    for post in feed.posts:  # type: ignore[attr-defined]
-        items.append(
-            PyRSS2Gen.RSSItem(
-                title=post.title,
-                link=(config.server if config.server is not None else "")
-                + url_for(
-                    "main.download_post",
-                    p_guid=post.guid,
-                    _external=config.server is None,
-                ),
-                description=post.description,
-                guid=post.guid,
-                pubDate=(
-                    post.release_date.strftime("%a, %d %b %Y %H:%M:%S %z")
-                    if post.release_date
-                    else None
-                ),
-            )
-        )
+    items = [feed_item(post) for post in feed.posts]
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
         link=url_for("main.get_feed", f_id=feed.id, _external=True),
