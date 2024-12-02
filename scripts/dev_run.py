@@ -35,14 +35,14 @@ class ChangeHandler(FileSystemEventHandler):
 if __name__ == "__main__":
     command: str = "pipenv run python src/main.py"
     event_handler: ChangeHandler = ChangeHandler(command)
-    observer: Observer = Observer()
+    observer: Observer = Observer()  # type: ignore
     src_path = os.path.abspath("src")
     print(f"Watching directory: {src_path}")
-    observer.schedule(event_handler, path=src_path, recursive=True)
-    observer.start()
+    observer.schedule(event_handler, path=src_path, recursive=True)  # type: ignore
+    observer.start()  # type: ignore
     try:
         while True:
             pass
     except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
+        observer.stop()  # type: ignore
+    observer.join()  # type: ignore
