@@ -4,7 +4,7 @@ import os
 from typing import Dict, Optional
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProcessingConfig(BaseModel):
@@ -27,7 +27,11 @@ class Config(BaseModel):
     openai_model: str = "gpt-4o"
     openai_timeout: int = 300
     output: OutputConfig
-    podcasts: Dict[str, str]
+    podcasts: Optional[Dict[str, str]] = Field(
+        default=None,
+        deprecated=True,
+        description="This field is deprecated and will be removed in a future version",
+    )
     processing: ProcessingConfig
     skip_processing_for_test: bool = False  # for testing
     remote_whisper: bool = False

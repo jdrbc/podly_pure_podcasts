@@ -30,9 +30,7 @@ def test_example_config() -> None:
             user_prompt_template_path="config/user_prompt.jinja",
             num_segments_to_input_to_prompt=30,
         ),
-        podcasts={
-            "my_podcast.rss": "https://www.example.com/original/podcast/rss/feed.rss"
-        },
+        podcasts=None,
         output=OutputConfig(
             fade_ms=3000,
             min_ad_segement_separation_seconds=60,
