@@ -112,12 +112,14 @@ def feed_item(post) -> PyRSS2Gen.RSSItem:
         p_guid=post.guid,
         _external=config.server is None,
     )
+    audio_len_bytes = 999999  # FIXME
 
     item = PyRSS2Gen.RSSItem(
         title=post.title,
         enclosure=PyRSS2Gen.Enclosure(
             url=audio_url,
             type="audio/mpeg",
+            length=audio_len_bytes,
         ),
         description=post.description,
         guid=post.guid,
