@@ -6,7 +6,7 @@
 <p align="center">
 <p align="center">Ad-block for podcasts. Create an ad-free RSS feed.</p>
 <p align="center">
-  <a href="https://discord.gg/maDTjrwp" target="_blank">
+  <a href="https://discord.gg/FRB98GtF6N" target="_blank">
       <img src="https://img.shields.io/badge/discord-join-blue.svg?logo=discord&logoColor=white" alt="Discord">
   </a>
 </p>
