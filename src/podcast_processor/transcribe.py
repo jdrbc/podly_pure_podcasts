@@ -14,6 +14,7 @@ from pydub import AudioSegment  # type: ignore[import-untyped]
 
 from shared.config import Config
 
+
 class Segment(BaseModel):
     start: float
     end: float
@@ -148,11 +149,11 @@ class RemoteWhisperTranscriber(Transcriber):
     ) -> List[Tuple[str, int]]:
 
         self.logger.info(f"Splitting file {audio_file_path} into chunks")
-        
+
         if not os.path.exists(audio_chunk_path):
             os.makedirs(audio_chunk_path)
         self.logger.info(f"Chunk path: {audio_chunk_path}")
-        
+
         audio = AudioSegment.from_mp3(audio_file_path)
         duration_ms = len(audio)
 
@@ -191,8 +192,7 @@ class RemoteWhisperTranscriber(Transcriber):
             transcription = self.openai_client.audio.transcriptions.create(
                 model=self.config.remote_whisper_model,
                 file=f,
-                # Faster-whisper-server uses segments instead of segment
-                timestamp_granularities=["segments" if self.config.faster_whisper_server else "segment"],
+                timestamp_granularities=["segment"],
                 language=self.config.whisper_language,
                 response_format="verbose_json",
             )

@@ -19,6 +19,7 @@ class OutputConfig(BaseModel):
     min_ad_segment_length_seconds: int
     min_confidence: float
 
+
 class Config(BaseModel):
     openai_api_key: Optional[str]
     openai_base_url: str = "https://api.openai.com/v1"
@@ -33,10 +34,12 @@ class Config(BaseModel):
     )
     processing: ProcessingConfig
     whisper_api_key: Optional[str] = None
-    whisper_base_url: Optional[str] = None 
-    remote_whisper_model: str = "whisper-1" # openai model, use your own maybe
+    whisper_base_url: Optional[str] = None
+    remote_whisper_model: str = "whisper-1"  # openai model, use your own maybe
     whisper_language: str = "en"
-    faster_whisper_server: bool = False # for quirks specific to the faster whisper server
+    faster_whisper_server: bool = (
+        False  # for quirks specific to the faster whisper server
+    )
     skip_processing_for_test: bool = False  # for testing
     remote_whisper: bool = False
     server: Optional[str] = None
