@@ -1,16 +1,17 @@
 import gc
+import json
 import logging
 import os
-import pickle
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, cast
 
-import yaml
 from jinja2 import Template
 from openai import APIError, OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
+from app import db
+from app.models import Post, Transcript
 from podcast_processor.model_output import clean_and_parse_model_output
 from shared.config import Config
 
@@ -18,24 +19,13 @@ from .transcribe import (
     LocalWhisperTranscriber,
     RemoteWhisperTranscriber,
     Segment,
+    TestWhisperTranscriber,
     Transcriber,
 )
 
 
-class PodcastProcessorTask:
-    def __init__(self, podcast_title: str, audio_path: str, podcast_description: str):
-        self.podcast_title = podcast_title
-        self.audio_path = audio_path
-        self.podcast_description = podcast_description
-
-    def pickle_id(self) -> str:
-        return f"{self.podcast_title}_{self.audio_path}"
-
-    def __str__(self) -> str:
-        return f"ProcessTask: {self.audio_path}"
-
-    def get_output_path(self) -> str:
-        return f"srv/{self.podcast_title}/{self.audio_path.split('/')[-1]}"
+def get_post_processed_audio_path(post: Post) -> str:
+    return f"srv/{post.feed.title}/{post.unprocessed_audio_path.split('/')[-1]}"
 
 
 class PodcastProcessor:
@@ -53,13 +43,14 @@ class PodcastProcessor:
         self.processing_dir = processing_dir
         self.output_dir = "srv"
         self.config: Config = config
-        self.pickle_transcripts: Dict[str, Any] = self.init_pickle_transcripts()
         self.client = OpenAI(
             base_url=self.config.openai_base_url,
             api_key=self.config.openai_api_key,
         )
 
-        if self.config.remote_whisper:
+        if self.config.skip_processing_for_test:
+            self.transcriber = TestWhisperTranscriber(self.logger)
+        elif self.config.remote_whisper:
             self.transcriber = RemoteWhisperTranscriber(self.logger, self.config)
         else:
             local_whisper_model_name = self.config.whisper_model
@@ -68,37 +59,18 @@ class PodcastProcessor:
                 self.logger, local_whisper_model_name
             )
 
-    def init_pickle_transcripts(self) -> Any:
-        pickle_path = "transcripts.pickle"
-        if not os.path.exists(pickle_path):
-            with open(pickle_path, "wb") as f:
-                pickle.dump({}, f)
-                return {}
-        else:
-            with open(pickle_path, "rb") as f:
-                return pickle.load(f)
-
-    def update_pickle_transcripts(
-        self, task: PodcastProcessorTask, result: List[Segment]
-    ) -> None:
-        with open("transcripts.pickle", "wb") as f:
-            self.pickle_transcripts[task.pickle_id()] = result
-            pickle.dump(self.pickle_transcripts, f)
-
-    def process(self, task: PodcastProcessorTask) -> str:
+    def process(self, post: Post) -> str:
+        processed_audio_path = get_post_processed_audio_path(post)
         with PodcastProcessor.lock_lock:
-            if task.get_output_path() not in PodcastProcessor.locks:
-                PodcastProcessor.locks[task.get_output_path()] = threading.Lock()
+            if processed_audio_path not in PodcastProcessor.locks:
+                PodcastProcessor.locks[processed_audio_path] = threading.Lock()
 
-        with PodcastProcessor.locks[task.get_output_path()]:
-            if os.path.exists(task.get_output_path()):
-                self.logger.info(f"Audio already processed: {task}")
-                return task.get_output_path()
-            transcript_dir, classification_dir, final_audio_path = self.make_dirs(task)
-            transcript_segments = self.transcribe(
-                task,
-                transcript_dir,
-            )
+        with PodcastProcessor.locks[processed_audio_path]:
+            if os.path.exists(processed_audio_path):
+                self.logger.info(f"Audio already processed: {post}")
+                return processed_audio_path
+            classification_dir = self.make_dirs(post, processed_audio_path)
+            transcript_segments = self.transcribe(post)
             user_prompt_template = self.get_user_prompt_template(
                 self.config.processing.user_prompt_template_path
             )
@@ -111,11 +83,11 @@ class PodcastProcessor:
                 system_prompt=system_prompt,
                 user_prompt_template=user_prompt_template,
                 num_segments_per_prompt=self.config.processing.num_segments_to_input_to_prompt,
-                task=task,
+                post=post,
                 classification_path=classification_dir,
             )
             ad_segments = self.get_ad_segments(transcript_segments, classification_dir)
-            audio = AudioSegment.from_file(task.audio_path)
+            audio = AudioSegment.from_file(post.unprocessed_audio_path)
             assert isinstance(audio, AudioSegment)
             self.create_new_audio_without_ads(
                 audio=audio,
@@ -123,53 +95,43 @@ class PodcastProcessor:
                 min_ad_segment_length_seconds=self.config.output.min_ad_segment_length_seconds,
                 min_ad_segement_separation_seconds=self.config.output.min_ad_segement_separation_seconds,  # pylint: disable=line-too-long
                 fade_ms=self.config.output.fade_ms,
-            ).export(
-                f'{final_audio_path}/{task.audio_path.split("/")[-1]}', format="mp3"
-            )
-            self.logger.info(f"Processing task: {task} complete")
-            return task.get_output_path()
+            ).export(processed_audio_path, format="mp3")
+            self.logger.info(f"Processing podcast: {post} complete")
+            post.processed_audio_path = processed_audio_path
+            db.session.commit()
 
-    def make_dirs(self, task: PodcastProcessorTask) -> Tuple[str, str, str]:
-        audio_processing_dir = f'{self.processing_dir}/{task.podcast_title}/{task.audio_path.split("/")[-1]}'  # pylint: disable=line-too-long
-        transcript_dir = f"{audio_processing_dir}/transcription"
+            return processed_audio_path
+
+    def make_dirs(self, post: Post, processed_audio_path: str) -> str:
+        audio_processing_dir = f'{self.processing_dir}/{post.feed.title}/{post.unprocessed_audio_path.split("/")[-1]}'  # pylint: disable=line-too-long
         classification_dir = f"{audio_processing_dir}/classification"
-        final_audio_path = f"{self.output_dir}/{task.podcast_title}"
-        if not os.path.exists(final_audio_path):
-            os.makedirs(final_audio_path)
-        if not os.path.exists(audio_processing_dir):
-            os.makedirs(audio_processing_dir)
-        if not os.path.exists(transcript_dir):
-            os.makedirs(transcript_dir)
-        if not os.path.exists(classification_dir):
-            os.makedirs(classification_dir)
-        return transcript_dir, classification_dir, final_audio_path
+        processed_audio_dir = os.path.dirname(processed_audio_path)
+        os.makedirs(processed_audio_dir, exist_ok=True)
+        os.makedirs(audio_processing_dir, exist_ok=True)
+        os.makedirs(classification_dir, exist_ok=True)
+        return classification_dir
 
-    def transcribe(
-        self,
-        task: PodcastProcessorTask,
-        transcript_file_path: str,
-    ) -> List[Segment]:
-        self.logger.info(
-            f"Transcribing audio from {task.audio_path} into {transcript_file_path}"
-        )
-        # check pickle
-        if task.pickle_id() in self.pickle_transcripts:
-            self.logger.info("Transcript already transcribed")
-            transcript: List[Segment] = self.pickle_transcripts[task.pickle_id()]
-            return transcript
+    def transcribe(self, post: Post) -> List[Segment]:
+        # check db for transcript
+        transcript = Transcript.query.filter_by(post_id=post.id).first()
+        if transcript is not None:
+            return cast(List[Segment], transcript.get_segments())
 
-        segments = self.transcriber.transcribe(task.audio_path)
+        segments = self.transcriber.transcribe(post.unprocessed_audio_path)
 
         for segment in segments:
             segment.start = round(segment.start, 1)
             segment.end = round(segment.end, 1)
 
-        with open(transcript_file_path + "/transcript.txt", "w") as f:
-            for segment in segments:
-                f.write(f"{segment.start}{segment.text}\n")
-
-        self.update_pickle_transcripts(task, segments)
+        self.update_transcripts(post, segments)
         return segments
+
+    def update_transcripts(self, post: Post, result: List[Segment]) -> None:
+        post.transcript = Transcript(
+            post_id=post.id,
+            content=json.dumps([json.dumps(segment.dict()) for segment in result]),
+        )
+        db.session.commit()
 
     def get_system_prompt(self, system_prompt_path: str) -> str:
         with open(system_prompt_path, "r") as f:
@@ -187,10 +149,10 @@ class PodcastProcessor:
         system_prompt: str,
         user_prompt_template: Template,
         num_segments_per_prompt: int,
-        task: PodcastProcessorTask,
+        post: Post,
         classification_path: str,
     ) -> None:
-        self.logger.info(f"Identifying ad segments for {task.audio_path}")
+        self.logger.info(f"Identifying ad segments for {post.unprocessed_audio_path}")
         self.logger.info(f"processing {len(transcript_segments)} transcript segments")
 
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
@@ -224,8 +186,8 @@ class PodcastProcessor:
 
             self.logger.info(f"Calling {model}")
             user_prompt = user_prompt_template.render(
-                podcast_title=task.podcast_title,
-                podcast_topic=task.podcast_description,
+                podcast_title=post.title,
+                podcast_topic=post.description,
                 transcript="\n".join(excerpts),
             )
 
@@ -234,7 +196,11 @@ class PodcastProcessor:
                 with open(f"{target_dir}/.in_progress", "w") as f:
                     f.write("Processing")
 
-                identification = self.call_model(model, system_prompt, user_prompt)
+                identification = (
+                    None
+                    if self.config.skip_processing_for_test
+                    else self.call_model(model, system_prompt, user_prompt)
+                )
                 if identification:
                     with open(identification_path, "w") as f:
                         f.write(identification)
@@ -307,39 +273,45 @@ class PodcastProcessor:
             os.listdir(classification_path),
             key=lambda filename: (len(filename), filename),
         ):
-            with open(
-                f"{classification_path}/{classification_dir}/identification.txt", "r"
-            ) as id_file:
-                prompt_start_timestamp = float(classification_dir.split("_")[0])
-                prompt_end_timestamp = float(classification_dir.split("_")[1])
-                identification = id_file.read()
+            try:
+                with open(
+                    f"{classification_path}/{classification_dir}/identification.txt",
+                    "r",
+                ) as id_file:
+                    prompt_start_timestamp = float(classification_dir.split("_")[0])
+                    prompt_end_timestamp = float(classification_dir.split("_")[1])
+                    identification = id_file.read()
 
-                try:
-                    prediction = clean_and_parse_model_output(identification)
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    self.logger.error(
-                        f"Error parsing ad segment: {e} for {identification}"
-                    )
-                    continue
+                    try:
+                        prediction = clean_and_parse_model_output(identification)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        self.logger.error(
+                            f"Error parsing ad segment: {e} for {identification}"
+                        )
+                        continue
 
-                if prediction.confidence < self.config.output.min_confidence:
-                    continue
+                    if prediction.confidence < self.config.output.min_confidence:
+                        continue
 
-                ad_segment_starts = prediction.ad_segments
-                # filter out ad segments outside of the start/end, and that
-                # do not exist in segments_by_start
-                ad_segment_starts = [
-                    start
-                    for start in ad_segment_starts
-                    if start  # pylint: disable=chained-comparison
-                    >= prompt_start_timestamp
-                    and start <= prompt_end_timestamp
-                    and start in segments_by_start
-                ]
+                    ad_segment_starts = prediction.ad_segments
+                    # filter out ad segments outside of the start/end, and that
+                    # do not exist in segments_by_start
+                    ad_segment_starts = [
+                        start
+                        for start in ad_segment_starts
+                        if start  # pylint: disable=chained-comparison
+                        >= prompt_start_timestamp
+                        and start <= prompt_end_timestamp
+                        and start in segments_by_start
+                    ]
 
-                for ad_segment_start in ad_segment_starts:
-                    ad_segment_end = segments_by_start[ad_segment_start].end
-                    ad_segments.append((ad_segment_start, ad_segment_end))
+                    for ad_segment_start in ad_segment_starts:
+                        ad_segment_end = segments_by_start[ad_segment_start].end
+                        ad_segments.append((ad_segment_start, ad_segment_end))
+            except FileNotFoundError:
+                self.logger.error(
+                    f"Identification file not found for {classification_dir}"
+                )
 
         return ad_segments
 
@@ -417,24 +389,3 @@ class PodcastProcessor:
         if last_end != audio.duration_seconds * 1000:
             new_audio += audio[last_end:]
         return new_audio
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("global_logger")
-
-    with open("config/config.yml", "r") as f:
-        config = yaml.safe_load(f)
-
-    task = PodcastProcessorTask(
-        "Example",
-        "in/example.mp3",
-        "Example podcast title",
-    )
-    processor = PodcastProcessor(config)
-    processor.process(task)
-    logger.info("PodcastProcessor done")
-
-
-if __name__ == "__main__":
-    main()

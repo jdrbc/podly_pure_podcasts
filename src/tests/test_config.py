@@ -30,9 +30,7 @@ def test_example_config() -> None:
             user_prompt_template_path="config/user_prompt.jinja",
             num_segments_to_input_to_prompt=30,
         ),
-        podcasts={
-            "my_podcast.rss": "https://www.example.com/original/podcast/rss/feed.rss"
-        },
+        podcasts=None,
         output=OutputConfig(
             fade_ms=3000,
             min_ad_segement_separation_seconds=60,
@@ -42,6 +40,8 @@ def test_example_config() -> None:
         openai_base_url="https://api.openai.com/v1",
         remote_whisper=False,
         whisper_model="base",
+        automatically_whitelist_new_episodes=True,
+        number_of_episodes_to_whitelist_from_archive_of_new_feed=1,
         server=None,
         threads=1,
         server_port=5001,

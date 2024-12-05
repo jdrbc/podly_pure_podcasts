@@ -4,7 +4,7 @@ import os
 from typing import Dict, Optional
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProcessingConfig(BaseModel):
@@ -26,18 +26,25 @@ class Config(BaseModel):
     openai_model: str = "gpt-4o"
     openai_timeout: int = 300
     output: OutputConfig
-    podcasts: Dict[str, str]
+    podcasts: Optional[Dict[str, str]] = Field(
+        default=None,
+        deprecated=True,
+        description="This field is deprecated and will be removed in a future version",
+    )
     processing: ProcessingConfig
-    server: Optional[str] = None
-    server_port: int = 5001
-    threads: int = 1
-    remote_whisper: bool = False
     whisper_api_key: Optional[str] = None
     whisper_base_url: Optional[str] = None 
     remote_whisper_model: str = "whisper-1" # openai model, use your own maybe
     whisper_language: str = "en"
     faster_whisper_server: bool = False # for quirks specific to the faster whisper server
-    whisper_model: str = "base" # for local whisper
+    skip_processing_for_test: bool = False  # for testing
+    remote_whisper: bool = False
+    server: Optional[str] = None
+    server_port: int = 5001
+    threads: int = 1
+    whisper_model: str = "base"
+    automatically_whitelist_new_episodes: bool = True
+    number_of_episodes_to_whitelist_from_archive_of_new_feed: int = 1
 
     def redacted(self) -> Config:
         return self.model_copy(

@@ -6,7 +6,7 @@
 <p align="center">
 <p align="center">Ad-block for podcasts. Create an ad-free RSS feed.</p>
 <p align="center">
-  <a href="https://discord.gg/maDTjrwp" target="_blank">
+  <a href="https://discord.gg/FRB98GtF6N" target="_blank">
       <img src="https://img.shields.io/badge/discord-join-blue.svg?logo=discord&logoColor=white" alt="Discord">
   </a>
 </p>
@@ -29,9 +29,10 @@ Here's how it works:
 - `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
 - Start the server & note the URL.
   - For example, `192.168.0.2:5001`
-- Open a podcast app & subscribe to a podcast by appending the RSS to the podly endpoint.
-  - For example, to subscribe to `https://mypodcast.com/rss.xml`
-  - Subscribe to `http://192.168.0.2:5001/https://mypodcast.com/rss.xml`
+- Open 192.168.0.2:5001 in your web browser
+- Add podcast RSS feeds to the interface
+- Open a podcast app & subscribe to the podly endpoint
+  - For example, `http://localhost:5001/feed/1`
 - Select an episode & download
 - Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 
@@ -162,6 +163,14 @@ pipenv run flask --app ./src/main.py db migrate -m "[change description]"
 ```
 
 On next launch the database should update.
+
+## FAQ
+
+Q: How can I enable whisper GPU acceleration?
+
+A: You must install the CUDA version of PyTorch to the virtual environment.
+  
+```pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118```
 
 ## Contributing
 

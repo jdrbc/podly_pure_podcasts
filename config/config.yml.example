@@ -11,14 +11,22 @@ openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # server_port: 5001
 # threads: 5
 
+# if true then all new episodes will be whitelisted for download
+automatically_whitelist_new_episodes: true
+
+# limit the number episodes that podly will include from a new feed's archive
+# this is helpful because some podcast clients will poll the download endpoint
+# for every podcast (probably to get timestamp?) and this will cause podly to
+# download every podcast; so by setting this to a small number it caps the number
+# of podcasts podly will automatically whitelist in that scenario
+# if you want to download old episodes you can whitelist them from the UI
+# if automatically_whitelist_new_episodes overrides is false this setting is ignored
+number_of_episodes_to_whitelist_from_archive_of_new_feed: 1
+
 processing:
   system_prompt_path: config/system_prompt.txt
   user_prompt_template_path: config/user_prompt.jinja
   num_segments_to_input_to_prompt: 30
-
-# enables mapping nice urls like localhost:5001/mypodcast.rss
-podcasts:
-  my_podcast.rss: "https://www.example.com/original/podcast/rss/feed.rss"
 
 output:
   fade_ms: 3000
