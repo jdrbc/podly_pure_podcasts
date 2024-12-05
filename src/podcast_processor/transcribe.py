@@ -12,7 +12,7 @@ from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
-from shared.config import Config
+from shared.config import RemoteWhisperConfig
 
 
 class Segment(BaseModel):
@@ -90,17 +90,13 @@ class LocalWhisperTranscriber(Transcriber):
 
 
 class RemoteWhisperTranscriber(Transcriber):
-    def __init__(self, logger: logging.Logger, config: Config):
+    def __init__(self, logger: logging.Logger, config: RemoteWhisperConfig):
         self.logger = logger
         self.config = config
 
-        # Use the openai config if no whisper config is provided
-        base_url = config.whisper_base_url or config.openai_base_url
-        api_key = config.whisper_api_key or config.openai_api_key
-
         self.openai_client = OpenAI(
-            base_url=base_url,
-            api_key=api_key,
+            base_url=config.base_url,
+            api_key=config.api_key,
         )
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
@@ -190,10 +186,10 @@ class RemoteWhisperTranscriber(Transcriber):
             self.logger.info(f"Transcribing chunk {chunk_path}")
 
             transcription = self.openai_client.audio.transcriptions.create(
-                model=self.config.remote_whisper_model,
+                model=self.config.model,
                 file=f,
                 timestamp_granularities=["segment"],
-                language=self.config.whisper_language,
+                language=self.config.language,
                 response_format="verbose_json",
             )
 

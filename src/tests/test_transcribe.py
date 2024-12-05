@@ -3,8 +3,9 @@ from unittest.mock import MagicMock
 
 import pytest
 import yaml
-from openai import OpenAI
-from openai.types.audio.transcription_segment import TranscriptionSegment
+
+# from openai import OpenAI
+# from openai.types.audio.transcription_segment import TranscriptionSegment
 from pytest_mock import MockerFixture
 
 
