@@ -83,30 +83,34 @@ class Config(BaseModel):
             deep=True,
         )
 
-    @model_validator(mode="after")  # type: ignore[misc]
-    def validate_whisper_config(self) -> None:
-        old_style = self.whisper_model is not None and self.remote_whisper is not None
+    @model_validator(mode="after")
+    def validate_whisper_config(self) -> "Config":
         new_style = self.whisper is not None
 
-        assert (old_style and not new_style) or (new_style and not old_style), (
-            "can't mix and match old and new styles of whisper config: "
-            f"{self.whisper=} {self.whisper_model=} {self.remote_whisper=}"
-        )
-
         if new_style:
-            return
+            self.whisper_model = None
+            self.remote_whisper = None
+            return self
 
         # if we have old style, change to the equivalent new style
         if self.remote_whisper:
             assert (
                 self.openai_api_key is not None
             ), "must supply api key to use remote whisper"
-            self.whisper = RemoteWhisperConfig(api_key=self.openai_api_key)
+            self.whisper = RemoteWhisperConfig(
+                api_key=self.openai_api_key,
+                base_url=self.openai_base_url,
+            )
         else:
-            self.whisper = LocalWhisperConfig()
+            assert (
+                self.whisper_model is not None
+            ), "must supply whisper model to use local whisper"
+            self.whisper = LocalWhisperConfig(model=self.whisper_model)
 
         self.whisper_model = None
         self.remote_whisper = None
+
+        return self
 
 
 def get_config(path: str) -> Config:

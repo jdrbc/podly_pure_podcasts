@@ -34,5 +34,7 @@ output:
   min_confidence: 0.8
 
 whisper:
-  whisper_type: local
-  model: base
+  whisper_type: remote
+  model: whisper-2
+  base_url: http://localhost/v99
+  api_key: this_is_fake
