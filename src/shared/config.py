@@ -56,16 +56,19 @@ class Config(BaseModel):
     server: Optional[str] = None
     server_port: int = 5001
     threads: int = 1
-    whisper: Optional[LocalWhisperConfig | RemoteWhisperConfig] = Field(
-        discriminator="whisper_type"
+    whisper: Optional[LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig] = (
+        Field(
+            default=None,
+            discriminator="whisper_type",
+        )
     )
     remote_whisper: Optional[bool] = Field(
-        default=None,
+        default=False,
         deprecated=True,
         description="deprecated in favor of [Remote|Local]WhisperConfig",
     )
     whisper_model: Optional[str] = Field(
-        default=None,
+        default="base",
         deprecated=True,
         description="deprecated in favor of [Remote|Local]WhisperConfig",
     )
@@ -80,14 +83,15 @@ class Config(BaseModel):
             deep=True,
         )
 
-    @model_validator(mode="after")
+    @model_validator(mode="after")  # type: ignore[misc]
     def validate_whisper_config(self) -> None:
         old_style = self.whisper_model is not None and self.remote_whisper is not None
         new_style = self.whisper is not None
 
-        assert (old_style and not new_style) or (
-            new_style and not old_style
-        ), "can't mix and match old and new styles of whisper config"
+        assert (old_style and not new_style) or (new_style and not old_style), (
+            "can't mix and match old and new styles of whisper config: "
+            f"{self.whisper=} {self.whisper_model=} {self.remote_whisper=}"
+        )
 
         if new_style:
             return

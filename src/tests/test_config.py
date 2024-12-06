@@ -38,6 +38,7 @@ def test_example_config() -> None:
             min_confidence=0.8,
         ),
         openai_base_url="https://api.openai.com/v1",
+        whisper=None,
         remote_whisper=False,
         whisper_model="base",
         automatically_whitelist_new_episodes=True,

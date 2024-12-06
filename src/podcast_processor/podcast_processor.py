@@ -13,7 +13,12 @@ from pydub import AudioSegment  # type: ignore[import-untyped]
 from app import db
 from app.models import Post, Transcript
 from podcast_processor.model_output import clean_and_parse_model_output
-from shared.config import Config
+from shared.config import (
+    Config,
+    LocalWhisperConfig,
+    RemoteWhisperConfig,
+    TestWhisperConfig,
+)
 
 from .transcribe import (
     LocalWhisperTranscriber,
@@ -48,16 +53,23 @@ class PodcastProcessor:
             api_key=self.config.openai_api_key,
         )
 
-        if self.config.skip_processing_for_test:
-            self.transcriber = TestWhisperTranscriber(self.logger)
-        elif self.config.remote_whisper:
-            self.transcriber = RemoteWhisperTranscriber(self.logger, self.config)
-        else:
-            local_whisper_model_name = self.config.whisper_model
+        assert self.config.whisper is not None, (
+            "validate_whisper_config ensures that even if old style whisper "
+            + "config is given, it will be translated and config.whisper set."
+        )
 
-            self.transcriber = LocalWhisperTranscriber(
-                self.logger, local_whisper_model_name
+        if isinstance(self.config.whisper, TestWhisperConfig):
+            self.transcriber = TestWhisperTranscriber(self.logger)
+        elif isinstance(self.config.whisper, RemoteWhisperConfig):
+            self.transcriber = RemoteWhisperTranscriber(
+                self.logger, self.config.whisper
             )
+        elif isinstance(self.config.whisper, LocalWhisperConfig):
+            self.transcriber = LocalWhisperTranscriber(
+                self.logger, self.config.whisper.model
+            )
+        else:
+            raise ValueError(f"unhandled whisper config {config.whisper}")
 
     def process(self, post: Post) -> str:
         processed_audio_path = get_post_processed_audio_path(post)
@@ -198,7 +210,7 @@ class PodcastProcessor:
 
                 identification = (
                     None
-                    if self.config.skip_processing_for_test
+                    if isinstance(self.config.whisper, TestWhisperConfig)
                     else self.call_model(model, system_prompt, user_prompt)
                 )
                 if identification:
