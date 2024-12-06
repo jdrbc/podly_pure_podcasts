@@ -3,7 +3,6 @@ from unittest.mock import MagicMock
 
 import pytest
 import yaml
-from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pytest_mock import MockerFixture
 
@@ -23,15 +22,8 @@ def test_remote_transcribe() -> None:
     logger = logging.getLogger("global_logger")
     with open("config/config.yml", "r") as f:
         config = yaml.safe_load(f)
-    client = OpenAI(
-        base_url=(
-            config["openai_base_url"]
-            if "openai_base_url" in config
-            else "https://api.openai.com/v1"
-        ),
-        api_key=config["openai_api_key"],
-    )
-    transcriber = RemoteWhisperTranscriber(logger, client)
+
+    transcriber = RemoteWhisperTranscriber(logger, config)
 
     transcription = transcriber.transcribe("file.mp3")
     assert transcription == []
