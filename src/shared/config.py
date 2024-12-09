@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, Optional
+from typing import Dict, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ProcessingConfig(BaseModel):
@@ -20,6 +20,26 @@ class OutputConfig(BaseModel):
     min_confidence: float
 
 
+WhisperConfigTypes = Literal["remote", "local", "test"]
+
+
+class TestWhisperConfig(BaseModel):
+    whisper_type: Literal["test"] = "test"
+
+
+class RemoteWhisperConfig(BaseModel):
+    whisper_type: Literal["remote"] = "remote"
+    base_url: str = "https://api.openai.com/v1"
+    api_key: str
+    language: str = "en"
+    model: str = "whisper-1"  # openai model, use your own maybe
+
+
+class LocalWhisperConfig(BaseModel):
+    whisper_type: Literal["local"] = "local"
+    model: str = "base"
+
+
 class Config(BaseModel):
     openai_api_key: Optional[str]
     openai_base_url: str = "https://api.openai.com/v1"
@@ -33,12 +53,25 @@ class Config(BaseModel):
         description="This field is deprecated and will be removed in a future version",
     )
     processing: ProcessingConfig
-    skip_processing_for_test: bool = False  # for testing
-    remote_whisper: bool = False
     server: Optional[str] = None
     server_port: int = 5001
     threads: int = 1
-    whisper_model: str = "base"
+    whisper: Optional[LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig] = (
+        Field(
+            default=None,
+            discriminator="whisper_type",
+        )
+    )
+    remote_whisper: Optional[bool] = Field(
+        default=False,
+        deprecated=True,
+        description="deprecated in favor of [Remote|Local]WhisperConfig",
+    )
+    whisper_model: Optional[str] = Field(
+        default="base",
+        deprecated=True,
+        description="deprecated in favor of [Remote|Local]WhisperConfig",
+    )
     automatically_whitelist_new_episodes: bool = True
     number_of_episodes_to_whitelist_from_archive_of_new_feed: int = 1
 
@@ -49,6 +82,35 @@ class Config(BaseModel):
             },
             deep=True,
         )
+
+    @model_validator(mode="after")
+    def validate_whisper_config(self) -> "Config":
+        new_style = self.whisper is not None
+
+        if new_style:
+            self.whisper_model = None
+            self.remote_whisper = None
+            return self
+
+        # if we have old style, change to the equivalent new style
+        if self.remote_whisper:
+            assert (
+                self.openai_api_key is not None
+            ), "must supply api key to use remote whisper"
+            self.whisper = RemoteWhisperConfig(
+                api_key=self.openai_api_key,
+                base_url=self.openai_base_url,
+            )
+        else:
+            assert (
+                self.whisper_model is not None
+            ), "must supply whisper model to use local whisper"
+            self.whisper = LocalWhisperConfig(model=self.whisper_model)
+
+        self.whisper_model = None
+        self.remote_whisper = None
+
+        return self
 
 
 def get_config(path: str) -> Config:
