@@ -1,5 +1,4 @@
 import datetime
-import os
 import uuid
 from typing import Any, Optional
 
@@ -114,16 +113,12 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
         _external=config.server is None,
     )
 
-    audio_len_bytes = 0
-    if os.path.isfile(post.processed_audio_path):
-        audio_len_bytes = os.path.getsize(post.processed_audio_path)
-
     item = PyRSS2Gen.RSSItem(
         title=post.title,
         enclosure=PyRSS2Gen.Enclosure(
             url=audio_url,
             type="audio/mpeg",
-            length=audio_len_bytes,
+            length=post.audio_len_bytes(),
         ),
         description=post.description,
         guid=post.guid,
