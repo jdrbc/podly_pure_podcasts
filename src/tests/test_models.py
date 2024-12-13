@@ -1,5 +1,6 @@
-from app.models import Post
 from unittest.mock import patch
+
+from app.models import Post
 
 
 def test_get_len_file() -> None:
