@@ -1,4 +1,5 @@
 import json
+import os
 from typing import List
 
 from app import db
@@ -40,6 +41,16 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     whitelisted = db.Column(db.Boolean, default=False, nullable=False)
 
     transcript = db.relationship("Transcript", uselist=False, backref="post")
+
+    def audio_len_bytes(self) -> int:
+        audio_len_bytes = 0
+        if self.processed_audio_path is not None and os.path.isfile(
+            self.processed_audio_path
+        ):
+            audio_len_bytes = os.path.getsize(self.processed_audio_path)
+
+        return audio_len_bytes
+
     # identifications = db.relationship(
     #     "Identification",
     #     backref="feed",
