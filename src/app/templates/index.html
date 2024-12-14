@@ -94,7 +94,7 @@
             {% for post in feed.posts %}
             <tr>
               <td>
-                <a href="{{ url_for('main.post', p_guid=post.guid) }}"
+                <a href="{{ url_for('main.post_page', p_guid=post.guid) }}"
                   >{{ post.title }}</a
                 >
 
