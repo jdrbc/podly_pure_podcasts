@@ -74,7 +74,7 @@ class Transcript(db.Model):  # type: ignore[name-defined, misc]
             return [
                 Segment(**json.loads(segment)) for segment in json.loads(self.content)
             ]
-        except:
+        except (json.JSONDecodeError, TypeError):
             return None
 
     def get_human_readable_content(self) -> Optional[str]:
