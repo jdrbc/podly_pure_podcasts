@@ -87,6 +87,7 @@
           <thead>
             <tr>
               <th>Title</th>
+              <th>Download</th>
               <th>Whitelisted</th>
             </tr>
           </thead>
@@ -97,8 +98,12 @@
                 <a href="{{ url_for('main.post_page', p_guid=post.guid) }}"
                   >{{ post.title }}</a
                 >
-
 			  </td>
+              <td>
+                <a href="{{ url_for('main.download_post', p_guid=post.guid) }}"
+                  >Download</a
+                >
+              </td>
               <td>
                 <input
                   type="checkbox"
