@@ -55,8 +55,17 @@
             <td>{{ post.whitelisted }}</td>
         </tr>
         <tr>
-            <td>transcript</td>
-            <td>{{ post.transcript }}</td>
+            <td>Transcript</td>
+			<td>
+				<style>
+					.transcript p {
+						margin: 5px 0;
+					}
+				</style>
+				<div class="transcript">
+					{{ post.transcript.render_segments_as_html()|safe }}
+				</div>
+			</td>
         </tr>
     </tbody>
 </table>

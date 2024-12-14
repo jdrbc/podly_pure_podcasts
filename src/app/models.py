@@ -2,6 +2,8 @@ import json
 import os
 from typing import List
 
+from markupsafe import Markup
+
 from app import db
 from podcast_processor.transcribe import Segment
 
@@ -75,6 +77,16 @@ class Transcript(db.Model):  # type: ignore[name-defined, misc]
         return "\n".join(
             f"{segment.start} - {segment.end}: {segment.text}" for segment in segments
         )
+
+    def render_segments_as_html(self) -> str:
+        """Create an HTML representation of the transcript segments."""
+        segments = self.get_segments()
+        rendered_segments = "".join(
+            f"<p><strong>{segment.start} - {segment.end}:</strong> {segment.text}</p>"
+            for segment in segments
+        )
+        # Use Markup to mark the string as safe so the HTML renders correctly
+        return Markup(rendered_segments)
 
 
 # class Identification(db.Model):  # type: ignore[name-defined, misc]
