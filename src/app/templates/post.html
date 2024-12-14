@@ -1,9 +1,3 @@
-
-
-
-
-
-
 <table border="1">
     <thead>
         <tr>
@@ -27,6 +21,10 @@
         <tr>
             <td>Upstream Download URL</td>
 			<td><a href="{{ post.download_url }}" target="_blank">{{ post.download_url }}</a></td>
+        </tr>
+        <tr>
+            <td>Podly Download URL</td>
+			<td><a href="{{ url_for('main.download_post', p_guid=post.guid) }}" target="_blank">{{ url_for('main.download_post', p_guid=post.guid) }}</a></td>
         </tr>
         <tr>
             <td>title</td>
