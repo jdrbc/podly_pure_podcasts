@@ -31,6 +31,13 @@ def index() -> flask.Response:
     )
 
 
+@main_bp.route("/post/<string:p_guid>.html", methods=["GET"])
+def post(p_guid: str) -> flask.Response:
+    post = Post.query.filter_by(guid=p_guid).first()
+
+    return flask.make_response(flask.render_template("post.html", post=post), 200)
+
+
 def get_transcript(p_guid: str) -> flask.Response:
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
