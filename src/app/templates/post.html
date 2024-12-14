@@ -63,7 +63,11 @@
 					}
 				</style>
 				<div class="transcript">
-					{{ post.transcript.render_segments_as_html()|safe }}
+					{% if post.transcript %}
+						{{ post.transcript.render_segments_as_html() | safe }}
+					{% else %}
+						None
+					{% endif %}
 				</div>
 			</td>
         </tr>

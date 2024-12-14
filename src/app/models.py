@@ -1,6 +1,6 @@
 import json
 import os
-from typing import List
+from typing import List, Optional
 
 from markupsafe import Markup
 
@@ -69,11 +69,18 @@ class Transcript(db.Model):  # type: ignore[name-defined, misc]
     content = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime)
 
-    def get_segments(self) -> List[Segment]:
-        return [Segment(**json.loads(segment)) for segment in json.loads(self.content)]
+    def get_segments(self) -> Optional[List[Segment]]:
+        try:
+            return [
+                Segment(**json.loads(segment)) for segment in json.loads(self.content)
+            ]
+        except:
+            return None
 
-    def get_human_readable_content(self) -> str:
+    def get_human_readable_content(self) -> Optional[str]:
         segments = self.get_segments()
+        if segments is None:
+            return None
         return "\n".join(
             f"{segment.start} - {segment.end}: {segment.text}" for segment in segments
         )
@@ -81,6 +88,8 @@ class Transcript(db.Model):  # type: ignore[name-defined, misc]
     def render_segments_as_html(self) -> str:
         """Create an HTML representation of the transcript segments."""
         segments = self.get_segments()
+        if segments is None:
+            return "No Transcript"
         rendered_segments = "".join(
             f"<p><strong>{segment.start} - {segment.end}:</strong> {segment.text}</p>"
             for segment in segments
