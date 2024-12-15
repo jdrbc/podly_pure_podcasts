@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any, Optional
 
 import requests
@@ -15,10 +16,7 @@ DOWNLOAD_DIR = "in"
 
 
 def download_episode(post: Post) -> Optional[str]:
-    download_path = get_and_make_download_path(
-        post.title,
-        re.sub(r"[^a-zA-Z0-9\s]", "", post.title) + ".mp3",
-    )
+    download_path = str(get_and_make_download_path(post.title))
     if not os.path.exists(download_path):
         # Download the podcast episode
         audio_link = post.download_url
@@ -41,10 +39,17 @@ def download_episode(post: Post) -> Optional[str]:
     return download_path
 
 
-def get_and_make_download_path(podcast_title: str, episode_name: str) -> str:
-    if not os.path.exists(f"{DOWNLOAD_DIR}/{podcast_title}"):
-        os.makedirs(f"{DOWNLOAD_DIR}/{podcast_title}")
-    return f"{DOWNLOAD_DIR}/{podcast_title}/{episode_name}"
+def get_and_make_download_path(post_title: str) -> Path:
+    sanitized_title = re.sub(r"[^a-zA-Z0-9\s]", "", post_title)
+
+    post_directory = sanitized_title
+    post_filename = sanitized_title + ".mp3"
+
+    post_directory_path = Path(DOWNLOAD_DIR) / post_directory
+
+    post_directory_path.mkdir(parents=True, exist_ok=True)
+
+    return post_directory_path / post_filename
 
 
 def find_audio_link(entry: Any) -> str:
