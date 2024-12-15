@@ -109,7 +109,7 @@ class PodcastProcessor:
                 min_ad_segment_length_seconds=self.config.output.min_ad_segment_length_seconds,
                 min_ad_segement_separation_seconds=self.config.output.min_ad_segement_separation_seconds,  # pylint: disable=line-too-long
                 fade_ms=self.config.output.fade_ms,
-                chunk_duration_ms=60000, # might want to put this in config.yml eventually?
+                chunk_duration_ms=600000, # might want to put this in config.yml eventually?
             ).export(processed_audio_path, format="mp3")
             self.logger.info(f"Processing podcast: {post} complete")
             post.processed_audio_path = processed_audio_path
@@ -356,7 +356,7 @@ class PodcastProcessor:
         min_ad_segment_length_seconds: int,
         min_ad_segement_separation_seconds: int,
         fade_ms: int = 5000,
-        chunk_duration_ms: int = 60000,  # 1-minute chunks
+        chunk_duration_ms: int = 600000,  # 1-minute chunks
     ) -> AudioSegment:
         self.logger.info(
             f"Creating new audio with ad segments removed between: {ad_segments}"
@@ -407,25 +407,6 @@ class PodcastProcessor:
 
         # Combine processed chunks
         return sum(processed_chunks, AudioSegment.empty())
-
-
-    # Parallel processing function for each chunk
-#    def process_chunk(self, args):
-#        chunk, start_offset = args
-#        new_chunk = AudioSegment.empty()
-#        last_end = 0
-#        for start, end in ad_segments_ms:
-#            if start >= start_offset and start < start_offset + len(chunk):
-#                # Adjust segment positions relative to the chunk
-#                relative_start = max(0, start - start_offset)
-#                relative_end = min(len(chunk), end - start_offset)
-#                new_chunk += chunk[last_end:relative_start]
-#                new_chunk += self.get_ad_fade_out(chunk, relative_start, fade_ms)
-#                new_chunk += self.get_ad_fade_in(chunk, relative_end, fade_ms)
-#                last_end = relative_end
-#        if last_end < len(chunk):
-#            new_chunk += chunk[last_end:]
-#        return new_chunk
 
     def split_audio(self, audio: AudioSegment, chunk_duration_ms: int) -> List[AudioSegment]:
         return [
