@@ -26,7 +26,7 @@ def create_app() -> Flask:
     app = Flask(__name__, static_folder="static")
 
     # Configure the app (for example, SQLite for development)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db"
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db?timeout=90"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     # Initialize the sqlalchemy object with the Flask app context
