@@ -82,6 +82,9 @@
           <button id="refresh-button" onclick="refresh('{{feed.id}}')">
             Refresh
           </button>
+		  <button id="delete-button" onclick="confirmAndDeleteFeed('{{feed.id}}', '{{feed.title}}')">
+			Delete
+		  </button>
         </summary>
         <table>
           <thead>
@@ -131,6 +134,44 @@
     </div>
 
     <script>
+
+     async function confirmAndDeleteFeed(feedId, feedName) {
+        // Ensure feedId is valid
+        if (!feedId) {
+            alert('Invalid feed ID');
+            return;
+        }
+
+        // Confirmation dialog
+        const userConfirmed = confirm(`Are you sure you want to delete feed '${feedName}'?`);
+        if (!userConfirmed) {
+            // User canceled the operation
+            return;
+        }
+
+        // Proceed with deletion
+        try {
+            const response = await fetch(`/feed/${feedId}`, {
+                method: 'DELETE',
+            });
+
+            if (response.ok) {
+                alert(`Feed with ID ${feedId} deleted successfully.`);
+                // Remove the deleted feed from the UI
+                const detailsElement = document.getElementById(`details-${feedId}`);
+                if (detailsElement) {
+                    detailsElement.remove();
+                }
+            } else {
+                alert(`Failed to delete feed. Status: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Error deleting feed:', error);
+            alert('An error occurred while deleting the feed.');
+        }
+    }
+
+
       function setWhitelist(postGuid, old_val) {
         console.log("set whitelist for post: " + postGuid + " to: " + !old_val);
         const url = "{{ url_for('main.set_whitelist', p_guid='0', val=False)}}"
