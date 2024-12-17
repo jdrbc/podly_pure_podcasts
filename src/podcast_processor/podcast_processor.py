@@ -6,8 +6,6 @@ import threading
 import time
 from typing import Dict, List, Optional, Tuple, cast
 
-import multiprocessing # for multithreaded audio stitching
-
 from jinja2 import Template
 from openai import APIError, OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
@@ -109,7 +107,6 @@ class PodcastProcessor:
                 min_ad_segment_length_seconds=self.config.output.min_ad_segment_length_seconds,
                 min_ad_segement_separation_seconds=self.config.output.min_ad_segement_separation_seconds,  # pylint: disable=line-too-long
                 fade_ms=self.config.output.fade_ms,
-                chunk_duration_ms=600000, # might want to put this in config.yml eventually?
             ).export(processed_audio_path, format="mp3")
             self.logger.info(f"Processing podcast: {post} complete")
             post.processed_audio_path = processed_audio_path
@@ -356,25 +353,24 @@ class PodcastProcessor:
         min_ad_segment_length_seconds: int,
         min_ad_segement_separation_seconds: int,
         fade_ms: int = 5000,
-        chunk_duration_ms: int = 600000,  # 1-minute chunks
     ) -> AudioSegment:
         self.logger.info(
-            f"Creating new audio with ad segments removed between: {ad_segments}"
+            f"Creating new audio with ads segments removed between: {ad_segments}"
         )
+        # if any two ad segments overlap by fade_ms, join them into single segment
         ad_segments = sorted(ad_segments)
-
-        # Join overlapping or close ad segments
         i = 0
         while i < len(ad_segments) - 1:
             if (
-                ad_segments[i][1] + min_ad_segement_separation_seconds 
+                ad_segments[i][1] + min_ad_segement_separation_seconds
                 >= ad_segments[i + 1][0]
             ):
                 ad_segments[i] = (ad_segments[i][0], ad_segments[i + 1][1])
                 ad_segments.pop(i + 1)
             else:
                 i += 1
-        # remove any isolated ad segments that are too short, possibly misidentified
+
+        # remove any isloated ad segments that are too short, possibly misidentified
         ad_segments = [
             segment
             for segment in ad_segments
@@ -394,38 +390,14 @@ class PodcastProcessor:
         ad_segments_ms = [
             (int(start * 1000), int(end * 1000)) for start, end in ad_segments
         ]
-        # Split audio into chunks
-        chunks = self.split_audio(audio, chunk_duration_ms)
-        chunk_args = [
-            (chunk, i * chunk_duration_ms, ad_segments_ms, fade_ms)
-            for i, chunk in enumerate(chunks)
-        ]
-
-        # Process chunks in parallel
-        with multiprocessing.Pool() as pool:
-            processed_chunks = pool.map(process_chunk, chunk_args)
-
-        # Combine processed chunks
-        return sum(processed_chunks, AudioSegment.empty())
-
-    def split_audio(self, audio: AudioSegment, chunk_duration_ms: int) -> List[AudioSegment]:
-        return [
-            audio[i:i + chunk_duration_ms]
-            for i in range(0, len(audio), chunk_duration_ms)
-        ]
-
-def process_chunk(args):
-    chunk, start_offset, ad_segments_ms, fade_ms = args
-    new_chunk = AudioSegment.empty()
-    last_end = 0
-    for start, end in ad_segments_ms:
-        if start >= start_offset and start < start_offset + len(chunk):
-            relative_start = max(0, start - start_offset)
-            relative_end = min(len(chunk), end - start_offset)
-            new_chunk += chunk[last_end:relative_start]
-            new_chunk += chunk[relative_start:relative_start + fade_ms].fade_out(fade_ms)
-            new_chunk += chunk[relative_end - fade_ms:relative_end].fade_in(fade_ms)
-            last_end = relative_end
-    if last_end < len(chunk):
-        new_chunk += chunk[last_end:]
-    return new_chunk
+        new_audio = AudioSegment.empty()
+        last_end = 0
+        for start, end in ad_segments_ms:
+            new_audio += audio[last_end:start]
+            new_audio += self.get_ad_fade_out(audio, start, fade_ms)
+            new_audio += self.get_ad_fade_in(audio, end, fade_ms)
+            last_end = end
+            gc.collect()
+        if last_end != audio.duration_seconds * 1000:
+            new_audio += audio[last_end:]
+        return new_audio

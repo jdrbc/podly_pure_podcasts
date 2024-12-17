@@ -1,10 +1,3 @@
-import os
-
-# Configure ffmpeg threading
-num_processors = os.cpu_count()
-os.environ["PYDUB_FFMPEG_BINARY"] = f"ffmpeg -threads {num_processors}"
-print(f"Set PYDUB_FFMPEG_BINARY to use ffmpeg with {num_processors} threads.")
-
 from waitress import serve
 
 from app import config, create_app, db, logger

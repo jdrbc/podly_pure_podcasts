@@ -1,9 +1,18 @@
 import re
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import flask
 import validators
-from flask import Blueprint, jsonify, request, send_file, url_for
+from flask import (
+    Blueprint,
+    jsonify,
+    request,
+    send_file,
+    url_for,
+    current_app,
+    Flask
+)
 from flask.typing import ResponseReturnValue
 
 from app import config, db, logger
@@ -52,10 +61,69 @@ def set_whitelist(p_guid: str, val: str) -> flask.Response:
 
     return index()
 
+processor = PodcastProcessor(config) #pre-initialize here rather than each post
+
+def download_and_process(post: Post, app: Flask) -> dict:
+    """
+    Downloads and processes a single podcast episode.
+
+    Args:
+        post (Post): The podcast post to download and process.
+        app (Flask): The Flask application instance.
+
+    Returns:
+        dict: A dictionary containing the status and any relevant messages.
+    """
+    try:
+        with app.app_context():  # Push application context
+            # Download the episode
+            download_path = download_episode(post)
+            if download_path is None:
+                logger.error(f"Failed to download post: {post.title} (ID: {post.id})")
+                return {
+                    "post_id": post.id,
+                    "title": post.title,
+                    "status": "failed",
+                    "message": "Download failed."
+                }
+
+            post.unprocessed_audio_path = download_path
+            db.session.commit()
+
+            # Process the episode
+            output_path = processor.process(post)
+            if output_path is None:
+                logger.error(f"Failed to process post: {post.title} (ID: {post.id})")
+                return {
+                    "post_id": post.id,
+                    "title": post.title,
+                    "status": "failed",
+                    "message": "Processing failed."
+                }
+
+            post.processed_audio_path = output_path
+            db.session.commit()
+
+            logger.info(f"Successfully downloaded and processed post: {post.title} (ID: {post.id})")
+            return {
+                "post_id": post.id,
+                "title": post.title,
+                "status": "success",
+                "message": output_path
+            }
+
+    except Exception as e:
+        logger.error(f"Error downloading and processing post {post.id}: {e}")
+        return {
+            "post_id": post.id,
+            "title": post.title,
+            "status": "error",
+            "message": str(e)
+        }
 
 @main_bp.route("/post/<string:p_guid>.mp3", methods=["GET"])
 def download_post(p_guid: str) -> flask.Response:
-    logger.info(f"request to download post with GUID: {p_guid}")
+    logger.info(f"Request to download post with GUID: {p_guid}")
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         logger.warning(f"Post with GUID: {p_guid} not found")
@@ -65,29 +133,58 @@ def download_post(p_guid: str) -> flask.Response:
         logger.warning(f"Post: {post.title} is not whitelisted")
         return flask.make_response(("Episode not whitelisted", 403))
 
-    logger.info(f"Downloading post: {post.title}")
+    # Retrieve the Flask application instance
+    app = current_app._get_current_object()
 
-    # Download the episode
-    download_path = download_episode(post)
+    # Utilize the refactored download_and_process function with app
+    result = download_and_process(post, app)
 
-    if download_path is None:
-        return flask.make_response(("Failed to download episode", 500))
+    if result["status"] == "success":
+        try:
+            output_path = result["message"]
+            return send_file(path_or_file=Path(output_path).resolve())
+        except Exception as e:
+            logger.error(f"Error sending file: {e}")
+            return flask.make_response(("Error sending file", 500))
+    else:
+        return flask.make_response((result["message"], 500))
 
-    post.unprocessed_audio_path = download_path
-    db.session.commit()
+@main_bp.route("/download_all", methods=["POST"])
+def download_all_posts() -> flask.Response:
+    logger.info("Initiating bulk download of all podcasts (ignoring whitelist status).")
+    posts = Post.query.all()
+    if not posts:
+        logger.info("No podcast posts available for download.")
+        return flask.make_response(("No podcasts available for download.", 400))
 
-    # Process the episode
-    processor = PodcastProcessor(config)
-    output_path = processor.process(post)
-    if output_path is None:
-        return flask.make_response(("Failed to process episode", 500))
+    download_results = []
 
-    try:
-        return send_file(path_or_file=Path(output_path).resolve())
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error(f"Error sending file: {e}")
-        return flask.make_response(("Error sending file", 500))
+    # Determine the number of worker threads based on config
+    max_workers = config.threads if config.threads > 0 else 1  # Default to 1 if not set
 
+    # Retrieve the Flask application instance
+    app = current_app._get_current_object()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all download tasks to the executor, passing both post and app
+        future_to_post = {executor.submit(download_and_process, post, app): post for post in posts}
+
+        for future in as_completed(future_to_post):
+            post = future_to_post[future]
+            try:
+                result = future.result()
+                download_results.append(result)
+            except Exception as e:
+                logger.error(f"Unhandled exception for post {post.id}: {e}")
+                download_results.append({
+                    "post_id": post.id,
+                    "title": post.title,
+                    "status": "error",
+                    "message": str(e)
+                })
+
+    logger.info("Bulk download completed.")
+    return jsonify(download_results), 200
 
 @main_bp.route("/feed", methods=["POST"])
 def add_feed() -> ResponseReturnValue:
