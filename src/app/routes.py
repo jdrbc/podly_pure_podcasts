@@ -221,7 +221,7 @@ def get_feed(f_id: int) -> flask.Response:
 
 
 @main_bp.route("/feed/<int:f_id>", methods=["DELETE"])
-def delete_feed(f_id: int) -> ResponseReturnValue:
+def delete_feed(f_id: int) -> flask.Response:
     logger.info(f"Deleting feed with ID: {f_id}")
     feed = Feed.query.get_or_404(f_id)
     for post in feed.posts:
@@ -229,7 +229,7 @@ def delete_feed(f_id: int) -> ResponseReturnValue:
     db.session.delete(feed)
     db.session.commit()
     logger.info(f"Feed with ID: {f_id} deleted")
-    return flask.redirect(url_for("main.index"))
+    return flask.Response(status=204)
 
 
 # backwards compatibility for the old method of subscribing to feeds
