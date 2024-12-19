@@ -151,11 +151,23 @@ def download_post(p_guid: str) -> flask.Response:
 
 @main_bp.route("/download_all", methods=["POST"])
 def download_all_posts() -> flask.Response:
-    logger.info("Initiating bulk download of all podcasts (ignoring whitelist status).")
+    logger.info("Initiating bulk download of all podcasts and whitelisting all episodes.")
     posts = Post.query.all()
     if not posts:
         logger.info("No podcast posts available for download.")
         return flask.make_response(("No podcasts available for download.", 400))
+
+    # Whitelist all posts
+    for post in posts:
+        if not post.whitelisted:
+            post.whitelisted = True
+    try:
+        db.session.commit()
+        logger.info("All posts have been whitelisted.")
+    except Exception as e:
+        logger.error(f"Failed to whitelist posts: {e}")
+        db.session.rollback()
+        return flask.make_response(("Failed to whitelist posts.", 500))
 
     download_results = []
 
