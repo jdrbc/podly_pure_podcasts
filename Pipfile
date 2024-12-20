@@ -26,6 +26,7 @@ beartype = "*"
 openai-whisper = "*"
 flask-sqlalchemy = "*"
 flask-migrate = "*"
+Flask-APScheduler = "*"
 
 [dev-packages]
 black = "*"
