@@ -9,6 +9,7 @@ from flask_sqlalchemy import SQLAlchemy
 from app.logger import setup_logger
 from shared.config import get_config
 
+config = get_config("config/config.yml")
 setup_logger("global_logger", "config/app.log")
 logger = logging.getLogger("global_logger")
 
@@ -34,7 +35,7 @@ class SchedulerConfig:
     }
     SCHEDULER_JOB_DEFAULTS = {
         'coalesce': False,
-        'max_instances': 3
+        'max_instances': config.threads
     }
 
 
@@ -62,8 +63,6 @@ def create_app() -> Flask:
 
 db = SQLAlchemy()
 migrate = Migrate(directory="./src/migrations")
-config = get_config("config/config.yml")
-
 
 setup_dirs()
 print("Config:\n", json.dumps(config.redacted().model_dump(), indent=2))
