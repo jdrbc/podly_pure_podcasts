@@ -21,21 +21,36 @@ def setup_dirs() -> None:
     if not os.path.exists("srv"):
         os.makedirs("srv")
 
+class SchedulerConfig:
+    SCHEDULER_API_ENABLED = True
+    SCHEDULER_JOBSTORES = {
+        'default': {
+            'type': 'sqlalchemy',
+            'url': 'sqlite:///jobs.sqlite'
+        }
+    }
+    SCHEDULER_EXECUTORS = {
+        'default': {'type': 'threadpool', 'max_workers': 1}
+    }
+    SCHEDULER_JOB_DEFAULTS = {
+        'coalesce': False,
+        'max_instances': 3
+    }
+
 
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static")
 
-    # Configure the app (for example, SQLite for development)
+    app.config.from_object(SchedulerConfig())
+
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db"
+
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    # Initialize the sqlalchemy object with the Flask app context
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # Import and register the routes (views)
     from app.routes import main_bp  # pylint: disable=import-outside-toplevel
-
     app.register_blueprint(main_bp)
 
     from app import models  # pylint: disable=import-outside-toplevel, unused-import
@@ -44,7 +59,6 @@ def create_app() -> Flask:
         upgrade()
 
     return app
-
 
 db = SQLAlchemy()
 migrate = Migrate(directory="./src/migrations")
