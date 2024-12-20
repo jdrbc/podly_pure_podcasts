@@ -18,13 +18,6 @@ def port_over_old_feeds():
                 db.session.add(feed)
         db.session.commit()
 
-
-# def refresh_all_feeds_job():
-#   """Job function to refresh all feeds within the Flask app context."""
-#    with app.app_context():
-#        refresh_all_feeds()
-
-
 def setup_scheduler():
     from app.jobs import run_refresh_all_feeds
     import global_ctx
@@ -36,7 +29,7 @@ def setup_scheduler():
 
     global_ctx.scheduler.add_job(
         id="refresh_all_feeds",
-        func=run_refresh_all_feeds,  # Use the run function directly
+        func=run_refresh_all_feeds,
         trigger="interval",
         minutes=config.update_interval_minutes,
         replace_existing=True,
@@ -51,8 +44,11 @@ def main():
         raise RuntimeError("Failed to initialize the Flask application in global context")
 
     """Main entry point for the application."""
-    # Set up the scheduler
-    setup_scheduler()
+    if config.enable_background_scheduler:
+        logger.info(f"Background scheduler is enabled with {config.threads} thread(s).")
+        setup_scheduler()
+    else:
+        logger.info("Background scheduler is disabled by configuration.")
 
     # Port over old feeds if needed
     port_over_old_feeds()
