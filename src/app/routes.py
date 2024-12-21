@@ -9,8 +9,7 @@ from flask.typing import ResponseReturnValue
 from app import config, db, logger
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.models import Feed, Post
-from podcast_processor.podcast_processor import PodcastProcessor
-from shared.podcast_downloader import download_episode
+from app.posts import download_and_process_post
 
 main_bp = Blueprint("main", __name__)
 
@@ -65,22 +64,7 @@ def download_post(p_guid: str) -> flask.Response:
         logger.warning(f"Post: {post.title} is not whitelisted")
         return flask.make_response(("Episode not whitelisted", 403))
 
-    logger.info(f"Downloading post: {post.title}")
-
-    # Download the episode
-    download_path = download_episode(post)
-
-    if download_path is None:
-        return flask.make_response(("Failed to download episode", 500))
-
-    post.unprocessed_audio_path = download_path
-    db.session.commit()
-
-    # Process the episode
-    processor = PodcastProcessor(config)
-    output_path = processor.process(post)
-    if output_path is None:
-        return flask.make_response(("Failed to process episode", 500))
+    output_path = download_and_process_post(p_guid)
 
     try:
         return send_file(path_or_file=Path(output_path).resolve())
@@ -128,6 +112,8 @@ def delete_feed(f_id: int) -> flask.Response:
     logger.info(f"Deleting feed with ID: {f_id}")
     feed = Feed.query.get_or_404(f_id)
     for post in feed.posts:
+        if post.transcript:
+            db.session.delete(post.transcript)
         db.session.delete(post)
     db.session.delete(feed)
     db.session.commit()
