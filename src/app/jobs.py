@@ -1,24 +1,28 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from global_ctx import app  # Import global app context
-from app.models import Feed, Post
-from app import db, logger, config
+from typing import List, Optional
+
+from app import config, db, logger
 from app.feeds import refresh_feed
+from app.models import Feed, Post
 from app.routes import download_post
+from global_ctx import app  # Import global app context
 
 
-def run_refresh_all_feeds():
+def run_refresh_all_feeds() -> None:
     """Main entry point for refreshing all feeds."""
     logger.info("run_refresh_all_feeds call")
 
     if app is None:
         raise RuntimeError("Flask application context is None")
 
+    assert app is not None  # For mypy type checking
     with app.app_context():
         refresh_all_feeds()
 
 
-def process_post(post):
+def process_post(post: Post) -> None:
     """Process a single post within the app context."""
+    assert app is not None  # For mypy type checking
     with app.app_context():
         try:
             logger.info(f"Processing post: {post.title} (ID: {post.id})")
@@ -28,7 +32,7 @@ def process_post(post):
             logger.error(f"Error processing post {post.id}: {e}")
 
 
-def refresh_all_feeds():
+def refresh_all_feeds() -> None:
     """Refresh all feeds and process newly released episodes."""
     logger.info("Scheduled job started: Refreshing all podcast feeds.")
 
@@ -68,8 +72,7 @@ def refresh_all_feeds():
 
         # Filter posts to only process those that are whitelisted
         posts_to_process = Post.query.filter(
-            Post.processed_audio_path == None,
-            Post.whitelisted == True
+            Post.processed_audio_path == None, Post.whitelisted == True
         ).all()
         logger.info(f"Found {len(posts_to_process)} whitelisted new posts to process.")
 
@@ -78,9 +81,13 @@ def refresh_all_feeds():
             return
 
         # Process posts in parallel using ThreadPoolExecutor
-        max_workers = min(config.threads, len(posts_to_process))  # Limit threads to config or number of posts
+        max_workers = min(
+            config.threads, len(posts_to_process)
+        )  # Limit threads to config or number of posts
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_post = {executor.submit(process_post, post): post for post in posts_to_process}
+            future_to_post = {
+                executor.submit(process_post, post): post for post in posts_to_process
+            }
 
             for future in as_completed(future_to_post):
                 post = future_to_post[future]

@@ -1,12 +1,15 @@
+from flask_apscheduler import APScheduler  # type: ignore
 from waitress import serve
-from flask_apscheduler import APScheduler
+
+import global_ctx  # global context, death to flask app context errors
 from app import config, create_app, db, logger
 from app.feeds import add_or_refresh_feed
 from app.models import Feed
-import global_ctx # global context, death to flask app context errors
+from app.jobs import run_refresh_all_feeds
 
-def port_over_old_feeds():
+def port_over_old_feeds() -> None:
     """Port over feeds from old configuration."""
+    assert global_ctx.app is not None, "Flask application context is None"  # what?
     with global_ctx.app.app_context():
         if config.podcasts is None:
             return
@@ -18,12 +21,13 @@ def port_over_old_feeds():
                 db.session.add(feed)
         db.session.commit()
 
-def setup_scheduler():
-    from app.jobs import run_refresh_all_feeds
-    import global_ctx
 
-    """Set up the scheduler and register jobs."""
+def setup_scheduler() -> None:
+
     global_ctx.scheduler = APScheduler()
+    assert global_ctx.scheduler is not None, "Scheduler failed to initialize"
+    assert global_ctx.app is not None, "Flask application context is None"
+
     global_ctx.scheduler.init_app(global_ctx.app)
     global_ctx.scheduler.start()
 
@@ -36,12 +40,16 @@ def setup_scheduler():
     )
 
 
-def main():
+def main() -> None:
 
     global_ctx.app = create_app()
 
     if global_ctx.app is None:
-        raise RuntimeError("Failed to initialize the Flask application in global context")
+        raise RuntimeError(
+            "Failed to initialize the Flask application in global context"
+        )
+
+    assert global_ctx.app is not None, "Flask application context is None"
 
     """Main entry point for the application."""
     if config.enable_background_scheduler:
