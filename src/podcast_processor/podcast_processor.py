@@ -27,8 +27,6 @@ from .transcribe import (
     TestWhisperTranscriber,
     Transcriber,
 )
-
-
 def get_post_processed_audio_path(post: Post) -> str:
     return f"srv/{post.feed.title}/{post.unprocessed_audio_path.split('/')[-1]}"
 
