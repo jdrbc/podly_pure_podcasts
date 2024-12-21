@@ -190,11 +190,19 @@ We welcome contributions to Podly! Here's how you can help:
 
 ### Running Tests
 
-Before submitting a pull request, you can run the same tests that run in CI locally using:
+Before submitting a pull request, you can run the same tests that run in CI:
 
+To prep your pipenv environment to run this script, you will need to first run:
+
+```bash
+pipenv install --dev
+```
+
+Then, to run the checks,
 ```bash
 scripts/ci.sh
 ```
+
 
 This will run all the necessary checks including:
 - Type checking with mypy
