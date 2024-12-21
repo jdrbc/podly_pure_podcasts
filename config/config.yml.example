@@ -10,6 +10,10 @@ openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # server_port: 5001
 # threads: 5
 
+
+#setting a value here enables automatic scheduler to auto-refresh the feed lists and download new episodes
+#background_update_interval_minute: 10
+
 # if true then all new episodes will be whitelisted for download
 automatically_whitelist_new_episodes: true
 

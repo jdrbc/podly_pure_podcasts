@@ -71,13 +71,22 @@ class PodcastProcessor:
         else:
             raise ValueError(f"unhandled whisper config {config.whisper}")
 
-    def process(self, post: Post) -> str:
+    def process(self, post: Post, blocking: bool) -> str:
+        locked = False
         processed_audio_path = get_post_processed_audio_path(post)
         with PodcastProcessor.lock_lock:
             if processed_audio_path not in PodcastProcessor.locks:
                 PodcastProcessor.locks[processed_audio_path] = threading.Lock()
+                PodcastProcessor.locks[
+                    processed_audio_path
+                ].acquire()  # should be no contention
+                locked = True
 
-        with PodcastProcessor.locks[processed_audio_path]:
+        if not locked and not PodcastProcessor.locks[processed_audio_path].acquire(
+            blocking=blocking
+        ):
+            raise ProcessorException("Processing job in progress")
+        try:
             if os.path.exists(processed_audio_path):
                 self.logger.info(f"Audio already processed: {post}")
                 return processed_audio_path
@@ -113,6 +122,8 @@ class PodcastProcessor:
             db.session.commit()
 
             return processed_audio_path
+        finally:
+            PodcastProcessor.locks[processed_audio_path].release()
 
     def make_dirs(self, post: Post, processed_audio_path: str) -> str:
         audio_processing_dir = f'{self.processing_dir}/{post.feed.title}/{post.unprocessed_audio_path.split("/")[-1]}'  # pylint: disable=line-too-long
@@ -401,3 +412,7 @@ class PodcastProcessor:
         if last_end != audio.duration_seconds * 1000:
             new_audio += audio[last_end:]
         return new_audio
+
+
+class ProcessorException(Exception):
+    pass
