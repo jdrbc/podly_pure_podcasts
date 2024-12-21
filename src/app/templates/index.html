@@ -82,9 +82,13 @@
           <button id="refresh-button" onclick="refresh('{{feed.id}}')">
             Refresh
           </button>
-		  <button id="delete-button" onclick="confirmAndDeleteFeed('{{feed.id}}', '{{feed.title}}')">
-			Delete
-		  </button>
+          <button
+            id="delete-button"
+            onclick="confirmAndDeleteFeed('{{feed.id}}', '{{feed.title}}')"
+          >
+            Delete
+          </button>
+          <button onclick="toggleWhitelistAll('{{feed.id}}')">Toggle Whitelist All</button>
         </summary>
         <table>
           <thead>
@@ -101,7 +105,7 @@
                 <a href="{{ url_for('main.post_page', p_guid=post.guid) }}"
                   >{{ post.title }}</a
                 >
-			  </td>
+              </td>
               <td>
                 <a href="{{ url_for('main.download_post', p_guid=post.guid) }}"
                   >Download</a
@@ -109,6 +113,7 @@
               </td>
               <td>
                 <input
+                  data-feed-id="{{ feed.id }}"
                   type="checkbox"
                   {%
                   if
@@ -134,43 +139,66 @@
     </div>
 
     <script>
+      async function toggleWhitelistAll(feedId) {
+        try {
+          // Get all checkboxes for this feed
+          const checkboxes = document.querySelectorAll(`input[type="checkbox"][data-feed-id="${feedId}"]`);
+          
+          // Check if all posts are currently whitelisted
+          const allWhitelisted = Array.from(checkboxes).every(checkbox => checkbox.checked);
+          
+          const response = await fetch(`/feed/${feedId}/toggle-whitelist-all/${allWhitelisted ? "false" : "true"}`, {
+            method: "POST",
+          });
 
-     async function confirmAndDeleteFeed(feedId, feedName) {
+          if (response.ok) {
+            window.location.reload();
+          } else {
+            alert("Failed to whitelist all episodes");
+          }
+        } catch (error) {
+          console.error("Error whitelisting all:", error);
+          alert("An error occurred while whitelisting all episodes");
+        }
+      }
+
+      async function confirmAndDeleteFeed(feedId, feedName) {
         // Ensure feedId is valid
         if (!feedId) {
-            alert('Invalid feed ID');
-            return;
+          alert("Invalid feed ID");
+          return;
         }
 
         // Confirmation dialog
-        const userConfirmed = confirm(`Are you sure you want to delete feed '${feedName}'?`);
+        const userConfirmed = confirm(
+          `Are you sure you want to delete feed '${feedName}'?`
+        );
         if (!userConfirmed) {
-            // User canceled the operation
-            return;
+          // User canceled the operation
+          return;
         }
 
         // Proceed with deletion
         try {
-            const response = await fetch(`/feed/${feedId}`, {
-                method: 'DELETE',
-            });
+          const response = await fetch(`/feed/${feedId}`, {
+            method: "DELETE",
+          });
 
-            if (response.ok) {
-                alert(`Feed with ID ${feedId} deleted successfully.`);
-                // Remove the deleted feed from the UI
-                const detailsElement = document.getElementById(`details-${feedId}`);
-                if (detailsElement) {
-                    detailsElement.remove();
-                }
-            } else {
-                alert(`Failed to delete feed. Status: ${response.status}`);
+          if (response.ok) {
+            alert(`Feed with ID ${feedId} deleted successfully.`);
+            // Remove the deleted feed from the UI
+            const detailsElement = document.getElementById(`details-${feedId}`);
+            if (detailsElement) {
+              detailsElement.remove();
             }
+          } else {
+            alert(`Failed to delete feed. Status: ${response.status}`);
+          }
         } catch (error) {
-            console.error('Error deleting feed:', error);
-            alert('An error occurred while deleting the feed.');
+          console.error("Error deleting feed:", error);
+          alert("An error occurred while deleting the feed.");
         }
-    }
-
+      }
 
       function setWhitelist(postGuid, old_val) {
         console.log("set whitelist for post: " + postGuid + " to: " + !old_val);
