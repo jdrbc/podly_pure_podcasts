@@ -128,6 +128,8 @@ def delete_feed(f_id: int) -> flask.Response:
     logger.info(f"Deleting feed with ID: {f_id}")
     feed = Feed.query.get_or_404(f_id)
     for post in feed.posts:
+        if post.transcript:
+            db.session.delete(post.transcript)
         db.session.delete(post)
     db.session.delete(feed)
     db.session.commit()
