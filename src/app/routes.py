@@ -40,6 +40,15 @@ def post_page(p_guid: str) -> flask.Response:
     return flask.make_response(flask.render_template("post.html", post=post), 200)
 
 
+@main_bp.route("/feed/<int:f_id>/toggle-whitelist-all/<val>", methods=["POST"])
+def whitelist_all(f_id: str, val: str) -> flask.Response:
+    feed = Feed.query.get_or_404(f_id)
+    for post in feed.posts:
+        post.whitelisted = val.lower() == "true"
+    db.session.commit()
+    return flask.make_response("", 200)
+
+
 @main_bp.route("/set_whitelist/<string:p_guid>/<val>", methods=["GET"])
 def set_whitelist(p_guid: str, val: str) -> flask.Response:
     logger.info(f"Setting whitelist status for post with GUID: {p_guid} to {val}")
