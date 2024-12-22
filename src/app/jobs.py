@@ -58,7 +58,7 @@ def refresh_all_feeds() -> None:
         for post in new_posts:
             download_path = post.unprocessed_audio_path  # Retrieve download path for each post
             if post.processed_audio_path is None:
-                if download_path and os.path.exists(download_path):
+                if os.path.exists(download_path):
                     try:
                         os.remove(download_path)
                         logger.info(
