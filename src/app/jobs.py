@@ -5,6 +5,7 @@ from app.feeds import refresh_feed
 from app.models import Feed, Post
 from app.posts import download_and_process_post
 
+import os
 
 def run_refresh_all_feeds() -> None:
     """Main entry point for refreshing all feeds."""
@@ -39,7 +40,7 @@ def refresh_all_feeds() -> None:
 
         # Identify new posts
         new_posts = Post.query.filter(
-            Post.processed_audio_path is None, Post.whitelisted is True
+            Post.processed_audio_path == None, Post.whitelisted == True
         ).all()
         logger.info(f"Found {len(new_posts)} new posts to download and process.")
 
@@ -52,6 +53,26 @@ def refresh_all_feeds() -> None:
         if not new_posts:
             logger.info("No whitelisted new posts to process.")
             return
+
+        # Preemptively delete files for posts with processed_audio_path == None
+        for post in new_posts:
+            download_path = post.unprocessed_audio_path  # Retrieve download path for each post
+            if post.processed_audio_path is None:
+                if download_path and os.path.exists(download_path):
+                    try:
+                        os.remove(download_path)
+                        logger.info(
+                            f"Deleted existing file at {download_path} for post '{post.title}' (ID: {post.id}) because processed_audio_path is None."
+                        )
+                    except OSError as e:
+                        logger.error(
+                            f"Error deleting file {download_path} for post '{post.title}' (ID: {post.id}): {e}",
+                            exc_info=True
+                        )
+                else:
+                    logger.debug(
+                        f"No existing file at {download_path} for post '{post.title}' (ID: {post.id}). No deletion needed."
+                    )
 
         # Process posts in parallel using ThreadPoolExecutor
         max_workers = min(

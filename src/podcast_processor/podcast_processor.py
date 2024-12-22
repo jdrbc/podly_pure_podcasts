@@ -86,6 +86,7 @@ class PodcastProcessor:
             blocking=blocking
         ):
             raise ProcessorException("Processing job in progress")
+
         try:
             if os.path.exists(processed_audio_path):
                 self.logger.info(f"Audio already processed: {post}")

@@ -44,7 +44,7 @@ def setup_scheduler(app: Flask) -> None:
         id="refresh_all_feeds",
         func=run_refresh_all_feeds,
         trigger="interval",
-        minutes=config.update_interval_minutes,
+        minutes=config.background_update_interval_minute,
         replace_existing=True,
     )
 
@@ -70,7 +70,7 @@ def create_app() -> Flask:
     with app.app_context():
         upgrade()
 
-    if config.enable_background_scheduler:
+    if config.background_update_interval_minute is not None:
         logger.info(f"Background scheduler is enabled with {config.threads} thread(s).")
         setup_scheduler(app)
     else:
