@@ -44,3 +44,4 @@ config/app.log
 .env
 config/config.yml
 *.db
+*.sqlite
