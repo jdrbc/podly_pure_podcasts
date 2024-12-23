@@ -28,10 +28,21 @@ from .transcribe import (
     Transcriber,
 )
 
-
-def get_post_processed_audio_path(post: Post) -> str:
-    return f"srv/{post.feed.title}/{post.unprocessed_audio_path.split('/')[-1]}"
-
+def get_post_processed_audio_path(post: Post) -> Optional[str]:
+    """
+    Generate the processed audio path based on the post's unprocessed audio path.
+    Returns None if unprocessed_audio_path is not set.
+    """
+    if post.unprocessed_audio_path:
+        try:
+            filename = post.unprocessed_audio_path.split('/')[-1]
+            return f"srv/{post.feed.title}/{filename}"
+        except AttributeError as e:
+            logger.error(f"Error splitting unprocessed_audio_path for post {post.id}: {e}")
+            return None
+    else:
+        logger.warning(f"Post {post.id} has no unprocessed_audio_path.")
+        return None
 
 class PodcastProcessor:
     lock_lock = threading.Lock()

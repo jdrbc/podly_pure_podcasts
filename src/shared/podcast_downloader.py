@@ -17,6 +17,9 @@ DOWNLOAD_DIR = "in"
 
 def download_episode(post: Post) -> Optional[str]:
     download_path = str(get_and_make_download_path(post.title))
+    if not download_path:
+        logger.error(f"Invalid download path for post {post.id}")
+        return None
     if not os.path.exists(download_path) or os.path.getsize(download_path) == 0:
         # Download the podcast episode
         audio_link = post.download_url
@@ -50,7 +53,6 @@ def get_and_make_download_path(post_title: str) -> Path:
     post_directory_path.mkdir(parents=True, exist_ok=True)
 
     return post_directory_path / post_filename
-
 
 def find_audio_link(entry: Any) -> str:
     for link in entry.links:

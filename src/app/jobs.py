@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from app import config, logger, scheduler
 from app.feeds import refresh_feed
 from app.models import Feed, Post
-from app.posts import download_and_process_post
+from app.posts import download_and_process_post, remove_associated_files
 
 import os
 
@@ -19,6 +19,10 @@ def process_post(post: Post) -> None:
     with scheduler.app.app_context():
         try:
             logger.info(f"Processing post: {post.title} (ID: {post.id})")
+
+            # **Cleanup Step:** Remove existing associated files (resolves partial processes getting stuck)
+            remove_associated_files(post)
+
             download_and_process_post(post.guid, blocking=False)
             logger.info(f"Post {post.title} (ID: {post.id}) processed successfully.")
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -42,37 +46,41 @@ def refresh_all_feeds() -> None:
         new_posts = Post.query.filter(
             Post.processed_audio_path == None, Post.whitelisted == True
         ).all()
-        logger.info(f"Found {len(new_posts)} new posts to download and process.")
+        logger.info(f"Found {len(new_posts)} whitelisted new posts to download and process.")
 
         if not new_posts:
             logger.info("No new posts to process.")
             return
 
-        logger.info(f"Found {len(new_posts)} whitelisted new posts to process.")
-
-        if not new_posts:
-            logger.info("No whitelisted new posts to process.")
-            return
+        logger.info("Checking for stale jobs...") #debugging
 
         # Preemptively delete files for posts with processed_audio_path == None
         for post in new_posts:
+            if not post.download_url:
+                logger.error(f"Skipping Post ID {post.id}: Download URL is missing.")
+                continue
             download_path = post.unprocessed_audio_path  # Retrieve download path for each post
             if post.processed_audio_path is None:
-                if os.path.exists(download_path):
-                    try:
-                        os.remove(download_path)
-                        logger.info(
-                            f"Deleted existing file at {download_path} for post '{post.title}' (ID: {post.id}) because processed_audio_path is None."
-                        )
-                    except OSError as e:
-                        logger.error(
-                            f"Error deleting file {download_path} for post '{post.title}' (ID: {post.id}): {e}",
-                            exc_info=True
+                if download_path is not None:
+                    if os.path.exists(download_path):
+                        try:
+                            os.remove(download_path)
+                            logger.info(
+                                f"Deleted existing file at {download_path} for post '{post.title}' (ID: {post.id}) because processed_audio_path is None."
+                            )
+                        except OSError as e:
+                            logger.error(
+                                f"Error deleting file {download_path} for post '{post.title}' (ID: {post.id}): {e}",
+                                exc_info=True
+                            )
+                    else:
+                        logger.debug(
+                            f"No existing file at {download_path} for post '{post.title}' (ID: {post.id}). No deletion needed."
                         )
                 else:
-                    logger.debug(
-                        f"No existing file at {download_path} for post '{post.title}' (ID: {post.id}). No deletion needed."
-                    )
+                    logger.debug(f"Download path is none. Post is fresh. Post '{post.title}' (ID: {post.id}).")
+
+        #logger.info("preemptive delete passed")
 
         # Process posts in parallel using ThreadPoolExecutor
         max_workers = min(
@@ -80,7 +88,9 @@ def refresh_all_feeds() -> None:
         )  # Limit threads to config or number of posts
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_post = {
-                executor.submit(process_post, post): post for post in new_posts
+                executor.submit(process_post, post): post
+                for post in new_posts
+                if post.download_url
             }
 
             for future in as_completed(future_to_post):
