@@ -10,7 +10,7 @@ from jinja2 import Template
 from openai import APIError, OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
-from app import db
+from app import db, logger
 from app.models import Post, Transcript
 from podcast_processor.model_output import clean_and_parse_model_output
 from shared.config import (
@@ -28,6 +28,7 @@ from .transcribe import (
     Transcriber,
 )
 
+
 def get_post_processed_audio_path(post: Post) -> Optional[str]:
     """
     Generate the processed audio path based on the post's unprocessed audio path.
@@ -35,14 +36,17 @@ def get_post_processed_audio_path(post: Post) -> Optional[str]:
     """
     if post.unprocessed_audio_path:
         try:
-            filename = post.unprocessed_audio_path.split('/')[-1]
+            filename = post.unprocessed_audio_path.split("/")[-1]
             return f"srv/{post.feed.title}/{filename}"
         except AttributeError as e:
-            logger.error(f"Error splitting unprocessed_audio_path for post {post.id}: {e}")
+            logger.error(
+                f"Error splitting unprocessed_audio_path for post {post.id}: {e}"
+            )
             return None
     else:
         logger.warning(f"Post {post.id} has no unprocessed_audio_path.")
         return None
+
 
 class PodcastProcessor:
     lock_lock = threading.Lock()

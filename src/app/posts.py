@@ -1,7 +1,13 @@
+from pathlib import Path
+
 from app import config, db, logger
 from app.models import Post
-from podcast_processor.podcast_processor import PodcastProcessor, get_post_processed_audio_path
+from podcast_processor.podcast_processor import (
+    PodcastProcessor,
+    get_post_processed_audio_path,
+)
 from shared.podcast_downloader import download_episode, get_and_make_download_path
+
 
 def remove_associated_files(post: Post) -> None:
     """
@@ -10,12 +16,18 @@ def remove_associated_files(post: Post) -> None:
     """
     try:
         # Determine unprocessed and processed paths
-        unprocessed_path = get_and_make_download_path(post.title) if post.title else None
+        unprocessed_path = (
+            get_and_make_download_path(post.title) if post.title else None
+        )
         processed_path = get_post_processed_audio_path(post)
 
         # Define absolute paths
-        unprocessed_abs_path: Optional[Path] = Path(unprocessed_path).resolve() if unprocessed_path else None
-        processed_abs_path: Optional[Path] = Path(processed_path).resolve() if processed_path else None
+        unprocessed_abs_path: Optional[Path] = (
+            Path(unprocessed_path).resolve() if unprocessed_path else None
+        )
+        processed_abs_path: Optional[Path] = (
+            Path(processed_path).resolve() if processed_path else None
+        )
 
         # Remove unprocessed audio file
         if unprocessed_abs_path and unprocessed_abs_path.exists():
@@ -23,7 +35,9 @@ def remove_associated_files(post: Post) -> None:
                 unprocessed_abs_path.unlink()
                 logger.info(f"Removed unprocessed audio file: {unprocessed_abs_path}")
             except OSError as e:
-                logger.error(f"Failed to remove unprocessed audio file {unprocessed_abs_path}: {e}")
+                logger.error(
+                    f"Failed to remove unprocessed audio file {unprocessed_abs_path}: {e}"
+                )
         else:
             if unprocessed_abs_path:
                 logger.debug(f"No unprocessed audio file to remove for post {post.id}.")
@@ -36,7 +50,9 @@ def remove_associated_files(post: Post) -> None:
                 processed_abs_path.unlink()
                 logger.info(f"Removed processed audio file: {processed_abs_path}")
             except OSError as e:
-                logger.error(f"Failed to remove processed audio file {processed_abs_path}: {e}")
+                logger.error(
+                    f"Failed to remove processed audio file {processed_abs_path}: {e}"
+                )
         else:
             if processed_abs_path:
                 logger.debug(f"No processed audio file to remove for post {post.id}.")
@@ -44,7 +60,11 @@ def remove_associated_files(post: Post) -> None:
                 logger.debug(f"Processed audio path is None for post {post.id}.")
 
     except Exception as e:
-        logger.error(f"Unexpected error in remove_associated_files for post {post.id}: {e}", exc_info=True)
+        logger.error(
+            f"Unexpected error in remove_associated_files for post {post.id}: {e}",
+            exc_info=True,
+        )
+
 
 def download_and_process_post(p_guid: str, blocking: bool = True) -> str:
     post = Post.query.filter_by(guid=p_guid).first()

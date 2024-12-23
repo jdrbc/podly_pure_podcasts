@@ -54,6 +54,7 @@ def get_and_make_download_path(post_title: str) -> Path:
 
     return post_directory_path / post_filename
 
+
 def find_audio_link(entry: Any) -> str:
     for link in entry.links:
         if link.type == "audio/mpeg":
