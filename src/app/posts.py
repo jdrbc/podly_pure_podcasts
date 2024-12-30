@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from app import config, db, logger
 from app.models import Post
@@ -59,7 +60,7 @@ def remove_associated_files(post: Post) -> None:
             else:
                 logger.debug(f"Processed audio path is None for post {post.id}.")
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logger.error(
             f"Unexpected error in remove_associated_files for post {post.id}: {e}",
             exc_info=True,
