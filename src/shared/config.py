@@ -55,6 +55,7 @@ class Config(BaseModel):
     processing: ProcessingConfig
     server: Optional[str] = None
     server_port: int = 5001
+    background_update_interval_minute: Optional[int] = None
     threads: int = 1
     whisper: Optional[LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig] = (
         Field(

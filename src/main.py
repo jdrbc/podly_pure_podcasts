@@ -1,13 +1,13 @@
+from flask import Flask
 from waitress import serve
 
 from app import config, create_app, db, logger
 from app.feeds import add_or_refresh_feed
 from app.models import Feed
 
-app = create_app()
 
-
-def port_over_old_feeds() -> None:
+def port_over_old_feeds(app: Flask) -> None:
+    """Port over feeds from old configuration."""
     with app.app_context():
         if config.podcasts is None:
             return
@@ -17,11 +17,17 @@ def port_over_old_feeds() -> None:
                 feed.alt_id = podcast
                 logger.info(f"Added feed {feed.title} with alt_id {podcast}")
                 db.session.add(feed)
-            db.session.commit()
+        db.session.commit()
 
 
 def main() -> None:
-    port_over_old_feeds()
+    """Main entry point for the application."""
+    app = create_app()
+
+    # Port over old feeds if needed
+    port_over_old_feeds(app)
+
+    # Start the application server
     serve(
         app,
         host="0.0.0.0",

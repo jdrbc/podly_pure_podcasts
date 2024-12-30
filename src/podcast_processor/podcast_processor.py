@@ -10,7 +10,7 @@ from jinja2 import Template
 from openai import APIError, OpenAI
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
-from app import db
+from app import db, logger
 from app.models import Post, Transcript
 from podcast_processor.model_output import clean_and_parse_model_output
 from shared.config import (
@@ -29,8 +29,23 @@ from .transcribe import (
 )
 
 
-def get_post_processed_audio_path(post: Post) -> str:
-    return f"srv/{post.feed.title}/{post.unprocessed_audio_path.split('/')[-1]}"
+def get_post_processed_audio_path(post: Post) -> Optional[str]:
+    """
+    Generate the processed audio path based on the post's unprocessed audio path.
+    Returns None if unprocessed_audio_path is not set.
+    """
+    if post.unprocessed_audio_path:
+        try:
+            filename = post.unprocessed_audio_path.split("/")[-1]
+            return f"srv/{post.feed.title}/{filename}"
+        except AttributeError as e:
+            logger.error(
+                f"Error splitting unprocessed_audio_path for post {post.id}: {e}"
+            )
+            return None
+    else:
+        logger.warning(f"Post {post.id} has no unprocessed_audio_path.")
+        return None
 
 
 class PodcastProcessor:
@@ -71,13 +86,25 @@ class PodcastProcessor:
         else:
             raise ValueError(f"unhandled whisper config {config.whisper}")
 
-    def process(self, post: Post) -> str:
+    def process(self, post: Post, blocking: bool) -> str:
+        locked = False
         processed_audio_path = get_post_processed_audio_path(post)
+        if processed_audio_path is None:
+            raise ProcessorException("Processed audio path not found")
         with PodcastProcessor.lock_lock:
             if processed_audio_path not in PodcastProcessor.locks:
                 PodcastProcessor.locks[processed_audio_path] = threading.Lock()
+                PodcastProcessor.locks[
+                    processed_audio_path
+                ].acquire()  # should be no contention
+                locked = True
 
-        with PodcastProcessor.locks[processed_audio_path]:
+        if not locked and not PodcastProcessor.locks[processed_audio_path].acquire(
+            blocking=blocking
+        ):
+            raise ProcessorException("Processing job in progress")
+
+        try:
             if os.path.exists(processed_audio_path):
                 self.logger.info(f"Audio already processed: {post}")
                 return processed_audio_path
@@ -113,6 +140,8 @@ class PodcastProcessor:
             db.session.commit()
 
             return processed_audio_path
+        finally:
+            PodcastProcessor.locks[processed_audio_path].release()
 
     def make_dirs(self, post: Post, processed_audio_path: str) -> str:
         audio_processing_dir = f'{self.processing_dir}/{post.feed.title}/{post.unprocessed_audio_path.split("/")[-1]}'  # pylint: disable=line-too-long
@@ -401,3 +430,7 @@ class PodcastProcessor:
         if last_end != audio.duration_seconds * 1000:
             new_audio += audio[last_end:]
         return new_audio
+
+
+class ProcessorException(Exception):
+    pass
