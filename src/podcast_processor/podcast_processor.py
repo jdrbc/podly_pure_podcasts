@@ -89,6 +89,8 @@ class PodcastProcessor:
     def process(self, post: Post, blocking: bool) -> str:
         locked = False
         processed_audio_path = get_post_processed_audio_path(post)
+        if processed_audio_path is None:
+            raise ProcessorException("Processed audio path not found")
         with PodcastProcessor.lock_lock:
             if processed_audio_path not in PodcastProcessor.locks:
                 PodcastProcessor.locks[processed_audio_path] = threading.Lock()
