@@ -48,7 +48,7 @@ def refresh_all_feeds() -> None:
         inconsistent_posts = Post.query.filter(
             Post.processed_audio_path.isnot(None),
             Post.unprocessed_audio_path.isnot(None),
-            Post.whitelisted
+            Post.whitelisted,
         ).all()
         logger.info(f"Checking {len(inconsistent_posts)} for file integrity...")
 
