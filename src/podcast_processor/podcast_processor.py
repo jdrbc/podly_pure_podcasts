@@ -334,7 +334,6 @@ class PodcastProcessor:
     def get_ad_segments(
         self, segments: List[Segment], classification_path_path: Path
     ) -> List[Tuple[float, float]]:
-        # todo: rewrite to use the Path instead of just converting back to str
         classification_path = str(classification_path_path)
         segments_by_start = {segment.start: segment for segment in segments}
         ad_segments = []
