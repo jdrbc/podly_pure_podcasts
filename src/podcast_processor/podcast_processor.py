@@ -2,8 +2,11 @@ import gc
 import json
 import logging
 import os
+import re
 import threading
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, cast
 
 from jinja2 import Template
@@ -29,23 +32,47 @@ from .transcribe import (
 )
 
 
-def get_post_processed_audio_path(post: Post) -> Optional[str]:
+@dataclass
+class ProcessingPaths:
+    post_processed_audio_path: Path
+    audio_processing_dir: Path
+    classification_dir: Path
+
+
+def get_post_processed_audio_path(
+    processing_dir: str, post: Post
+) -> Optional[ProcessingPaths]:
     """
     Generate the processed audio path based on the post's unprocessed audio path.
     Returns None if unprocessed_audio_path is not set.
     """
-    if post.unprocessed_audio_path:
-        try:
-            filename = post.unprocessed_audio_path.split("/")[-1]
-            return f"srv/{post.feed.title}/{filename}"
-        except AttributeError as e:
-            logger.error(
-                f"Error splitting unprocessed_audio_path for post {post.id}: {e}"
-            )
-            return None
-    else:
+    unprocessed_path = post.unprocessed_audio_path
+    if not unprocessed_path or not isinstance(unprocessed_path, str):
         logger.warning(f"Post {post.id} has no unprocessed_audio_path.")
         return None
+
+    title = post.feed.title
+    if not title or not isinstance(title, str):
+        logger.warning(f"Post {post.id} has no feed title.")
+        return None
+
+    return paths_from_unprocessed_path(processing_dir, unprocessed_path, title)
+
+
+def paths_from_unprocessed_path(
+    processing_dir: str, unprocessed_path: str, title: str
+) -> ProcessingPaths:
+    filename = Path(unprocessed_path).name
+    sanitized_title = re.sub(r"[^a-zA-Z0-9\s]", "", title)
+
+    audio_processing_dir = Path(processing_dir) / sanitized_title / filename
+    classification_dir = audio_processing_dir / "classification"
+
+    return ProcessingPaths(
+        post_processed_audio_path=Path("srv") / sanitized_title / filename,
+        audio_processing_dir=audio_processing_dir,
+        classification_dir=classification_dir,
+    )
 
 
 class PodcastProcessor:
@@ -88,9 +115,11 @@ class PodcastProcessor:
 
     def process(self, post: Post, blocking: bool) -> str:
         locked = False
-        processed_audio_path = get_post_processed_audio_path(post)
-        if processed_audio_path is None:
+        working_paths = get_post_processed_audio_path(self.processing_dir, post)
+        if working_paths is None:
             raise ProcessorException("Processed audio path not found")
+
+        processed_audio_path = str(working_paths.post_processed_audio_path)
         with PodcastProcessor.lock_lock:
             if processed_audio_path not in PodcastProcessor.locks:
                 PodcastProcessor.locks[processed_audio_path] = threading.Lock()
@@ -108,7 +137,7 @@ class PodcastProcessor:
             if os.path.exists(processed_audio_path):
                 self.logger.info(f"Audio already processed: {post}")
                 return processed_audio_path
-            classification_dir = self.make_dirs(post, processed_audio_path)
+            self.make_dirs(working_paths)
             transcript_segments = self.transcribe(post)
             user_prompt_template = self.get_user_prompt_template(
                 self.config.processing.user_prompt_template_path
@@ -123,7 +152,7 @@ class PodcastProcessor:
                 user_prompt_template=user_prompt_template,
                 num_segments_per_prompt=self.config.processing.num_segments_to_input_to_prompt,
                 post=post,
-                classification_path=classification_dir,
+                classification_path=working_paths.classification_dir,
             )
             ad_segments = self.get_ad_segments(transcript_segments, classification_dir)
             audio = AudioSegment.from_file(post.unprocessed_audio_path)
@@ -143,14 +172,13 @@ class PodcastProcessor:
         finally:
             PodcastProcessor.locks[processed_audio_path].release()
 
-    def make_dirs(self, post: Post, processed_audio_path: str) -> str:
-        audio_processing_dir = f'{self.processing_dir}/{post.feed.title}/{post.unprocessed_audio_path.split("/")[-1]}'  # pylint: disable=line-too-long
-        classification_dir = f"{audio_processing_dir}/classification"
-        processed_audio_dir = os.path.dirname(processed_audio_path)
-        os.makedirs(processed_audio_dir, exist_ok=True)
-        os.makedirs(audio_processing_dir, exist_ok=True)
-        os.makedirs(classification_dir, exist_ok=True)
-        return classification_dir
+    def make_dirs(self, processing_paths: ProcessingPaths) -> None:
+
+        processing_paths.post_processed_audio_path.parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        processing_paths.audio_processing_dir.mkdir(parents=True, exist_ok=True)
+        processing_paths.classification_dir.mkdir(parents=True, exist_ok=True)
 
     def transcribe(self, post: Post) -> List[Segment]:
         # check db for transcript
@@ -191,7 +219,7 @@ class PodcastProcessor:
         user_prompt_template: Template,
         num_segments_per_prompt: int,
         post: Post,
-        classification_path: str,
+        classification_path: Path,
     ) -> None:
         self.logger.info(f"Identifying ad segments for {post.unprocessed_audio_path}")
         self.logger.info(f"processing {len(transcript_segments)} transcript segments")
@@ -201,15 +229,15 @@ class PodcastProcessor:
             end = min(i + num_segments_per_prompt, len(transcript_segments))
 
             target_dir = (
-                f"{classification_path}/"
-                f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
+                classification_path
+                / f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
             )
-            identification_path = f"{target_dir}/identification.txt"
-            prompt_path = f"{target_dir}/prompt.txt"
-            os.makedirs(target_dir, exist_ok=True)
+            identification_path = target_dir / "identification.txt"
+            prompt_path = target_dir / "prompt.txt"
+            target_dir.mkdir(exist_ok=True)
 
             # Check if we already have a valid identification
-            if os.path.exists(f"{target_dir}/identification.txt"):
+            if identification_path.exists():
                 self.logger.info(
                     f"Responses for segments {start} to {end} already received"
                 )
