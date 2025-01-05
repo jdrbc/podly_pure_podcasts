@@ -118,40 +118,6 @@ sudo systemctl daemon-reload
 sudo systemctl enable podly.service
 ```
 
-## Environment Variables
-
-If you're using OpenAI only the `openai_api_key` is required.
-
-### OpenAI
-
-```shell
-openai_api_key='sk-1234567890abcdef1234567890abcdef'
-openai_base_url='https://api.openai.com/v1' # optional
-openai_model='gpt-4o' # optional
-```
-
-### Ollama
-
-```shell
-openai_base_url='http://127.0.0.1:11434/v1'
-openai_timeout=300
-openai_max_tokens=4096
-openai_api_key='ollama'
-openai_model='phi3:14b-medium-4k-instruct-q5_K_M'
-```
-
-### Whisper
-
-```shell
-whisper_model='base.en' # optional
-```
-
-To use OpenAI API instead of local model
-
-```shell
-REMOTE_WHISPER=TRUE # optional
-```
-
 ## Database Update
 
 The database should automatically configure & upgrade on launch.
