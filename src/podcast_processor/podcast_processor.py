@@ -2,10 +2,8 @@ import gc
 import json
 import logging
 import os
-import re
 import threading
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, cast
 
@@ -22,6 +20,7 @@ from shared.config import (
     RemoteWhisperConfig,
     TestWhisperConfig,
 )
+from shared.processing_paths import ProcessingPaths, paths_from_unprocessed_path
 
 from .transcribe import (
     LocalWhisperTranscriber,
@@ -30,15 +29,6 @@ from .transcribe import (
     TestWhisperTranscriber,
     Transcriber,
 )
-
-PROCESSING_DIR: str = "processing"
-
-
-@dataclass
-class ProcessingPaths:
-    post_processed_audio_path: Path
-    audio_processing_dir: Path
-    classification_dir: Path
 
 
 def get_post_processed_audio_path(post: Post) -> Optional[ProcessingPaths]:
@@ -57,20 +47,6 @@ def get_post_processed_audio_path(post: Post) -> Optional[ProcessingPaths]:
         return None
 
     return paths_from_unprocessed_path(unprocessed_path, title)
-
-
-def paths_from_unprocessed_path(unprocessed_path: str, title: str) -> ProcessingPaths:
-    filename = Path(unprocessed_path).name
-    sanitized_title = re.sub(r"[^a-zA-Z0-9\s]", "", title)
-
-    audio_processing_dir = Path(PROCESSING_DIR) / sanitized_title / filename
-    classification_dir = audio_processing_dir / "classification"
-
-    return ProcessingPaths(
-        post_processed_audio_path=Path("srv") / sanitized_title / filename,
-        audio_processing_dir=audio_processing_dir,
-        classification_dir=classification_dir,
-    )
 
 
 class PodcastProcessor:

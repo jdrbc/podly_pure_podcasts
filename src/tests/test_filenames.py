@@ -1,9 +1,6 @@
 from pathlib import Path
 
-from podcast_processor.podcast_processor import (
-    ProcessingPaths,
-    paths_from_unprocessed_path,
-)
+from shared.processing_paths import ProcessingPaths, paths_from_unprocessed_path
 
 
 def test_filenames() -> None:
