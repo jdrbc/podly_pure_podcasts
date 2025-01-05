@@ -31,6 +31,8 @@ from .transcribe import (
     Transcriber,
 )
 
+PROCESSING_DIR: str = "processing"
+
 
 @dataclass
 class ProcessingPaths:
@@ -39,9 +41,7 @@ class ProcessingPaths:
     classification_dir: Path
 
 
-def get_post_processed_audio_path(
-    processing_dir: str, post: Post
-) -> Optional[ProcessingPaths]:
+def get_post_processed_audio_path(post: Post) -> Optional[ProcessingPaths]:
     """
     Generate the processed audio path based on the post's unprocessed audio path.
     Returns None if unprocessed_audio_path is not set.
@@ -56,16 +56,14 @@ def get_post_processed_audio_path(
         logger.warning(f"Post {post.id} has no feed title.")
         return None
 
-    return paths_from_unprocessed_path(processing_dir, unprocessed_path, title)
+    return paths_from_unprocessed_path(unprocessed_path, title)
 
 
-def paths_from_unprocessed_path(
-    processing_dir: str, unprocessed_path: str, title: str
-) -> ProcessingPaths:
+def paths_from_unprocessed_path(unprocessed_path: str, title: str) -> ProcessingPaths:
     filename = Path(unprocessed_path).name
     sanitized_title = re.sub(r"[^a-zA-Z0-9\s]", "", title)
 
-    audio_processing_dir = Path(processing_dir) / sanitized_title / filename
+    audio_processing_dir = Path(PROCESSING_DIR) / sanitized_title / filename
     classification_dir = audio_processing_dir / "classification"
 
     return ProcessingPaths(
@@ -83,11 +81,9 @@ class PodcastProcessor:
     def __init__(
         self,
         config: Config,
-        processing_dir: str = "processing",
     ) -> None:
         super().__init__()
         self.logger = logging.getLogger("global_logger")
-        self.processing_dir = processing_dir
         self.output_dir = "srv"
         self.config: Config = config
         self.client = OpenAI(
@@ -115,7 +111,7 @@ class PodcastProcessor:
 
     def process(self, post: Post, blocking: bool) -> str:
         locked = False
-        working_paths = get_post_processed_audio_path(self.processing_dir, post)
+        working_paths = get_post_processed_audio_path(post)
         if working_paths is None:
             raise ProcessorException("Processed audio path not found")
 
@@ -154,7 +150,9 @@ class PodcastProcessor:
                 post=post,
                 classification_path=working_paths.classification_dir,
             )
-            ad_segments = self.get_ad_segments(transcript_segments, classification_dir)
+            ad_segments = self.get_ad_segments(
+                transcript_segments, working_paths.classification_dir
+            )
             audio = AudioSegment.from_file(post.unprocessed_audio_path)
             assert isinstance(audio, AudioSegment)
             self.create_new_audio_without_ads(
@@ -334,8 +332,10 @@ class PodcastProcessor:
         return None
 
     def get_ad_segments(
-        self, segments: List[Segment], classification_path: str
+        self, segments: List[Segment], classification_path_path: Path
     ) -> List[Tuple[float, float]]:
+        # todo: rewrite to use the Path instead of just converting back to str
+        classification_path = str(classification_path_path)
         segments_by_start = {segment.start: segment for segment in segments}
         ad_segments = []
         for classification_dir in sorted(
