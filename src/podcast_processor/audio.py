@@ -1,7 +1,7 @@
 import gc
 from typing import List, Optional, Tuple
 
-import ffmpeg
+import ffmpeg  # type: ignore[import-untyped]
 from pydub import AudioSegment  # type: ignore[import-untyped]
 
 
