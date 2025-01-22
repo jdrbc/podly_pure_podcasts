@@ -135,8 +135,12 @@ class PodcastProcessor:
             merged_ad_segments = self.merge_ad_segments(
                 duration_ms=duration_ms,
                 ad_segments=ad_segments,
-                min_ad_segment_length_seconds=self.config.output.min_ad_segment_length_seconds,
-                min_ad_segment_separation_seconds=self.config.output.min_ad_segement_separation_seconds,  # pylint: disable=line-too-long
+                min_ad_segment_length_seconds=float(
+                    self.config.output.min_ad_segment_length_seconds
+                ),
+                min_ad_segment_separation_seconds=float(
+                    self.config.output.min_ad_segement_separation_seconds
+                ),  # pylint: disable=line-too-long
             )
             clip_segments_with_fade(
                 in_path=post.unprocessed_audio_path,
@@ -153,7 +157,6 @@ class PodcastProcessor:
             PodcastProcessor.locks[processed_audio_path].release()
 
     def make_dirs(self, processing_paths: ProcessingPaths) -> None:
-
         processing_paths.post_processed_audio_path.parent.mkdir(
             parents=True, exist_ok=True
         )
@@ -373,7 +376,6 @@ class PodcastProcessor:
         min_ad_segment_separation_seconds: float,
         ad_segments: List[Tuple[float, float]],
     ) -> List[Tuple[int, int]]:
-
         audio_duration_seconds = 1000 * duration_ms
 
         self.logger.info(
