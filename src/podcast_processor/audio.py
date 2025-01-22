@@ -7,16 +7,10 @@ from pydub import AudioSegment  # type: ignore[import-untyped]
 
 def get_audio_duration_ms(file_path: str) -> Optional[int]:
     try:
-        # Run ffmpeg.probe to get the file information
         probe = ffmpeg.probe(file_path)
-
-        # Extract the duration from the probe data
         format_info = probe["format"]
-        duration_seconds = float(format_info["duration"])  # Duration is in seconds
-
-        # Convert duration from seconds to milliseconds
+        duration_seconds = float(format_info["duration"])
         duration_milliseconds = duration_seconds * 1000
-
         return int(duration_milliseconds)
     except ffmpeg.Error as e:
         print("An error occurred while trying to probe the file:")
