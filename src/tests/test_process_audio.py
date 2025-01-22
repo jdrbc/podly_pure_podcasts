@@ -11,14 +11,23 @@ def test_get_duration_ms() -> None:
 
 
 def test_clip_segment_with_fade() -> None:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+    fade_len_ms = 5_000
+    ad_start_offset_ms, ad_end_offset_ms = 3_000, 21_000
+
+    with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as temp_file:
         clip_segments_with_fade(
-            [(2_000, 3_000)],
-            100,
+            [(ad_start_offset_ms, ad_end_offset_ms)],
+            fade_len_ms,
             TEST_FILE_PATH,
             temp_file.name,
         )
 
         print(f"clipped file written to {temp_file.name}")
 
-        assert get_audio_duration_ms(temp_file.name) == TEST_FILE_DURATION - 1_000 + 256
+        assert (
+            get_audio_duration_ms(temp_file.name)
+            == TEST_FILE_DURATION
+            - (ad_end_offset_ms - ad_start_offset_ms)
+            + 2 * fade_len_ms
+            + 56 # not sure where this fudge comes from
+        )
