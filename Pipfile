@@ -27,6 +27,7 @@ openai-whisper = "*"
 flask-sqlalchemy = "*"
 flask-migrate = "*"
 Flask-APScheduler = "*"
+ffmpeg-python = "*"
 
 [dev-packages]
 black = "*"

@@ -1,4 +1,3 @@
-import gc
 import json
 import logging
 import os
@@ -9,10 +8,10 @@ from typing import Dict, List, Optional, Tuple, cast
 
 from jinja2 import Template
 from openai import APIError, OpenAI
-from pydub import AudioSegment  # type: ignore[import-untyped]
 
 from app import db, logger
 from app.models import Post, Transcript
+from podcast_processor.audio import clip_segments_with_fade, get_audio_duration_ms
 from podcast_processor.model_output import clean_and_parse_model_output
 from shared.config import (
     Config,
@@ -129,15 +128,26 @@ class PodcastProcessor:
             ad_segments = self.get_ad_segments(
                 transcript_segments, working_paths.classification_dir
             )
-            audio = AudioSegment.from_file(post.unprocessed_audio_path)
-            assert isinstance(audio, AudioSegment)
-            self.create_new_audio_without_ads(
-                audio=audio,
+
+            duration_ms = get_audio_duration_ms(post.unprocessed_audio_path)
+            assert duration_ms is not None
+
+            merged_ad_segments = self.merge_ad_segments(
+                duration_ms=duration_ms,
                 ad_segments=ad_segments,
-                min_ad_segment_length_seconds=self.config.output.min_ad_segment_length_seconds,
-                min_ad_segement_separation_seconds=self.config.output.min_ad_segement_separation_seconds,  # pylint: disable=line-too-long
+                min_ad_segment_length_seconds=float(
+                    self.config.output.min_ad_segment_length_seconds
+                ),
+                min_ad_segment_separation_seconds=float(
+                    self.config.output.min_ad_segement_separation_seconds
+                ),  # pylint: disable=line-too-long
+            )
+            clip_segments_with_fade(
+                in_path=post.unprocessed_audio_path,
+                ad_segments_ms=merged_ad_segments,
                 fade_ms=self.config.output.fade_ms,
-            ).export(processed_audio_path, format="mp3")
+                out_path=processed_audio_path,
+            )
             self.logger.info(f"Processing podcast: {post} complete")
             post.processed_audio_path = processed_audio_path
             db.session.commit()
@@ -147,7 +157,6 @@ class PodcastProcessor:
             PodcastProcessor.locks[processed_audio_path].release()
 
     def make_dirs(self, processing_paths: ProcessingPaths) -> None:
-
         processing_paths.post_processed_audio_path.parent.mkdir(
             parents=True, exist_ok=True
         )
@@ -359,33 +368,16 @@ class PodcastProcessor:
 
         return ad_segments
 
-    def get_ad_fade_out(
-        self, audio: AudioSegment, ad_start_ms: int, fade_ms: int
-    ) -> AudioSegment:
-        fade_out = audio[ad_start_ms : ad_start_ms + fade_ms]
-        assert isinstance(fade_out, AudioSegment)
-
-        fade_out = fade_out.fade_out(fade_ms)
-        return fade_out
-
-    def get_ad_fade_in(
-        self, audio: AudioSegment, ad_end_ms: int, fade_ms: int
-    ) -> AudioSegment:
-        fade_in = audio[ad_end_ms - fade_ms : ad_end_ms]
-        assert isinstance(fade_in, AudioSegment)
-
-        fade_in = fade_in.fade_in(fade_ms)
-        return fade_in
-
-    def create_new_audio_without_ads(
+    def merge_ad_segments(
         self,
         *,
-        audio: AudioSegment,
+        duration_ms: int,
+        min_ad_segment_length_seconds: float,
+        min_ad_segment_separation_seconds: float,
         ad_segments: List[Tuple[float, float]],
-        min_ad_segment_length_seconds: int,
-        min_ad_segement_separation_seconds: int,
-        fade_ms: int = 5000,
-    ) -> AudioSegment:
+    ) -> List[Tuple[int, int]]:
+        audio_duration_seconds = 1000 * duration_ms
+
         self.logger.info(
             f"Creating new audio with ads segments removed between: {ad_segments}"
         )
@@ -394,7 +386,7 @@ class PodcastProcessor:
         i = 0
         while i < len(ad_segments) - 1:
             if (
-                ad_segments[i][1] + min_ad_segement_separation_seconds
+                ad_segments[i][1] + min_ad_segment_separation_seconds
                 >= ad_segments[i + 1][0]
             ):
                 ad_segments[i] = (ad_segments[i][0], ad_segments[i + 1][1])
@@ -411,28 +403,17 @@ class PodcastProcessor:
         # whisper sometimes drops the last bit of the transcript & this can lead
         # to end-roll not being entirely removed, so bump the ad segment to the
         # end of the audio if it's close enough
-        if len(ad_segments) > 0:
-            if (
-                audio.duration_seconds - ad_segments[-1][1]
-                < min_ad_segement_separation_seconds
-            ):
-                ad_segments[-1] = (ad_segments[-1][0], audio.duration_seconds)
+        if len(ad_segments) > 0 and (
+            audio_duration_seconds - ad_segments[-1][1]
+            < min_ad_segment_separation_seconds
+        ):
+            ad_segments[-1] = (ad_segments[-1][0], audio_duration_seconds)
         self.logger.info(f"Joined ad segments into: {ad_segments}")
 
         ad_segments_ms = [
             (int(start * 1000), int(end * 1000)) for start, end in ad_segments
         ]
-        new_audio = AudioSegment.empty()
-        last_end = 0
-        for start, end in ad_segments_ms:
-            new_audio += audio[last_end:start]
-            new_audio += self.get_ad_fade_out(audio, start, fade_ms)
-            new_audio += self.get_ad_fade_in(audio, end, fade_ms)
-            last_end = end
-            gc.collect()
-        if last_end != audio.duration_seconds * 1000:
-            new_audio += audio[last_end:]
-        return new_audio
+        return ad_segments_ms
 
 
 class ProcessorException(Exception):
