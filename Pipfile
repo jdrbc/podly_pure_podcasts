@@ -27,6 +27,7 @@ flask-sqlalchemy = "*"
 flask-migrate = "*"
 Flask-APScheduler = "*"
 ffmpeg-python = "*"
+litellm = "*"
 
 [dev-packages]
 black = "*"
