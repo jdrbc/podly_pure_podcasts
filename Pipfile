@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 speechrecognition = "*"
-pydub = "*"
 openai = "*"
 python-dotenv = "*"
 jinja2 = "*"

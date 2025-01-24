@@ -1,17 +1,16 @@
 import logging
-import math
-import os
 import shutil
 import time
 from abc import ABC, abstractmethod
-from typing import Any, List, Tuple
+from pathlib import Path
+from typing import Any, List
 
 import whisper  # type: ignore[import-untyped]
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
-from pydub import AudioSegment  # type: ignore[import-untyped]
 
+from podcast_processor.audio import split_audio
 from shared.config import RemoteWhisperConfig
 
 
@@ -103,13 +102,15 @@ class RemoteWhisperTranscriber(Transcriber):
         self.logger.info("Using remote whisper")
         audio_chunk_path = audio_file_path + "_parts"
 
-        chunks = self.split_file(audio_file_path, audio_chunk_path)
+        chunks = split_audio(
+            Path(audio_file_path), Path(audio_chunk_path), 24 * 1024 * 1024
+        )
 
         all_segments: List[TranscriptionSegment] = []
 
         for chunk in chunks:
             chunk_path, offset = chunk
-            segments = self.get_segments_for_chunk(chunk_path)
+            segments = self.get_segments_for_chunk(str(chunk_path))
             all_segments.extend(self.add_offset_to_segments(segments, offset))
 
         shutil.rmtree(audio_chunk_path)
@@ -137,52 +138,8 @@ class RemoteWhisperTranscriber(Transcriber):
 
         return segments
 
-    def split_file(
-        self,
-        audio_file_path: str,
-        audio_chunk_path: str,
-        chunk_size_bytes: int = 24 * 1024 * 1024,
-    ) -> List[Tuple[str, int]]:
-
-        self.logger.info(f"Splitting file {audio_file_path} into chunks")
-
-        if not os.path.exists(audio_chunk_path):
-            os.makedirs(audio_chunk_path)
-        self.logger.info(f"Chunk path: {audio_chunk_path}")
-
-        audio = AudioSegment.from_mp3(audio_file_path)
-        duration_ms = len(audio)
-
-        self.logger.info(f"Audio duration: {duration_ms} ms")
-
-        chunk_duration_ms = (
-            chunk_size_bytes / os.path.getsize(audio_file_path)
-        ) * duration_ms
-        chunk_duration_ms = int(chunk_duration_ms)
-
-        self.logger.info(f"Chunk duration: {chunk_duration_ms} ms")
-
-        num_chunks = math.ceil(duration_ms / chunk_duration_ms)
-
-        self.logger.info(f"Number of chunks: {num_chunks}")
-
-        chunks: List[Tuple[str, int]] = []
-
-        for i in range(num_chunks):
-            start_offset_ms = i * chunk_duration_ms
-            end_offset_ms = (i + 1) * chunk_duration_ms
-            chunk = audio[start_offset_ms:end_offset_ms]
-            export_path = f"{audio_chunk_path}/{i}.mp3"
-            chunk.export(export_path, format="mp3")
-            chunks.append((export_path, start_offset_ms))
-
-        self.logger.info(f"Split into {len(chunks)} chunks")
-
-        return chunks
-
     def get_segments_for_chunk(self, chunk_path: str) -> List[TranscriptionSegment]:
         with open(chunk_path, "rb") as f:
-
             self.logger.info(f"Transcribing chunk {chunk_path}")
 
             transcription = self.openai_client.audio.transcriptions.create(
