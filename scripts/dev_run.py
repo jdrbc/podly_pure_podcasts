@@ -11,9 +11,9 @@ from watchdog.observers import Observer
 # This script will restart the server every time a file in the src directory is modified
 # workaround some bug in flask dev server causing incompatibility with SQLAlchemy
 class ChangeHandler(FileSystemEventHandler):
-    def __init__(self, cmd: str) -> None:  #
+    def __init__(self, cmd: str) -> None:
         self.cmd: str = cmd
-        self.process: Optional[subprocess.Popen] = None  # type: ignore
+        self.process: Optional[subprocess.Popen] = None  # type: ignore[type-arg]
         self.start_process()
 
     def start_process(self) -> None:

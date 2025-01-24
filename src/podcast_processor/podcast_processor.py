@@ -6,8 +6,10 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, cast
 
+import litellm
 from jinja2 import Template
-from openai import APIError, OpenAI
+from litellm.exceptions import RateLimitError
+from litellm.types.utils import Choices
 
 from app import db, logger
 from app.models import Post, Transcript
@@ -61,10 +63,11 @@ class PodcastProcessor:
         self.logger = logging.getLogger("global_logger")
         self.output_dir = "srv"
         self.config: Config = config
-        self.client = OpenAI(
-            base_url=self.config.openai_base_url,
-            api_key=self.config.openai_api_key,
-        )
+
+        litellm.api_base = (
+            self.config.openai_base_url  # type: ignore[assignment]
+        )  # this type error will be fixed by https://github.com/BerriAI/litellm/pull/7980
+        litellm.openai_key = self.config.openai_api_key
 
         assert self.config.whisper is not None, (
             "validate_whisper_config ensures that even if old style whisper "
@@ -281,7 +284,7 @@ class PodcastProcessor:
                 self.logger.info(
                     f"Calling model: {model} (attempt {attempt + 1}/{max_retries})"
                 )
-                response = self.client.chat.completions.create(
+                response = litellm.completion(
                     model=model,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -291,21 +294,23 @@ class PodcastProcessor:
                     timeout=self.config.openai_timeout,
                 )
 
-                content = response.choices[0].message.content
+                response_first_choice = response.choices[0]
+                assert isinstance(response_first_choice, Choices)
+                content = response_first_choice.message.content
                 assert content is not None
+
                 return content
 
-            except APIError as e:
+            except RateLimitError as e:
                 last_error = e
-                self.logger.error(f"OpenAI API error (attempt {attempt + 1}): {e}")
-                if getattr(e, "code", None) == 500:
-                    # Add exponential backoff for retries
-                    wait_time = (2**attempt) * 1  # 1, 2, 4 seconds
-                    time.sleep(wait_time)
-                    attempt += 1
-                    continue
-                # For non-500 errors, raise immediately
-                raise
+                self.logger.error(f"Completion API error (attempt {attempt + 1}): {e}")
+
+                # Add exponential backoff for retries
+                wait_time = (2**attempt) * 1  # 1, 2, 4 seconds
+                time.sleep(wait_time)
+                attempt += 1
+
+                continue
             except Exception as e:
                 self.logger.error(f"Unexpected error calling model: {e}")
                 raise
