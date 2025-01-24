@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "7a5677284ded30eced8fb337e626190e51c83ac75f4ec9f70fe2b2101039f3a4"
+            "sha256": "6e1a8af698ba0515875b1273a4e6d0be03161d82cf1e3f98e40a9347db597f94"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -780,14 +780,6 @@
             ],
             "markers": "python_version >= '3.8'",
             "version": "==2.27.2"
-        },
-        "pydub": {
-            "hashes": [
-                "sha256:65617e33033874b59d87db603aa1ed450633288aefead953b30bded59cb599a6",
-                "sha256:980a33ce9949cab2a569606b65674d748ecbca4f0796887fd6f46173a7b0d30f"
-            ],
-            "index": "pypi",
-            "version": "==0.25.1"
         },
         "pypodcastparser": {
             "hashes": [
