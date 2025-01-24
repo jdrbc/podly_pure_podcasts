@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple, cast
 
 import litellm
 from jinja2 import Template
-from litellm.exceptions import RateLimitError
+from litellm.exceptions import InternalServerError
 from litellm.types.utils import Choices
 
 from app import db, logger
@@ -301,7 +301,7 @@ class PodcastProcessor:
 
                 return content
 
-            except RateLimitError as e:
+            except InternalServerError as e:
                 last_error = e
                 self.logger.error(f"Completion API error (attempt {attempt + 1}): {e}")
 
