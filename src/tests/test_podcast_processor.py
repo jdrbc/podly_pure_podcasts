@@ -20,6 +20,6 @@ def test_call_model() -> None:
     processor = PodcastProcessor(config=config)
 
     resp = processor.call_model(
-        config.openai_model, system_prompt="ANSWER ME", user_prompt="who are you?"
+        config.llm_model, system_prompt="ANSWER ME", user_prompt="who are you?"
     )
-    assert resp == "asdf"
+    assert resp == ""

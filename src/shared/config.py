@@ -41,10 +41,10 @@ class LocalWhisperConfig(BaseModel):
 
 
 class Config(BaseModel):
-    llm_api_key: Optional[str] = Field(None, alias="openai_api_key")
+    llm_api_key: Optional[str] = Field(default=None, alias="openai_api_key")
+    llm_model: str = Field(default="gpt-4o", alias="openai_model")
     openai_base_url: Optional[str] = None
     openai_max_tokens: int = 4096
-    openai_model: str = "gpt-4o"
     openai_timeout: int = 300
     output: OutputConfig
     podcasts: Optional[Dict[str, str]] = Field(

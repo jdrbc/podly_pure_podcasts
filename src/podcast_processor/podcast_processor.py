@@ -121,7 +121,7 @@ class PodcastProcessor:
             )
             self.classify(
                 transcript_segments=transcript_segments,
-                model=self.config.openai_model,
+                model=self.config.llm_model,
                 system_prompt=system_prompt,
                 user_prompt_template=user_prompt_template,
                 num_segments_per_prompt=self.config.processing.num_segments_to_input_to_prompt,
