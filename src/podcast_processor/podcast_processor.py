@@ -67,7 +67,7 @@ class PodcastProcessor:
         litellm.api_base = (
             self.config.openai_base_url  # type: ignore[assignment]
         )  # this type error will be fixed by https://github.com/BerriAI/litellm/pull/7980
-        litellm.openai_key = self.config.openai_api_key
+        litellm.api_key = self.config.llm_api_key
 
         assert self.config.whisper is not None, (
             "validate_whisper_config ensures that even if old style whisper "
