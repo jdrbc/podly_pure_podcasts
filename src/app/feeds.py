@@ -107,10 +107,22 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
     """
 
-    audio_url = (config.server if config.server is not None else "") + url_for(
+    server_prefix = config.server if config.server is not None else ""
+
+    audio_url = server_prefix + url_for(
         "main.download_post",
         p_guid=post.guid,
         _external=config.server is None,
+    )
+
+    post_details_url = server_prefix + url_for(
+        "main.post_page",
+        p_guid=post.guid,
+        _external=config.server is None,
+    )
+
+    description = (
+        f'{post.description}\n<p><a href="{post_details_url}">Podly Post Page</a></p>'
     )
 
     item = PyRSS2Gen.RSSItem(
@@ -120,7 +132,7 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
             type="audio/mpeg",
             length=post.audio_len_bytes(),
         ),
-        description=post.description,
+        description=description,
         guid=post.guid,
         pubDate=(
             post.release_date.strftime("%a, %d %b %Y %H:%M:%S %z")

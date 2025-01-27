@@ -1,4 +1,20 @@
-<table border="1">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ post.title }}</title>
+</head>
+<body>
+    <a href="{{ url_for('main.index') }}">
+        <img
+            src="{{ url_for('static', filename='images/logos/logo_with_text.png') }}"
+            alt="Podly Logo"
+            style="width: 300px"
+        />
+    </a>
+  
+  <table border="1">
     <thead>
         <tr>
             <th>Name</th>
@@ -52,7 +68,11 @@
         </tr>
         <tr>
             <td>whitelisted</td>
-            <td>{{ post.whitelisted }}</td>
+            <td>{{ post.whitelisted }}
+<button onclick="setWhitelist('{{ post.guid }}', {{ post.whitelisted | lower }})">
+ Toggle Whitelist
+</button>
+			</td>
         </tr>
         <tr>
             <td>Transcript</td>
@@ -73,3 +93,17 @@
         </tr>
     </tbody>
 </table>
+<script>
+      function setWhitelist(postGuid, old_val) {
+        console.log("set whitelist for post: " + postGuid + " to: " + !old_val);
+        const url = "{{ url_for('main.set_whitelist', p_guid='0', val=False)}}"
+          .replace("0", postGuid)
+          .replace("/False", "/" + !old_val);
+        fetch(url)
+          .then((_) => window.location.reload())
+          .catch((error) => console.error("Error:", error));
+      }
+</script>
+
+</body>
+</html>
