@@ -2,6 +2,7 @@ import gc
 import json
 import logging
 import os
+import shutil
 import threading
 import time
 from typing import Dict, List, Optional, Tuple, cast
@@ -308,6 +309,8 @@ class PodcastProcessor:
     def get_ad_segments(
         self, segments: List[Segment], classification_path: str
     ) -> List[Tuple[float, float]]:
+        from app.models import Post
+
         segments_by_start = {segment.start: segment for segment in segments}
         ad_segments = []
         for classification_dir in sorted(
@@ -324,12 +327,34 @@ class PodcastProcessor:
                     identification = id_file.read()
 
                     try:
-                        prediction = clean_and_parse_model_output(identification)
-                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        prediction = clean_and_parse_model_output(
+                            identification
+                        )  # parse JSON -> AdSegmentPrediction
+                    except Exception as e:
                         self.logger.error(
                             f"Error parsing ad segment: {e} for {identification}"
                         )
-                        continue
+
+                        # 1) Remove classification directory for this chunk
+                        dir_path = os.path.join(classification_path, classification_dir)
+                        self.logger.warning(
+                            f"Removing classification directory due to validation failure: {dir_path}"
+                        )
+                        shutil.rmtree(dir_path, ignore_errors=True)
+
+                        # 2) Remove local audio & reset DB so next attempt re-downloads
+                        self.logger.warning(
+                            f"Removing local audio for post {segments[0].post_id if segments else 'UNKNOWN'} "
+                            "due to validation failure. Forcing a new download next time."
+                        )
+                        self.remove_audio_files_and_reset_db(
+                            segments[0].post_id if segments else None
+                        )
+
+                        # 3) Raise to end processing
+                        raise ProcessorException(
+                            "Validation error triggered re-download."
+                        )
 
                     if prediction.confidence < self.config.output.min_confidence:
                         continue
@@ -355,6 +380,49 @@ class PodcastProcessor:
                 )
 
         return ad_segments
+
+    def remove_audio_files_and_reset_db(self, post_id: Optional[int]) -> None:
+        """
+        Removes unprocessed/processed audio for the given post from disk,
+        sets DB fields to None so next run re-downloads from scratch.
+        """
+        if post_id is None:
+            return
+        from app import db
+        from app.models import Post
+
+        post = Post.query.get(post_id)
+        if not post:
+            self.logger.warning(
+                f"Could not find Post with ID {post_id} to remove files."
+            )
+            return
+
+        # Remove unprocessed file
+        if post.unprocessed_audio_path and os.path.isfile(post.unprocessed_audio_path):
+            try:
+                os.remove(post.unprocessed_audio_path)
+                self.logger.info(
+                    f"Removed unprocessed file: {post.unprocessed_audio_path}"
+                )
+            except OSError as e:
+                self.logger.error(
+                    f"Failed to remove unprocessed file '{post.unprocessed_audio_path}': {e}"
+                )
+
+        # Remove processed file
+        if post.processed_audio_path and os.path.isfile(post.processed_audio_path):
+            try:
+                os.remove(post.processed_audio_path)
+                self.logger.info(f"Removed processed file: {post.processed_audio_path}")
+            except OSError as e:
+                self.logger.error(
+                    f"Failed to remove processed file '{post.processed_audio_path}': {e}"
+                )
+
+        post.unprocessed_audio_path = None
+        post.processed_audio_path = None
+        db.session.commit()
 
     def get_ad_fade_out(
         self, audio: AudioSegment, ad_start_ms: int, fade_ms: int

@@ -7,7 +7,11 @@ from podcast_processor.podcast_processor import (
     PodcastProcessor,
     get_post_processed_audio_path,
 )
-from shared.podcast_downloader import download_episode, get_and_make_download_path
+from shared.podcast_downloader import (
+    download_episode,
+    get_and_make_download_path,
+    sanitize_title,
+)
 
 
 def remove_associated_files(post: Post) -> None:
@@ -35,7 +39,7 @@ def remove_associated_files(post: Post) -> None:
             try:
                 unprocessed_abs_path.unlink()
                 logger.info(f"Removed unprocessed audio file: {unprocessed_abs_path}")
-            except OSError as e:
+            except OSError as e:  # pylint: disable=broad-except
                 logger.error(
                     f"Failed to remove unprocessed audio file {unprocessed_abs_path}: {e}"
                 )
@@ -50,7 +54,7 @@ def remove_associated_files(post: Post) -> None:
             try:
                 processed_abs_path.unlink()
                 logger.info(f"Removed processed audio file: {processed_abs_path}")
-            except OSError as e:
+            except OSError as e:  # pylint: disable=broad-except
                 logger.error(
                     f"Failed to remove processed audio file {processed_abs_path}: {e}"
                 )
@@ -67,7 +71,7 @@ def remove_associated_files(post: Post) -> None:
         )
 
 
-def download_and_process_post(p_guid: str, blocking: bool = True) -> str:
+def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[str]:
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         logger.warning(f"Post with GUID: {p_guid} not found")
@@ -77,23 +81,82 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> str:
         logger.warning(f"Post: {post.title} is not whitelisted")
         raise PostException(f"Post with GUID: {p_guid} not whitelisted")
 
-    logger.info(f"Downloading post: {post.title}")
+    logger.info(
+        f"Checking database for both unprocessed & processed files for post '{post.title}'"
+    )
 
-    # Download the episode
-    download_path = download_episode(post)
+    # ---------------------------------------------------------------------------------------
+    # 1) IF unprocessed_audio_path is MISSING, try to fix from disk or else download
+    # ---------------------------------------------------------------------------------------
+    if post.unprocessed_audio_path is None:
+        logger.debug(
+            "unprocessed_audio_path is None. Checking for existing file on disk."
+        )
 
-    if download_path is None:
-        raise PostException("Download failed")
+        # Figure out the expected unprocessed path
+        safe_post_title = sanitize_title(post.title)
+        post_subdir = safe_post_title.replace(".mp3", "")
+        expected_unprocessed_path = Path("in") / post_subdir / safe_post_title
 
-    post.unprocessed_audio_path = download_path
-    db.session.commit()
+        if (
+            expected_unprocessed_path.exists()
+            and expected_unprocessed_path.stat().st_size > 0
+        ):
+            # Found a local unprocessed file
+            post.unprocessed_audio_path = str(expected_unprocessed_path.resolve())
+            logger.info(
+                f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. "
+                f"Updated the database path."
+            )
+            db.session.commit()
+        else:
+            # Need to do the normal download
+            logger.info(f"Downloading post: {post.title}")
+            download_path = download_episode(post)
+            if download_path is None:
+                raise PostException("Download failed")
 
-    # Process the episode
-    processor = PodcastProcessor(config)
-    output_path = processor.process(post, blocking)
-    if output_path is None:
-        raise PostException("Processing failed")
-    return output_path
+            post.unprocessed_audio_path = download_path
+            db.session.commit()
+
+    # ---------------------------------------------------------------------------------------
+    # 2) IF processed_audio_path is MISSING, try to fix from disk or else run processor
+    # ---------------------------------------------------------------------------------------
+    if post.processed_audio_path is None:
+        logger.debug(
+            "processed_audio_path is None. Checking for existing file on disk."
+        )
+
+        safe_feed_title = sanitize_title(post.feed.title)
+        safe_post_title = sanitize_title(post.title)
+        expected_processed_path = (
+            Path("srv") / safe_feed_title / f"{safe_post_title}.mp3"
+        )
+
+        if (
+            expected_processed_path.exists()
+            and expected_processed_path.stat().st_size > 0
+        ):
+            # Found a local processed file
+            post.processed_audio_path = str(expected_processed_path.resolve())
+            logger.info(
+                f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. "
+                f"Updated the database path."
+            )
+            db.session.commit()
+        else:
+            # Need to actually process the audio
+            logger.info(f"Processing post: {post.title}")
+            processor = PodcastProcessor(config)
+            output_path = processor.process(post, blocking)
+            if output_path is None:
+                raise PostException("Processing failed")
+            post.processed_audio_path = output_path
+            db.session.commit()
+
+    # if we get here, then the post is already completely processed and valid
+    logger.info(f"Post already downloaded and validated")
+    return post.processed_audio_path
 
 
 class PostException(Exception):

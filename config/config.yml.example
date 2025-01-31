@@ -13,6 +13,7 @@ openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 
 #setting a value here enables automatic scheduler to auto-refresh the feed lists and download new episodes
 #background_update_interval_minute: 10
+#job_timeout: 10800 #background jobs can get stuck on broken episodes, this will free up threads which exceed this time limit
 
 # if true then all new episodes will be whitelisted for download
 automatically_whitelist_new_episodes: true
