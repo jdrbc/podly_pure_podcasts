@@ -56,7 +56,10 @@ class PodcastProcessor:
     locks: Dict[str, threading.Lock] = {}
     transcriber: Transcriber
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config
+    ) -> None:
         super().__init__()
         self.logger = logging.getLogger("global_logger")
         self.output_dir = "srv"
@@ -114,7 +117,9 @@ class PodcastProcessor:
                 post=post,
                 classification_path=working_paths.classification_dir,
             )
-            ad_segments = self.get_ad_segments(transcript_segments, working_paths.classification_dir)
+            ad_segments = self.get_ad_segments(
+                transcript_segments, working_paths.classification_dir
+            )
 
             duration_ms = get_audio_duration_ms(post.unprocessed_audio_path)
             assert duration_ms is not None
@@ -122,8 +127,12 @@ class PodcastProcessor:
             merged_ad_segments = self.merge_ad_segments(
                 duration_ms=duration_ms,
                 ad_segments=ad_segments,
-                min_ad_segment_length_seconds=float(self.config.output.min_ad_segment_length_seconds),
-                min_ad_segment_separation_seconds=float(self.config.output.min_ad_segement_separation_seconds),
+                min_ad_segment_length_seconds=float(
+                    self.config.output.min_ad_segment_length_seconds
+                ),
+                min_ad_segment_separation_seconds=float(
+                   self.config.output.min_ad_segement_separation_seconds
+                ), # pylint: disable=line-too-long
             )
             clip_segments_with_fade(
                 in_path=post.unprocessed_audio_path,
@@ -140,7 +149,9 @@ class PodcastProcessor:
             PodcastProcessor.locks[processed_audio_path].release()
 
     def make_dirs(self, processing_paths: ProcessingPaths) -> None:
-        processing_paths.post_processed_audio_path.parent.mkdir(parents=True, exist_ok=True)
+        processing_paths.post_processed_audio_path.parent.mkdir(
+            parents=True, exist_ok=True
+        )
         processing_paths.audio_processing_dir.mkdir(parents=True, exist_ok=True)
         processing_paths.classification_dir.mkdir(parents=True, exist_ok=True)
 
@@ -191,14 +202,19 @@ class PodcastProcessor:
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
             start = i
             end = min(i + num_segments_per_prompt, len(transcript_segments))
-            target_dir = classification_path / f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
+            target_dir = (
+                classification_path
+                / f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
+            )
             identification_path = target_dir / "identification.txt"
             prompt_path = target_dir / "prompt.txt"
             target_dir.mkdir(exist_ok=True)
 
             # Check if we already have a valid identification
             if identification_path.exists():
-                self.logger.info(f"Responses for segments {start} to {end} already received")
+                self.logger.info(
+                    f"Responses for segments {start} to {end} already received"
+                )
                 continue
 
             excerpts = [
@@ -246,7 +262,9 @@ class PodcastProcessor:
 
         while attempt < max_retries:
             try:
-                self.logger.info(f"Calling model: {model} (attempt {attempt + 1}/{max_retries})")
+                self.logger.info(
+                    f"Calling model: {model} (attempt {attempt + 1}/{max_retries})"
+                )
                 response = litellm.completion(
                     model=model,
                     messages=[
@@ -266,10 +284,12 @@ class PodcastProcessor:
 
             except InternalServerError as e:
                 last_error = e
+
                 self.logger.error(f"Completion API error (attempt {attempt + 1}): {e}")
-                wait_time = (2 ** attempt) * 1  # exponential backoff: 1, 2, 4 seconds
+                wait_time = (2**attempt) * 1  # 1, 2, 4 seconds
                 time.sleep(wait_time)
                 attempt += 1
+
                 continue
             except Exception as e:
                 self.logger.error(f"Unexpected error calling model: {e}")
@@ -280,7 +300,9 @@ class PodcastProcessor:
             raise last_error
         return None
 
-    def get_ad_segments(self, segments: List[Segment], classification_path_path: Path) -> List[Tuple[float, float]]:
+    def get_ad_segments(
+        self, segments: List[Segment], classification_path_path: Path
+    ) -> List[Tuple[float, float]]:
         classification_path = str(classification_path_path)
         segments_by_start = {segment.start: segment for segment in segments}
         ad_segments = []
@@ -371,23 +393,41 @@ class PodcastProcessor:
         ad_segments: List[Tuple[float, float]],
     ) -> List[Tuple[int, int]]:
         audio_duration_seconds = 1000 * duration_ms
-        self.logger.info(f"Creating new audio with ads segments removed between: {ad_segments}")
+        self.logger.info(
+            f"Creating new audio with ads segments removed between: {ad_segments}"
+        )
         # if any two ad segments overlap by fade_ms, join them into a single segment
         ad_segments = sorted(ad_segments)
         i = 0
         while i < len(ad_segments) - 1:
-            if ad_segments[i][1] + min_ad_segment_separation_seconds >= ad_segments[i + 1][0]:
+            if (
+                ad_segments[i][1] + min_ad_segment_separation_seconds
+                >= ad_segments[i + 1][0]
+               ):
                 ad_segments[i] = (ad_segments[i][0], ad_segments[i + 1][1])
                 ad_segments.pop(i + 1)
             else:
                 i += 1
 
-        # whisper sometimes drops the last bit of the transcript, so bump the last segment if needed
-        if len(ad_segments) > 0 and (audio_duration_seconds - ad_segments[-1][1] < min_ad_segment_separation_seconds):
+        # remove any isolated ad segments that are too short, possibly misidentified
+        ad_segments = [
+            segment
+            for segment in ad_segments
+            if segment[1] - segment[0] >= min_ad_segment_length_seconds
+        ]
+        # whisper sometimes drops the last bit of the transcript & this can lead
+        # to end-roll not being entirely removed, so bump the ad segment to the
+        # end of the audio if it's close enough
+        if len(ad_segments) > 0 and (
+            audio_duration_seconds - ad_segments[-1][1]
+            < min_ad_segment_separation_seconds
+        ):
             ad_segments[-1] = (ad_segments[-1][0], audio_duration_seconds)
         self.logger.info(f"Joined ad segments into: {ad_segments}")
 
-        ad_segments_ms = [(int(start * 1000), int(end * 1000)) for start, end in ad_segments]
+        ad_segments_ms = [
+            (int(start * 1000), int(end * 1000)) for start, end in ad_segments
+        ]
         return ad_segments_ms
 
 
