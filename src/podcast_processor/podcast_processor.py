@@ -191,13 +191,12 @@ class PodcastProcessor:
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
             start = i
             end = min(i + num_segments_per_prompt, len(transcript_segments))
-
             target_dir = classification_path / f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
             identification_path = target_dir / "identification.txt"
             prompt_path = target_dir / "prompt.txt"
             target_dir.mkdir(exist_ok=True)
 
-            # If a valid identification already exists, skip this chunk.
+            # Check if we already have a valid identification
             if identification_path.exists():
                 self.logger.info(f"Responses for segments {start} to {end} already received")
                 continue
@@ -282,7 +281,6 @@ class PodcastProcessor:
         return None
 
     def get_ad_segments(self, segments: List[Segment], classification_path_path: Path) -> List[Tuple[float, float]]:
-        # Use the main branch change: convert the Path to a string for os.listdir.
         classification_path = str(classification_path_path)
         segments_by_start = {segment.start: segment for segment in segments}
         ad_segments = []
@@ -372,8 +370,9 @@ class PodcastProcessor:
         min_ad_segment_separation_seconds: float,
         ad_segments: List[Tuple[float, float]],
     ) -> List[Tuple[int, int]]:
-        audio_duration_seconds = duration_ms * 1000
+        audio_duration_seconds = 1000 * duration_ms
         self.logger.info(f"Creating new audio with ads segments removed between: {ad_segments}")
+        # if any two ad segments overlap by fade_ms, join them into a single segment
         ad_segments = sorted(ad_segments)
         i = 0
         while i < len(ad_segments) - 1:
@@ -383,14 +382,11 @@ class PodcastProcessor:
             else:
                 i += 1
 
-        ad_segments = [
-            segment
-            for segment in ad_segments
-            if segment[1] - segment[0] >= min_ad_segment_length_seconds
-        ]
-        if ad_segments and (audio_duration_seconds - ad_segments[-1][1] < min_ad_segment_separation_seconds):
+        # whisper sometimes drops the last bit of the transcript, so bump the last segment if needed
+        if len(ad_segments) > 0 and (audio_duration_seconds - ad_segments[-1][1] < min_ad_segment_separation_seconds):
             ad_segments[-1] = (ad_segments[-1][0], audio_duration_seconds)
         self.logger.info(f"Joined ad segments into: {ad_segments}")
+
         ad_segments_ms = [(int(start * 1000), int(end * 1000)) for start, end in ad_segments]
         return ad_segments_ms
 
