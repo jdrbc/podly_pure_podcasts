@@ -24,14 +24,16 @@ def remove_associated_files(post: Post) -> None:
         unprocessed_path = (
             get_and_make_download_path(post.title) if post.title else None
         )
-        processed_path = get_post_processed_audio_path(post)
+        processing_paths = get_post_processed_audio_path(post)
 
         # Define absolute paths
         unprocessed_abs_path: Optional[Path] = (
             Path(unprocessed_path).resolve() if unprocessed_path else None
         )
         processed_abs_path: Optional[Path] = (
-            Path(processed_path).resolve() if processed_path else None
+            Path(processing_paths.post_processed_audio_path).resolve()
+            if processing_paths
+            else None
         )
 
         # Remove unprocessed audio file

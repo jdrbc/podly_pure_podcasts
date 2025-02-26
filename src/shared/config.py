@@ -41,10 +41,10 @@ class LocalWhisperConfig(BaseModel):
 
 
 class Config(BaseModel):
-    openai_api_key: Optional[str]
-    openai_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: Optional[str] = Field(default=None, alias="openai_api_key")
+    llm_model: str = Field(default="gpt-4o", alias="openai_model")
+    openai_base_url: Optional[str] = None
     openai_max_tokens: int = 4096
-    openai_model: str = "gpt-4o"
     openai_timeout: int = 300
     output: OutputConfig
     podcasts: Optional[Dict[str, str]] = Field(
@@ -97,11 +97,11 @@ class Config(BaseModel):
         # if we have old style, change to the equivalent new style
         if self.remote_whisper:
             assert (
-                self.openai_api_key is not None
+                self.llm_api_key is not None
             ), "must supply api key to use remote whisper"
             self.whisper = RemoteWhisperConfig(
-                api_key=self.openai_api_key,
-                base_url=self.openai_base_url,
+                api_key=self.llm_api_key,
+                base_url=self.openai_base_url or "https://api.openai.com/v1",
             )
         else:
             assert (

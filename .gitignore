@@ -39,7 +39,8 @@ out/*
 processing/*
 config/app.log
 .vscode/*
-**/*.mp3
+in/**/*.mp3
+srv/**/*.mp3
 *.pickle
 .env
 config/config.yml

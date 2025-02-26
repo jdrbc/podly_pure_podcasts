@@ -284,8 +284,9 @@ class PodcastProcessor:
 
             except InternalServerError as e:
                 last_error = e
-
                 self.logger.error(f"Completion API error (attempt {attempt + 1}): {e}")
+
+                # Add exponential backoff for retries
                 wait_time = (2**attempt) * 1  # 1, 2, 4 seconds
                 time.sleep(wait_time)
                 attempt += 1
@@ -393,6 +394,7 @@ class PodcastProcessor:
         ad_segments: List[Tuple[float, float]],
     ) -> List[Tuple[int, int]]:
         audio_duration_seconds = 1000 * duration_ms
+
         self.logger.info(
             f"Creating new audio with ads segments removed between: {ad_segments}"
         )

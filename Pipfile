@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 speechrecognition = "*"
-pydub = "*"
 openai = "*"
 python-dotenv = "*"
 jinja2 = "*"
@@ -27,6 +26,8 @@ openai-whisper = "*"
 flask-sqlalchemy = "*"
 flask-migrate = "*"
 Flask-APScheduler = "*"
+ffmpeg-python = "*"
+litellm = ">=1.59.8"
 
 [dev-packages]
 black = "*"
