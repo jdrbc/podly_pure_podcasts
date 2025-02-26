@@ -58,7 +58,7 @@ class PodcastProcessor:
 
     def __init__(
         self,
-        config: Config
+        config: Config,
     ) -> None:
         super().__init__()
         self.logger = logging.getLogger("global_logger")
@@ -131,8 +131,8 @@ class PodcastProcessor:
                     self.config.output.min_ad_segment_length_seconds
                 ),
                 min_ad_segment_separation_seconds=float(
-                   self.config.output.min_ad_segement_separation_seconds
-                ), # pylint: disable=line-too-long
+                    self.config.output.min_ad_segement_separation_seconds
+                ),  # pylint: disable=line-too-long
             )
             clip_segments_with_fade(
                 in_path=post.unprocessed_audio_path,
