@@ -73,6 +73,12 @@
     </div>
     <div style="width: 500px; margin: 0 auto">
       <h2>Feeds</h2>
+      <div style="width: 500px; margin: 20px auto; text-align: center;">
+        <button id="download-all-btn" style="padding: 10px 20px; font-size: 16px;">
+          Download All Podcasts
+        </button>
+      </div>
+      <div style="width: 500px; margin: 0 auto;" id="download-status"></div>
       {% for feed in feeds %}
       <details id="details-{{feed.id}}">
         <summary>
@@ -241,6 +247,58 @@
         // Save scroll position
         console.log("saving scroll position: " + window.scrollY);
         localStorage.setItem("scrollPosition", window.scrollY);
+      });
+      //Function to handle bulk download
+      document.getElementById('download-all-btn').addEventListener('click', function() {
+          if (!confirm("Are you sure you want to download all podcasts? This may take some time.")) {
+              return;
+          }
+
+          // Disable the button to prevent multiple clicks
+          const downloadButton = document.getElementById('download-all-btn');
+          downloadButton.disabled = true;
+          downloadButton.textContent = "Downloading...";
+
+          fetch('/download_all', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({}), // No additional data needed
+          })
+          .then(response => {
+              if (!response.ok) {
+                  throw new Error('Network response was not ok');
+              }
+              return response.json();
+          })
+          .then(data => {
+              const statusDiv = document.getElementById('download-status');
+              statusDiv.innerHTML = '<h2>Download Results:</h2>';
+              data.forEach(result => {
+                  const p = document.createElement('p');
+                  let statusText = '';
+                  if (result.status === 'success') {
+                      statusText = `✅ Success: ${result.title}`;
+                  } else if (result.status === 'failed') {
+                      statusText = `❌ Failed: ${result.title} - ${result.message}`;
+                  } else if (result.status === 'error') {
+                      statusText = `⚠️ Error: ${result.title} - ${result.message}`;
+                  }
+                  p.textContent = statusText;
+                  statusDiv.appendChild(p);
+              });
+          })
+          .catch((error) => {
+              console.error('Error:', error);
+              alert('An error occurred while downloading podcasts.');
+          })
+          .finally(() => {
+              // Re-enable the button after the process completes
+              const downloadButton = document.getElementById('download-all-btn');
+              downloadButton.disabled = false;
+              downloadButton.textContent = "Download All Podcasts";
+          });
       });
     </script>
   </body>
