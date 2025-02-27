@@ -13,6 +13,7 @@ from app.models import Feed, Post
 from app.posts import download_and_process_post
 from podcast_processor.podcast_processor import PodcastProcessor
 from shared.podcast_downloader import download_episode
+from typing import Dict, Any
 
 main_bp = Blueprint("main", __name__)
 
@@ -144,7 +145,7 @@ def download_post(p_guid: str) -> flask.Response:
     from flask import current_app, send_file
     from typing import cast
 
-    app = cast(Flask, current_app._get_current_object())
+    app = cast(Flask, current_app._get_current_object()) # type: ignore[attr-defined]
 
     result = download_and_process(post, app)
     if result["status"] == "success":

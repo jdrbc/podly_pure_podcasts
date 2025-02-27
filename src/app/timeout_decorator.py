@@ -1,13 +1,11 @@
 import functools
 import threading
-from typing import Callable, TypeVar, List, Optional
+from typing import Any, Callable, TypeVar, List, Optional
 
 T = TypeVar("T")
 
-
 class TimeoutException(Exception):
     """Custom exception to indicate a timeout."""
-
 
 def timeout_decorator(timeout: int) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
@@ -16,7 +14,7 @@ def timeout_decorator(timeout: int) -> Callable[[Callable[..., T]], Callable[...
     """
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> T:
+        def wrapper(*args: Any, **kwargs: Any) -> T:
             timeout_flag = threading.Event()
             result: List[Optional[T]] = [None]
 
@@ -35,7 +33,6 @@ def timeout_decorator(timeout: int) -> Callable[[Callable[..., T]], Callable[...
                 raise TimeoutException(
                     f"Function '{func.__name__}' exceeded timeout of {timeout} seconds."
                 )
-            # If the function legitimately returns None, that's acceptable.
             return result[0]  # type: ignore
         return wrapper
     return decorator

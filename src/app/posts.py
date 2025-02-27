@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import cast, Optional
 
 from app import config, db, logger
 from app.models import Post
@@ -138,7 +138,7 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
             db.session.commit()
 
     logger.info("Post already downloaded and validated")
-    return post.processed_audio_path
+    return cast(Optional[str], post.processed_audio_path)
 
 class PostException(Exception):
     pass
