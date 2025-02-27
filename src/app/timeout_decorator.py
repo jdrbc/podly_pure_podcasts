@@ -1,6 +1,6 @@
 import functools
 import threading
-from typing import Callable, TypeVar
+from typing import Callable, TypeVar, List, Optional
 
 T = TypeVar("T")
 
@@ -14,18 +14,16 @@ def timeout_decorator(timeout: int) -> Callable[[Callable[..., T]], Callable[...
     Decorator to enforce a timeout on a function.
     If the function execution exceeds the timeout, a TimeoutException is raised.
     """
-
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> T:
-            # This flag will indicate if the function has timed out
             timeout_flag = threading.Event()
+            result: List[Optional[T]] = [None]
 
             def target() -> None:
                 try:
-                    func(*args, **kwargs)
+                    result[0] = func(*args, **kwargs)
                 except Exception as e:
-                    # Optionally, handle exceptions within the thread
                     print(f"Exception in thread: {e}")
                 finally:
                     timeout_flag.set()
@@ -37,8 +35,7 @@ def timeout_decorator(timeout: int) -> Callable[[Callable[..., T]], Callable[...
                 raise TimeoutException(
                     f"Function '{func.__name__}' exceeded timeout of {timeout} seconds."
                 )
-            return
-
+            # If the function legitimately returns None, that's acceptable.
+            return result[0]  # type: ignore
         return wrapper
-
     return decorator

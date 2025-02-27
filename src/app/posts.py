@@ -87,68 +87,49 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
         f"Checking database for both unprocessed & processed files for post '{post.title}'"
     )
 
-    # ---------------------------------------------------------------------------------------
-    # 1) IF unprocessed_audio_path is MISSING, try to fix from disk or else download
-    # ---------------------------------------------------------------------------------------
+    # 1) IF unprocessed_audio_path is missing, try to fix from disk or else download
     if post.unprocessed_audio_path is None:
-        logger.debug(
-            "unprocessed_audio_path is None. Checking for existing file on disk."
-        )
+        logger.debug("unprocessed_audio_path is None. Checking for existing file on disk.")
 
-        # Figure out the expected unprocessed path
         safe_post_title = sanitize_title(post.title)
         post_subdir = safe_post_title.replace(".mp3", "")
         expected_unprocessed_path = Path("in") / post_subdir / safe_post_title
 
-        if (
-            expected_unprocessed_path.exists()
-            and expected_unprocessed_path.stat().st_size > 0
-        ):
+        if expected_unprocessed_path.exists() and expected_unprocessed_path.stat().st_size > 0:
             # Found a local unprocessed file
             post.unprocessed_audio_path = str(expected_unprocessed_path.resolve())
             logger.info(
                 f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. "
-                f"Updated the database path."
+                "Updated the database path."
             )
             db.session.commit()
         else:
-            # Need to do the normal download
             logger.info(f"Downloading post: {post.title}")
             download_path = download_episode(post)
             if download_path is None:
                 raise PostException("Download failed")
-
             post.unprocessed_audio_path = download_path
             db.session.commit()
 
-    # ---------------------------------------------------------------------------------------
-    # 2) IF processed_audio_path is MISSING, try to fix from disk or else run processor
-    # ---------------------------------------------------------------------------------------
+    # 2) IF processed_audio_path is missing, try to fix from disk or else run processor
     if post.processed_audio_path is None:
-        logger.debug(
-            "processed_audio_path is None. Checking for existing file on disk."
-        )
+        logger.debug("processed_audio_path is None. Checking for existing file on disk.")
 
         safe_feed_title = sanitize_title(post.feed.title)
         safe_post_title = sanitize_title(post.title)
-        expected_processed_path = (
-            Path("srv") / safe_feed_title / f"{safe_post_title}.mp3"
-        )
+        expected_processed_path = Path("srv") / safe_feed_title / f"{safe_post_title}.mp3"
 
-        if (
-            expected_processed_path.exists()
-            and expected_processed_path.stat().st_size > 0
-        ):
+        if expected_processed_path.exists() and expected_processed_path.stat().st_size > 0:
             # Found a local processed file
             post.processed_audio_path = str(expected_processed_path.resolve())
             logger.info(
                 f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. "
-                f"Updated the database path."
+                "Updated the database path."
             )
             db.session.commit()
         else:
-            # Need to actually process the audio
             logger.info(f"Processing post: {post.title}")
+            # Assume 'config' is imported from your configuration module.
             processor = PodcastProcessor(config)
             output_path = processor.process(post, blocking)
             if output_path is None:
@@ -156,10 +137,8 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
             post.processed_audio_path = output_path
             db.session.commit()
 
-    # if we get here, then the post is already completely processed and valid
-    logger.info(f"Post already downloaded and validated")
+    logger.info("Post already downloaded and validated")
     return post.processed_audio_path
-
 
 class PostException(Exception):
     pass

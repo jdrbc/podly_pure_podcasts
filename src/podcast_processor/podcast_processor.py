@@ -76,9 +76,13 @@ class PodcastProcessor:
         if isinstance(self.config.whisper, TestWhisperConfig):
             self.transcriber = TestWhisperTranscriber(self.logger)
         elif isinstance(self.config.whisper, RemoteWhisperConfig):
-            self.transcriber = RemoteWhisperTranscriber(self.logger, self.config.whisper)
+            self.transcriber = RemoteWhisperTranscriber(
+                self.logger, self.config.whisper
+            )
         elif isinstance(self.config.whisper, LocalWhisperConfig):
-            self.transcriber = LocalWhisperTranscriber(self.logger, self.config.whisper.model)
+            self.transcriber = LocalWhisperTranscriber(
+                self.logger, self.config.whisper.model
+            )
         else:
             raise ValueError(f"unhandled whisper config {config.whisper}")
 
@@ -92,10 +96,14 @@ class PodcastProcessor:
         with PodcastProcessor.lock_lock:
             if processed_audio_path not in PodcastProcessor.locks:
                 PodcastProcessor.locks[processed_audio_path] = threading.Lock()
-                PodcastProcessor.locks[processed_audio_path].acquire()  # no contention expected
+                PodcastProcessor.locks[
+                    processed_audio_path
+                ].acquire()  # no contention expected
                 locked = True
 
-        if not locked and not PodcastProcessor.locks[processed_audio_path].acquire(blocking=blocking):
+        if not locked and not PodcastProcessor.locks[processed_audio_path].acquire(
+            blocking=blocking
+        ):
             raise ProcessorException("Processing job in progress")
 
         try:
@@ -107,7 +115,9 @@ class PodcastProcessor:
             user_prompt_template = self.get_user_prompt_template(
                 self.config.processing.user_prompt_template_path
             )
-            system_prompt = self.get_system_prompt(self.config.processing.system_prompt_path)
+            system_prompt = self.get_system_prompt(
+                self.config.processing.system_prompt_path
+            )
             self.classify(
                 transcript_segments=transcript_segments,
                 model=self.config.llm_model,
@@ -249,14 +259,18 @@ class PodcastProcessor:
                     with open(prompt_path, "w") as f:
                         f.write(user_prompt)
                 else:
-                    self.logger.error(f"Failed to get identification for segments {start} to {end}")
+                    self.logger.error(
+                        f"Failed to get identification for segments {start} to {end}"
+                    )
                     with open(identification_path, "w") as f:
                         f.write('{"ad_segments": [], "confidence": 0.0}')
             finally:
                 if (target_dir / ".in_progress").exists():
                     os.remove(target_dir / ".in_progress")
 
-    def call_model(self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3) -> Optional[str]:
+    def call_model(
+        self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3
+    ) -> Optional[str]:
         attempt = 0
         last_error = None
 
@@ -312,7 +326,10 @@ class PodcastProcessor:
             key=lambda filename: (len(filename), filename),
         ):
             try:
-                with open(f"{classification_path}/{classification_dir}/identification.txt", "r") as id_file:
+                with open(
+                    f"{classification_path}/{classification_dir}/identification.txt",
+                    "r",
+                ) as id_file:
                     prompt_start_timestamp = float(classification_dir.split("_")[0])
                     prompt_end_timestamp = float(classification_dir.split("_")[1])
                     identification = id_file.read()
@@ -320,17 +337,24 @@ class PodcastProcessor:
                     try:
                         prediction = clean_and_parse_model_output(identification)
                     except Exception as e:
-                        self.logger.error(f"Error parsing ad segment: {e} for {identification}")
+                        self.logger.error(
+                            f"Error parsing ad segment: {e} for {identification}"
+                        )
                         # Remove classification directory due to validation failure.
                         dir_path = os.path.join(classification_path, classification_dir)
-                        self.logger.warning(f"Removing classification directory due to validation failure: {dir_path}")
+                        self.logger.warning(
+                            f"Removing classification directory due to validation failure: {dir_path}"
+                        )
                         shutil.rmtree(dir_path, ignore_errors=True)
                         self.logger.warning(
-                            f"Removing local audio for post {segments[0].post_id if segments else 'UNKNOWN'} "
-                            "due to validation failure. Forcing a new download next time."
+                            "Removing local audio due to validation failure. Forcing a new download next time."
                         )
-                        self.remove_audio_files_and_reset_db(segments[0].post_id if segments else None)
-                        raise ProcessorException("Validation error triggered re-download.")
+                        self.remove_audio_files_and_reset_db(
+                            None
+                        )
+                        raise ProcessorException(
+                            "Validation error triggered re-download."
+                        )
 
                     if prediction.confidence < self.config.output.min_confidence:
                         continue
@@ -348,7 +372,9 @@ class PodcastProcessor:
                         ad_segment_end = segments_by_start[ad_segment_start].end
                         ad_segments.append((ad_segment_start, ad_segment_end))
             except FileNotFoundError:
-                self.logger.error(f"Identification file not found for {classification_dir}")
+                self.logger.error(
+                    f"Identification file not found for {classification_dir}"
+                )
 
         return ad_segments
 
@@ -364,22 +390,30 @@ class PodcastProcessor:
 
         post = Post.query.get(post_id)
         if not post:
-            self.logger.warning(f"Could not find Post with ID {post_id} to remove files.")
+            self.logger.warning(
+                f"Could not find Post with ID {post_id} to remove files."
+            )
             return
 
         if post.unprocessed_audio_path and os.path.isfile(post.unprocessed_audio_path):
             try:
                 os.remove(post.unprocessed_audio_path)
-                self.logger.info(f"Removed unprocessed file: {post.unprocessed_audio_path}")
+                self.logger.info(
+                    f"Removed unprocessed file: {post.unprocessed_audio_path}"
+                )
             except OSError as e:
-                self.logger.error(f"Failed to remove unprocessed file '{post.unprocessed_audio_path}': {e}")
+                self.logger.error(
+                    f"Failed to remove unprocessed file '{post.unprocessed_audio_path}': {e}"
+                )
 
         if post.processed_audio_path and os.path.isfile(post.processed_audio_path):
             try:
                 os.remove(post.processed_audio_path)
                 self.logger.info(f"Removed processed file: {post.processed_audio_path}")
             except OSError as e:
-                self.logger.error(f"Failed to remove processed file '{post.processed_audio_path}': {e}")
+                self.logger.error(
+                    f"Failed to remove processed file '{post.processed_audio_path}': {e}"
+                )
 
         post.unprocessed_audio_path = None
         post.processed_audio_path = None
@@ -405,7 +439,7 @@ class PodcastProcessor:
             if (
                 ad_segments[i][1] + min_ad_segment_separation_seconds
                 >= ad_segments[i + 1][0]
-               ):
+            ):
                 ad_segments[i] = (ad_segments[i][0], ad_segments[i + 1][1])
                 ad_segments.pop(i + 1)
             else:
