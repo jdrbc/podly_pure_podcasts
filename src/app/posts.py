@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import cast, Optional
+from typing import Optional, cast
 
 from app import config, db, logger
 from app.models import Post
@@ -89,17 +89,22 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
 
     # 1) IF unprocessed_audio_path is missing, try to fix from disk or else download
     if post.unprocessed_audio_path is None:
-        logger.debug("unprocessed_audio_path is None. Checking for existing file on disk.")
+        logger.debug(
+            "unprocessed_audio_path is None. Checking for existing file on disk."
+        )
 
         safe_post_title = sanitize_title(post.title)
         post_subdir = safe_post_title.replace(".mp3", "")
         expected_unprocessed_path = Path("in") / post_subdir / safe_post_title
 
-        if expected_unprocessed_path.exists() and expected_unprocessed_path.stat().st_size > 0:
+        if (
+            expected_unprocessed_path.exists()
+            and expected_unprocessed_path.stat().st_size > 0
+        ):
             # Found a local unprocessed file
             post.unprocessed_audio_path = str(expected_unprocessed_path.resolve())
             logger.info(
-                f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. " # pylint: disable=line-too-long
+                f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. "  # pylint: disable=line-too-long
                 "Updated the database path."
             )
             db.session.commit()
@@ -113,17 +118,24 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
 
     # 2) IF processed_audio_path is missing, try to fix from disk or else run processor
     if post.processed_audio_path is None:
-        logger.debug("processed_audio_path is None. Checking for existing file on disk.")
+        logger.debug(
+            "processed_audio_path is None. Checking for existing file on disk."
+        )
 
         safe_feed_title = sanitize_title(post.feed.title)
         safe_post_title = sanitize_title(post.title)
-        expected_processed_path = Path("srv") / safe_feed_title / f"{safe_post_title}.mp3"
+        expected_processed_path = (
+            Path("srv") / safe_feed_title / f"{safe_post_title}.mp3"
+        )
 
-        if expected_processed_path.exists() and expected_processed_path.stat().st_size > 0:
+        if (
+            expected_processed_path.exists()
+            and expected_processed_path.stat().st_size > 0
+        ):
             # Found a local processed file
             post.processed_audio_path = str(expected_processed_path.resolve())
             logger.info(
-                f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. " # pylint: disable=line-too-long
+                f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. "  # pylint: disable=line-too-long
                 "Updated the database path."
             )
             db.session.commit()
@@ -139,6 +151,7 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
 
     logger.info("Post already downloaded and validated")
     return cast(Optional[str], post.processed_audio_path)
+
 
 class PostException(Exception):
     pass

@@ -1,7 +1,7 @@
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Dict, Any, cast
+from typing import Any, Dict, List, cast
 
 import flask
 import validators
@@ -118,7 +118,7 @@ def download_and_process(post: Post, app: Flask) -> Dict[str, Any]:
                 "message": output_path,
             }
 
-    except Exception as e: # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error downloading and processing post {post.id}: {e}")
         return {
             "post_id": post.id,
@@ -126,6 +126,7 @@ def download_and_process(post: Post, app: Flask) -> Dict[str, Any]:
             "status": "error",
             "message": str(e),
         }
+
 
 @main_bp.route("/post/<string:p_guid>.mp3", methods=["GET"])
 def download_post(p_guid: str) -> flask.Response:
@@ -140,14 +141,14 @@ def download_post(p_guid: str) -> flask.Response:
         return flask.make_response(("Episode not whitelisted", 403))
 
     # pylint: disable=protected-access
-    app = cast(Flask, current_app._get_current_object()) # type: ignore[attr-defined]
+    app = cast(Flask, current_app._get_current_object())  # type: ignore[attr-defined]
 
     result = download_and_process(post, app)
     if result["status"] == "success":
         try:
             output_path = result["message"]
             return send_file(path_or_file=Path(output_path).resolve())
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             logger.error(f"Error sending file: {e}")
             return flask.make_response(("Error sending file", 500))
     else:
@@ -169,8 +170,8 @@ def download_all_posts() -> flask.Response:
 
     # Retrieve the Flask application instance
 
-    #pylint: disable=protected-access
-    app = current_app._get_current_object() # type: ignore[attr-defined]
+    # pylint: disable=protected-access
+    app = current_app._get_current_object()  # type: ignore[attr-defined]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all download tasks to the executor, passing both post and app
@@ -183,7 +184,7 @@ def download_all_posts() -> flask.Response:
             try:
                 result = future.result()
                 download_results.append(result)
-            except Exception as e: # pylint: disable=broad-except
+            except Exception as e:  # pylint: disable=broad-except
                 logger.error(f"Unhandled exception for post {post.id}: {e}")
                 download_results.append(
                     {
