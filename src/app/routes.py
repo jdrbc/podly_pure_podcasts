@@ -193,7 +193,7 @@ def download_all_posts() -> flask.Response:
                 )
 
     logger.info("Bulk download completed.")
-    return jsonify(download_results), 200
+    return flask.make_response(jsonify(download_results), 200)
 
 
 @main_bp.route("/feed", methods=["POST"])
