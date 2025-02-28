@@ -13,7 +13,7 @@ from app.models import Feed, Post
 from app.posts import download_and_process_post
 from podcast_processor.podcast_processor import PodcastProcessor
 from shared.podcast_downloader import download_episode
-from typing import Dict, Any
+from typing import List, Dict, Any, cast
 
 main_bp = Blueprint("main", __name__)
 
@@ -96,7 +96,6 @@ def download_and_process(post: Post, app: Flask) -> Dict[str, Any]:
             db.session.commit()
 
             # Process the episode
-            processor = PodcastProcessor(config)
             output_path = processor.process(post, blocking=True)
             if output_path is None:
                 logger.error(f"Failed to process post: {post.title} (ID: {post.id})")
@@ -120,7 +119,7 @@ def download_and_process(post: Post, app: Flask) -> Dict[str, Any]:
                 "message": output_path,
             }
 
-    except Exception as e:
+    except Exception as e: # pylint: disable=broad-except
         logger.error(f"Error downloading and processing post {post.id}: {e}")
         return {
             "post_id": post.id,
@@ -141,10 +140,6 @@ def download_post(p_guid: str) -> flask.Response:
         logger.warning(f"Post: {post.title} is not whitelisted")
         return flask.make_response(("Episode not whitelisted", 403))
 
-    # Retrieve the Flask application instance and use the refactored download function.
-    from flask import current_app, send_file
-    from typing import cast
-
     app = cast(Flask, current_app._get_current_object()) # type: ignore[attr-defined]
 
     result = download_and_process(post, app)
@@ -152,7 +147,7 @@ def download_post(p_guid: str) -> flask.Response:
         try:
             output_path = result["message"]
             return send_file(path_or_file=Path(output_path).resolve())
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-except
             logger.error(f"Error sending file: {e}")
             return flask.make_response(("Error sending file", 500))
     else:
@@ -167,16 +162,13 @@ def download_all_posts() -> flask.Response:
         logger.info("No podcast posts available for download.")
         return flask.make_response(("No podcasts available for download.", 400))
 
-    from typing import List, Dict, Any
     download_results: List[Dict[str, Any]] = []
-    # (Additional bulk processing logic would go here.)
-    return flask.make_response(("Bulk download initiated", 200))
 
     # Determine the number of worker threads based on config
     max_workers = config.threads if config.threads > 0 else 1  # Default to 1 if not set
 
     # Retrieve the Flask application instance
-    app = current_app._get_current_object()
+    app = current_app._get_current_object() # type: ignore[attr-defined]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all download tasks to the executor, passing both post and app
@@ -189,7 +181,7 @@ def download_all_posts() -> flask.Response:
             try:
                 result = future.result()
                 download_results.append(result)
-            except Exception as e:
+            except Exception as e: # pylint: disable=broad-except
                 logger.error(f"Unhandled exception for post {post.id}: {e}")
                 download_results.append(
                     {

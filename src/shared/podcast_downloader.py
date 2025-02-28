@@ -26,8 +26,8 @@ def download_episode(post: Post) -> Optional[str]:
         if os.path.isfile(download_path) and os.path.getsize(download_path) > 0:
             logger.info("Episode already downloaded.")
             return download_path
-        else:
-            logger.info("File is zero bytes, re-downloading.")
+        logger.info("File is zero bytes, re-downloading.") #else
+
     except FileNotFoundError:
         # Covers both “file actually missing” and “broken symlink”
         pass

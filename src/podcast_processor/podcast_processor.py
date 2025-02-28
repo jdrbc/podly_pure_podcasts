@@ -343,18 +343,18 @@ class PodcastProcessor:
                         # Remove classification directory due to validation failure.
                         dir_path = os.path.join(classification_path, classification_dir)
                         self.logger.warning(
-                            f"Removing classification directory due to validation failure: {dir_path}"
+                            f"Removing classification directory due to validation failure: {dir_path}" # pylint: disable=line-too-long
                         )
                         shutil.rmtree(dir_path, ignore_errors=True)
                         self.logger.warning(
-                            "Removing local audio due to validation failure. Forcing a new download next time."
+                            "Removing local audio due to validation failure. Forcing a new download next time." # pylint: disable=line-too-long
                         )
                         self.remove_audio_files_and_reset_db(
                             None
                         )
                         raise ProcessorException(
                             "Validation error triggered re-download."
-                        )
+                        ) from e
 
                     if prediction.confidence < self.config.output.min_confidence:
                         continue
@@ -363,10 +363,11 @@ class PodcastProcessor:
                     ad_segment_starts = [
                         start
                         for start in ad_segment_starts
-                        if start >= prompt_start_timestamp
-                        and start <= prompt_end_timestamp
-                        and start in segments_by_start
-                    ]
+                        if (
+                            prompt_start_timestamp <= start <= prompt_end_timestamp
+                            and start in segments_by_start
+                            )
+                        ]
 
                     for ad_segment_start in ad_segment_starts:
                         ad_segment_end = segments_by_start[ad_segment_start].end
@@ -385,8 +386,6 @@ class PodcastProcessor:
         """
         if post_id is None:
             return
-        from app import db
-        from app.models import Post
 
         post = Post.query.get(post_id)
         if not post:

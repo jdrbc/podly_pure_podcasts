@@ -99,7 +99,7 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
             # Found a local unprocessed file
             post.unprocessed_audio_path = str(expected_unprocessed_path.resolve())
             logger.info(
-                f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. "
+                f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. " # pylint: disable=line-too-long
                 "Updated the database path."
             )
             db.session.commit()
@@ -123,7 +123,7 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
             # Found a local processed file
             post.processed_audio_path = str(expected_processed_path.resolve())
             logger.info(
-                f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. "
+                f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. " # pylint: disable=line-too-long
                 "Updated the database path."
             )
             db.session.commit()

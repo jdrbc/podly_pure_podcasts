@@ -21,7 +21,7 @@ def timeout_decorator(timeout: int) -> Callable[[Callable[..., T]], Callable[...
             def target() -> None:
                 try:
                     result[0] = func(*args, **kwargs)
-                except Exception as e:
+                except Exception as e: # pylint: disable=broad-exception-caught
                     print(f"Exception in thread: {e}")
                 finally:
                     timeout_flag.set()
