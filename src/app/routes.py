@@ -1,6 +1,7 @@
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import List, Dict, Any, cast
 
 import flask
 import validators
@@ -10,10 +11,8 @@ from flask.typing import ResponseReturnValue
 from app import config, db, logger
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.models import Feed, Post
-from app.posts import download_and_process_post
 from podcast_processor.podcast_processor import PodcastProcessor
 from shared.podcast_downloader import download_episode
-from typing import List, Dict, Any, cast
 
 main_bp = Blueprint("main", __name__)
 
@@ -140,7 +139,7 @@ def download_post(p_guid: str) -> flask.Response:
         logger.warning(f"Post: {post.title} is not whitelisted")
         return flask.make_response(("Episode not whitelisted", 403))
 
-    app = cast(Flask, current_app._get_current_object()) # type: ignore[attr-defined]
+    app = cast(Flask, current_app._get_current_object()) # pylint: disable=protected-access  # type: ignore[attr-defined]
 
     result = download_and_process(post, app)
     if result["status"] == "success":
@@ -168,7 +167,7 @@ def download_all_posts() -> flask.Response:
     max_workers = config.threads if config.threads > 0 else 1  # Default to 1 if not set
 
     # Retrieve the Flask application instance
-    app = current_app._get_current_object() # type: ignore[attr-defined]
+    app = current_app._get_current_object() #pylint: disable=protected-access  # type: ignore[attr-defined]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all download tasks to the executor, passing both post and app
