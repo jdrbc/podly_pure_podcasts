@@ -22,6 +22,11 @@ def fetch_feed(url: str) -> feedparser.FeedParserDict:
 def refresh_feed(feed: Feed) -> None:
     logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
+
+    if feed.image_url != feed_data.feed.image.href:
+        feed.image_url = feed_data.feed.image.href
+        db.session.add(feed)
+
     existing_posts = {post.guid for post in feed.posts}  # type: ignore[attr-defined]
     oldest_post = min(
         (post for post in feed.posts if post.release_date),  # type: ignore[attr-defined]
@@ -71,6 +76,7 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
             description=feed_data.feed.get("description", ""),
             author=feed_data.feed.get("author", ""),
             rss_url=feed_data.href,
+            image_url=feed_data.feed.image.href,
         )
         db.session.add(feed)
         db.session.commit()
@@ -147,11 +153,13 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
+    link = url_for("main.get_feed", f_id=feed.id, _external=True)
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
-        link=url_for("main.get_feed", f_id=feed.id, _external=True),
+        link=link,
         description=feed.description,
         lastBuildDate=datetime.datetime.now(),
+        image=PyRSS2Gen.Image(url=feed.image_url, title=feed.title, link=link),
         items=items,
     )
     logger.info(f"XML generated for feed with ID: {feed.id}")
