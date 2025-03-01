@@ -22,6 +22,11 @@ def fetch_feed(url: str) -> feedparser.FeedParserDict:
 def refresh_feed(feed: Feed) -> None:
     logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
+
+    if feed.image_url != feed_data.feed.image.href:
+        feed.image_url = feed_data.feed.image.href
+        db.session.add(feed)
+
     existing_posts = {post.guid for post in feed.posts}  # type: ignore[attr-defined]
     oldest_post = min(
         (post for post in feed.posts if post.release_date),  # type: ignore[attr-defined]
@@ -71,6 +76,7 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
             description=feed_data.feed.get("description", ""),
             author=feed_data.feed.get("author", ""),
             rss_url=feed_data.href,
+            image_url=feed_data.feed.image.href,
         )
         db.session.add(feed)
         db.session.commit()
@@ -152,6 +158,7 @@ def generate_feed_xml(feed: Feed) -> Any:
         link=url_for("main.get_feed", f_id=feed.id, _external=True),
         description=feed.description,
         lastBuildDate=datetime.datetime.now(),
+        image=PyRSS2Gen.Image(feed.image_url, feed.title, feed.rss_url),
         items=items,
     )
     logger.info(f"XML generated for feed with ID: {feed.id}")
