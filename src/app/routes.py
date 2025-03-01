@@ -8,11 +8,13 @@ import validators
 from flask import Blueprint, Flask, current_app, jsonify, request, send_file, url_for
 from flask.typing import ResponseReturnValue
 
-from app import config, db, logger
+from app import config, db, logger, scheduler
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.models import Feed, Post
+from app.posts import download_and_process_post
 from podcast_processor.podcast_processor import PodcastProcessor
 from shared.podcast_downloader import download_episode
+from src.app.jobs import run_refresh_feed
 
 main_bp = Blueprint("main", __name__)
 
@@ -227,7 +229,14 @@ def add_feed() -> ResponseReturnValue:
 def get_feed(f_id: int) -> flask.Response:
     logger.info(f"Fetching feed with ID: {f_id}")
     feed = Feed.query.get_or_404(f_id)
-    refresh_feed(feed)
+
+    if config.background_update_interval_minute is None:
+        refresh_feed(feed)
+    else:
+        scheduler.add_job(
+            id=f"refresh-feed-{feed.id}", func=run_refresh_feed, args=[f_id]
+        )
+
     feed_xml = generate_feed_xml(feed)
     logger.info(f"Feed with ID: {f_id} fetched and XML generated")
     return flask.make_response(feed_xml, 200, {"Content-Type": "application/xml"})

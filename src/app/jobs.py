@@ -16,6 +16,14 @@ def run_refresh_all_feeds() -> None:
         refresh_all_feeds()
 
 
+def run_refresh_feed(feed_id: int) -> None:
+    """Entry point for refreshing a single feed"""
+    logger.info(f"run_refresh_feed {feed_id}")
+    with scheduler.app.app_context():
+        feed = Feed.query.get_or_404(feed_id)
+        refresh_feed(feed)
+
+
 @timeout_decorator(config.job_timeout)
 def process_post(post: Post) -> None:
     """Process a single post within the app context."""
@@ -30,7 +38,7 @@ def process_post(post: Post) -> None:
             download_and_process_post(post.guid, blocking=False)
             logger.info(f"Post {post.title} (ID: {post.id}) processed successfully.")
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error(f"Error processing post {post.id}: {e}")
+            logger.error(f"Error processing post {post.title} (ID: {post.id}): {e}")
 
 
 def refresh_all_feeds() -> None:
@@ -91,7 +99,9 @@ def refresh_all_feeds() -> None:
                 try:
                     future.result()  # Check for exceptions
                 except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.error(f"Error processing post {post.id}: {e}")
+                    logger.error(
+                        f"Error processing post {post.title} (ID: {post.id}): {e}"
+                    )
 
     except TimeoutException as te:
         logger.error(f"Job timed out: {te}")
