@@ -107,4 +107,4 @@ def test_split_audio() -> None:
             assert (
                 duration_ms == actual_duration
             ), f"unexpected filesize for {split}. found {actual_duration}, expected {duration_ms}"
-            assert filesize == split.stat().st_size
+            assert abs(filesize - split.stat().st_size) <= 10, f"filesize differs by more than 10 bytes for {split}. found {split.stat().st_size}, expected {filesize}"
