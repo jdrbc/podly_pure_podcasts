@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import shutil
 import threading
 import time
 from pathlib import Path
@@ -336,23 +335,12 @@ class PodcastProcessor:
 
                     try:
                         prediction = clean_and_parse_model_output(identification)
-                    except Exception as e:
+                    except Exception as e:  # pylint: disable=broad-exception-caught
                         self.logger.error(
                             f"Error parsing ad segment: {e} for {identification}"
                         )
-                        # Remove classification directory due to validation failure.
-                        dir_path = os.path.join(classification_path, classification_dir)
-                        self.logger.warning(
-                            f"Removing classification directory due to validation failure: {dir_path}"  # pylint: disable=line-too-long
-                        )
-                        shutil.rmtree(dir_path, ignore_errors=True)
-                        self.logger.warning(
-                            "Removing local audio due to validation failure. Forcing a new download next time."  # pylint: disable=line-too-long
-                        )
-                        self.remove_audio_files_and_reset_db(None)
-                        raise ProcessorException(
-                            "Validation error triggered re-download."
-                        ) from e
+                        # TODO - can this skip result in hung processing?
+                        continue
 
                     if prediction.confidence < self.config.output.min_confidence:
                         continue
