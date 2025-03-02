@@ -69,7 +69,7 @@ class PodcastProcessor:
 
         assert self.config.whisper is not None, (
             "validate_whisper_config ensures that even if old style whisper "
-            + "config is given, it will be translated and config.whisper set."
+            "config is given, it will be translated and config.whisper set."
         )
 
         if isinstance(self.config.whisper, TestWhisperConfig):
@@ -97,7 +97,7 @@ class PodcastProcessor:
                 PodcastProcessor.locks[processed_audio_path] = threading.Lock()
                 PodcastProcessor.locks[
                     processed_audio_path
-                ].acquire()  # should be no contention
+                ].acquire()  # no contention expected
                 locked = True
 
         if not locked and not PodcastProcessor.locks[processed_audio_path].acquire(
@@ -165,7 +165,7 @@ class PodcastProcessor:
         processing_paths.classification_dir.mkdir(parents=True, exist_ok=True)
 
     def transcribe(self, post: Post) -> List[Segment]:
-        # check db for transcript
+        # Check DB for transcript
         transcript = Transcript.query.filter_by(post_id=post.id).first()
         if transcript is not None:
             return cast(List[Segment], transcript.get_segments())
@@ -206,12 +206,11 @@ class PodcastProcessor:
         classification_path: Path,
     ) -> None:
         self.logger.info(f"Identifying ad segments for {post.unprocessed_audio_path}")
-        self.logger.info(f"processing {len(transcript_segments)} transcript segments")
+        self.logger.info(f"Processing {len(transcript_segments)} transcript segments")
 
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
             start = i
             end = min(i + num_segments_per_prompt, len(transcript_segments))
-
             target_dir = (
                 classification_path
                 / f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
@@ -231,7 +230,6 @@ class PodcastProcessor:
                 f"[{segment.start}] {segment.text}"
                 for segment in transcript_segments[start:end]
             ]
-
             if start == 0:
                 excerpts.insert(0, "[TRANSCRIPT START]")
             elif end == len(transcript_segments):
@@ -245,8 +243,8 @@ class PodcastProcessor:
             )
 
             try:
-                # Create a temporary file to indicate processing is in progress
-                with open(f"{target_dir}/.in_progress", "w") as f:
+                # Indicate that processing is in progress.
+                with open(target_dir / ".in_progress", "w") as f:
                     f.write("Processing")
 
                 identification = (
@@ -263,13 +261,11 @@ class PodcastProcessor:
                     self.logger.error(
                         f"Failed to get identification for segments {start} to {end}"
                     )
-                    # Create an empty identification file to prevent endless retries
-                    with open(f"{target_dir}/identification.txt", "w") as f:
+                    with open(identification_path, "w") as f:
                         f.write('{"ad_segments": [], "confidence": 0.0}')
             finally:
-                # Clean up the in_progress file
-                if os.path.exists(f"{target_dir}/.in_progress"):
-                    os.remove(f"{target_dir}/.in_progress")
+                if (target_dir / ".in_progress").exists():
+                    os.remove(target_dir / ".in_progress")
 
     def call_model(
         self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3
@@ -313,7 +309,6 @@ class PodcastProcessor:
                 self.logger.error(f"Unexpected error calling model: {e}")
                 raise
 
-        # If we get here, we've exhausted our retries
         self.logger.error(f"Failed to call model after {max_retries} attempts")
         if last_error:
             raise last_error
@@ -344,21 +339,20 @@ class PodcastProcessor:
                         self.logger.error(
                             f"Error parsing ad segment: {e} for {identification}"
                         )
+                        # TODO - can this skip result in hung processing?
                         continue
 
                     if prediction.confidence < self.config.output.min_confidence:
                         continue
 
                     ad_segment_starts = prediction.ad_segments
-                    # filter out ad segments outside of the start/end, and that
-                    # do not exist in segments_by_start
                     ad_segment_starts = [
                         start
                         for start in ad_segment_starts
-                        if start  # pylint: disable=chained-comparison
-                        >= prompt_start_timestamp
-                        and start <= prompt_end_timestamp
-                        and start in segments_by_start
+                        if (
+                            prompt_start_timestamp <= start <= prompt_end_timestamp
+                            and start in segments_by_start
+                        )
                     ]
 
                     for ad_segment_start in ad_segment_starts:
@@ -370,6 +364,45 @@ class PodcastProcessor:
                 )
 
         return ad_segments
+
+    def remove_audio_files_and_reset_db(self, post_id: Optional[int]) -> None:
+        """
+        Removes unprocessed/processed audio for the given post from disk,
+        and resets the DB fields so the next run will re-download the files.
+        """
+        if post_id is None:
+            return
+
+        post = Post.query.get(post_id)
+        if not post:
+            self.logger.warning(
+                f"Could not find Post with ID {post_id} to remove files."
+            )
+            return
+
+        if post.unprocessed_audio_path and os.path.isfile(post.unprocessed_audio_path):
+            try:
+                os.remove(post.unprocessed_audio_path)
+                self.logger.info(
+                    f"Removed unprocessed file: {post.unprocessed_audio_path}"
+                )
+            except OSError as e:
+                self.logger.error(
+                    f"Failed to remove unprocessed file '{post.unprocessed_audio_path}': {e}"
+                )
+
+        if post.processed_audio_path and os.path.isfile(post.processed_audio_path):
+            try:
+                os.remove(post.processed_audio_path)
+                self.logger.info(f"Removed processed file: {post.processed_audio_path}")
+            except OSError as e:
+                self.logger.error(
+                    f"Failed to remove processed file '{post.processed_audio_path}': {e}"
+                )
+
+        post.unprocessed_audio_path = None
+        post.processed_audio_path = None
+        db.session.commit()
 
     def merge_ad_segments(
         self,
@@ -384,7 +417,7 @@ class PodcastProcessor:
         self.logger.info(
             f"Creating new audio with ads segments removed between: {ad_segments}"
         )
-        # if any two ad segments overlap by fade_ms, join them into single segment
+        # if any two ad segments overlap by fade_ms, join them into a single segment
         ad_segments = sorted(ad_segments)
         i = 0
         while i < len(ad_segments) - 1:
@@ -397,7 +430,7 @@ class PodcastProcessor:
             else:
                 i += 1
 
-        # remove any isloated ad segments that are too short, possibly misidentified
+        # remove any isolated ad segments that are too short, possibly misidentified
         ad_segments = [
             segment
             for segment in ad_segments

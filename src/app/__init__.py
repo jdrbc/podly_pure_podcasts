@@ -52,10 +52,11 @@ def setup_scheduler(app: Flask) -> None:
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static")
 
+    # Load scheduler configuration
     app.config.from_object(SchedulerConfig())
 
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db"
-
+    # Configure the database URI (SQLite with a 90-second timeout)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db?timeout=90"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     db.init_app(app)

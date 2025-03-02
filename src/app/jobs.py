@@ -6,6 +6,7 @@ from app import config, db, logger, scheduler
 from app.feeds import refresh_feed
 from app.models import Feed, Post
 from app.posts import download_and_process_post, remove_associated_files
+from app.timeout_decorator import TimeoutException, timeout_decorator
 
 
 def run_refresh_all_feeds() -> None:
@@ -15,6 +16,7 @@ def run_refresh_all_feeds() -> None:
         refresh_all_feeds()
 
 
+@timeout_decorator(config.job_timeout)
 def process_post(post: Post) -> None:
     """Process a single post within the app context."""
     with scheduler.app.app_context():
@@ -46,9 +48,11 @@ def refresh_all_feeds() -> None:
 
         # Identify and Handle Inconsistent Posts
         inconsistent_posts = Post.query.filter(
-            Post.processed_audio_path.isnot(None),
-            Post.unprocessed_audio_path.isnot(None),
             Post.whitelisted,
+            (
+                (Post.unprocessed_audio_path.isnot(None))
+                | (Post.processed_audio_path.isnot(None))
+            ),
         ).all()
         logger.info(f"Checking {len(inconsistent_posts)} for file integrity...")
 
@@ -88,6 +92,9 @@ def refresh_all_feeds() -> None:
                     future.result()  # Check for exceptions
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     logger.error(f"Error processing post {post.id}: {e}")
+
+    except TimeoutException as te:
+        logger.error(f"Job timed out: {te}")
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error(f"Error in scheduled job 'refresh_all_feeds': {e}")
