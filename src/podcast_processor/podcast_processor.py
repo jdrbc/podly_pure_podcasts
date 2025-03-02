@@ -339,7 +339,7 @@ class PodcastProcessor:
                         self.logger.error(
                             f"Error parsing ad segment: {e} for {identification}"
                         )
-                        # TODO - can this skip result in hung processing?
+                        # can this skip result in hung processing?
                         continue
 
                     if prediction.confidence < self.config.output.min_confidence:
