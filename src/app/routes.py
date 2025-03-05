@@ -10,11 +10,10 @@ from flask.typing import ResponseReturnValue
 
 from app import config, db, logger, scheduler
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
+from app.jobs import run_refresh_feed
 from app.models import Feed, Post
-from app.posts import download_and_process_post
 from podcast_processor.podcast_processor import PodcastProcessor
 from shared.podcast_downloader import download_episode
-from src.app.jobs import run_refresh_feed
 
 main_bp = Blueprint("main", __name__)
 
