@@ -43,7 +43,8 @@ def post_page(p_guid: str) -> flask.Response:
 
     # the spec defines some allowed tags. strip other for security
     # https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#item-description
-    allowed_tags = ["p", "ol", "ul", "li", "a", "b", "i", "strong", "em"]
+    spec_tags = ["p", "ol", "ul", "li", "a", "b", "i", "strong", "em"]
+    allowed_tags = spec_tags + ["br"]
     allowed_attributes = {"a": ["href", "title"]}
     clean_description = bleach.clean(
         post.description,
