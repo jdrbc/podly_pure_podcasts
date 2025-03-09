@@ -28,6 +28,8 @@ flask-migrate = "*"
 Flask-APScheduler = "*"
 ffmpeg-python = "*"
 litellm = ">=1.59.8"
+bleach = "*"
+types-bleach = "*"
 
 [dev-packages]
 black = "*"

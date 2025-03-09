@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ post.title }}</title>
+    <title>{{ post.feed.title }} - {{ post.title }}</title>
 </head>
 <body>
     <a href="{{ url_for('main.index') }}">
@@ -23,11 +23,15 @@
     </thead>
     <tbody>
         <tr>
-            <td>feed_id</td>
+            <td>Feed Name</td>
+            <td>{{ post.feed.title }}</td>
+        </tr>
+        <tr>
+            <td>Feed ID</td>
             <td>{{ post.feed_id }}</td>
         </tr>
         <tr>
-            <td>id</td>
+            <td>Post ID</td>
             <td>{{ post.id }}</td>
         </tr>
         <tr>
@@ -56,16 +60,26 @@
         </tr>
         <tr>
             <td>description</td>
-            <td>{{ post.description }}</td>
+            <td>{{ clean_description | safe }}</td>
         </tr>
         <tr>
             <td>release_date</td>
             <td>{{ post.release_date }}</td>
         </tr>
-        <tr>
-            <td>duration</td>
-            <td>{{ post.duration }}</td>
-        </tr>
+		<tr>
+			<td>Duration</td>
+			<td>
+				{% set hours = post.duration // 3600 %}
+				{% set minutes = (post.duration % 3600) // 60 %}
+				{% set seconds = post.duration % 60 %}
+
+				{% if hours > 0 %}
+					{{ hours }}h {{ minutes }}m {{ seconds }}s
+				{% else %}
+					{{ minutes }}m {{ seconds }}s
+				{% endif %}
+			</td>
+		</tr>
         <tr>
             <td>whitelisted</td>
             <td>{{ post.whitelisted }}
