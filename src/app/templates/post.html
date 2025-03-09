@@ -27,6 +27,10 @@
             <td>{{ post.feed.title }}</td>
         </tr>
         <tr>
+            <td>Post Title</td>
+            <td>{{ post.title }}</td>
+        </tr>
+        <tr>
             <td>Feed ID</td>
             <td>{{ post.feed_id }}</td>
         </tr>
@@ -47,10 +51,6 @@
 			<td><a href="{{ url_for('main.download_post', p_guid=post.guid) }}" target="_blank">{{ url_for('main.download_post', p_guid=post.guid) }}</a></td>
         </tr>
         <tr>
-            <td>title</td>
-            <td>{{ post.title }}</td>
-        </tr>
-        <tr>
             <td>unprocessed_audio_path</td>
             <td>{{ post.unprocessed_audio_path }}</td>
         </tr>
@@ -69,6 +69,7 @@
 		<tr>
 			<td>Duration</td>
 			<td>
+			{% if post and post.duration is not none %}
 				{% set hours = post.duration // 3600 %}
 				{% set minutes = (post.duration % 3600) // 60 %}
 				{% set seconds = post.duration % 60 %}
@@ -78,6 +79,9 @@
 				{% else %}
 					{{ minutes }}m {{ seconds }}s
 				{% endif %}
+			{% else %}
+				No duration available
+			{% endif %}
 			</td>
 		</tr>
         <tr>
