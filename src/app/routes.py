@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, cast
 
+import bleach
 import flask
 import validators
 from flask import Blueprint, Flask, current_app, jsonify, request, send_file, url_for
@@ -40,7 +41,22 @@ def post_page(p_guid: str) -> flask.Response:
     if post is None:
         return flask.make_response(("Post not found", 404))
 
-    return flask.make_response(flask.render_template("post.html", post=post), 200)
+    # the spec defines some allowed tags. strip other for security
+    # https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#item-description
+    allowed_tags = ["p", "ol", "ul", "li", "a", "b", "i", "strong", "em"]
+    allowed_attributes = {"a": ["href", "title"]}
+    clean_description = bleach.clean(
+        post.description,
+        tags=allowed_tags,
+        attributes=allowed_attributes,
+    )
+
+    return flask.make_response(
+        flask.render_template(
+            "post.html", post=post, clean_description=clean_description
+        ),
+        200,
+    )
 
 
 @main_bp.route("/feed/<int:f_id>/toggle-whitelist-all/<val>", methods=["POST"])
