@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -12,7 +12,7 @@ RUN apt-get update && apt-get upgrade -y &&\
 COPY Pipfile Pipfile.lock ./
 RUN python3 -m pip install --upgrade pip
 RUN pip install pipenv && pipenv install --dev --system --deploy
-RUN pip install torch async_timeout
+RUN pip install torch
 
 # Copy the source code into the container.
 COPY . /app
