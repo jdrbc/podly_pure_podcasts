@@ -173,6 +173,9 @@ class GroqWhisperTranscriber(Transcriber):
         self.logger = logger
         self.config = config
         self.api_url = "https://api.groq.com/openai/v1/audio/transcriptions"
+        self.max_retries = 3
+        self.initial_backoff = 1.0  # seconds
+        self.backoff_factor = 2.0
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using Groq whisper")
@@ -209,39 +212,63 @@ class GroqWhisperTranscriber(Transcriber):
         return segments
 
     def get_segments_for_chunk(self, chunk_path: str) -> List[GroqTranscriptionSegment]:
-        with open(chunk_path, "rb") as f:
-            self.logger.info(f"Transcribing chunk {chunk_path}")
+        retries = 0
+        backoff_time = self.initial_backoff
 
-            headers = {
-                "Authorization": f"Bearer {self.config.api_key}",
-            }
+        while True:
+            try:
+                with open(chunk_path, "rb") as f:
+                    self.logger.info(f"Transcribing chunk {chunk_path}")
 
-            files = {
-                "file": (chunk_path, f),
-                "model": (None, self.config.model),
-                "response_format": (None, "verbose_json"),
-                "language": (None, self.config.language),
-            }
+                    headers = {
+                        "Authorization": f"Bearer {self.config.api_key}",
+                    }
 
-            response = requests.post(
-                self.api_url,
-                headers=headers,
-                files=files,
-            )
+                    files = {
+                        "file": (chunk_path, f),
+                        "model": (None, self.config.model),
+                        "response_format": (None, "verbose_json"),
+                        "language": (None, self.config.language),
+                    }
 
-            if response.status_code != 200:
-                self.logger.error(f"Error with Groq API: {response.text}")
-                raise Exception(f"Groq API error: {response.status_code} - {response.text}")
+                    response = requests.post(
+                        self.api_url,
+                        headers=headers,
+                        files=files,
+                    )
 
-            response_data = response.json()
-            self.logger.debug("Got transcription")
+                    if response.status_code != 200:
+                        if retries < self.max_retries:
+                            self.logger.warning(
+                                f"Groq API error (attempt {retries+1}/{self.max_retries+1}): {response.status_code} - {response.text}"
+                            )
+                            retries += 1
+                            time.sleep(backoff_time)
+                            backoff_time *= self.backoff_factor
+                            continue
+                        else:
+                            self.logger.error(f"Error with Groq API after {retries+1} attempts: {response.text}")
+                            raise Exception(f"Groq API error: {response.status_code} - {response.text}")
 
-            # Parse the response into our model
-            if "segments" not in response_data:
-                self.logger.error(f"Unexpected response format: {response_data}")
-                return []
+                    response_data = response.json()
+                    self.logger.debug("Got transcription")
 
-            groq_segments = [GroqTranscriptionSegment(**seg) for seg in response_data["segments"]]
-            self.logger.debug(f"Got {len(groq_segments)} segments")
+                    # Parse the response into our model
+                    if "segments" not in response_data:
+                        self.logger.error(f"Unexpected response format: {response_data}")
+                        return []
 
-            return groq_segments
+                    groq_segments = [GroqTranscriptionSegment(**seg) for seg in response_data["segments"]]
+                    self.logger.debug(f"Got {len(groq_segments)} segments")
+
+                    return groq_segments
+
+            except (requests.RequestException, IOError) as e:
+                if retries < self.max_retries:
+                    self.logger.warning(f"Request error (attempt {retries+1}/{self.max_retries+1}): {str(e)}")
+                    retries += 1
+                    time.sleep(backoff_time)
+                    backoff_time *= self.backoff_factor
+                else:
+                    self.logger.error(f"Request failed after {retries+1} attempts: {str(e)}")
+                    raise
