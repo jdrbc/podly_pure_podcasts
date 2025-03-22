@@ -38,4 +38,8 @@ whisper:
   whisper_type: groq
   api_key: gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXX
   model: whisper-large-v3-turbo
-  language: en 
+  language: en
+  # API retry configuration
+  max_retries: 3           # Maximum number of retry attempts for failed API calls
+  initial_backoff: 1.0     # Initial backoff time in seconds before first retry
+  backoff_factor: 2.0      # Multiplier for backoff time between retries 

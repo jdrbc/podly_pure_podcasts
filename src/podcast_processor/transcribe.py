@@ -173,9 +173,9 @@ class GroqWhisperTranscriber(Transcriber):
         self.logger = logger
         self.config = config
         self.api_url = "https://api.groq.com/openai/v1/audio/transcriptions"
-        self.max_retries = 3
-        self.initial_backoff = 1.0  # seconds
-        self.backoff_factor = 2.0
+        self.max_retries = config.max_retries
+        self.initial_backoff = config.initial_backoff
+        self.backoff_factor = config.backoff_factor
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using Groq whisper")

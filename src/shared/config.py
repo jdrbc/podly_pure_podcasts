@@ -40,6 +40,9 @@ class GroqWhisperConfig(BaseModel):
     api_key: str
     language: str = "en"
     model: str = "whisper-large-v3-turbo"
+    max_retries: int = 3
+    initial_backoff: float = 1.0
+    backoff_factor: float = 2.0
 
 
 class LocalWhisperConfig(BaseModel):
