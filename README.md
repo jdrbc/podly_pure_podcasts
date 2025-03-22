@@ -49,10 +49,29 @@ Copy `config/config.yml.example` into new file `config/config.yml`. Update `open
 ```shell
 pip install pipenv
 pipenv --python 3.11
-pipenv install
-pipenv shell
-python src/main.py
 ```
+
+## Transcription Options
+
+Podly supports multiple options for audio transcription:
+
+1. **Local Whisper (Default)** - Uses OpenAI's Whisper model running locally on your machine
+
+   - See `config/config.yml.example` for configuration
+   - Slower but doesn't require an external API
+
+2. **OpenAI Hosted Whisper** - Uses OpenAI's hosted Whisper service
+
+   - See `config/config_remote_whisper.yml.example` for configuration
+   - Fast and accurate but requires OpenAI API credits
+
+3. **Groq Hosted Whisper** - Uses Groq's hosted Whisper service
+   - See `config/config_groq_whisper.yml.example` for configuration
+   - Fast and cost-effective alternative to OpenAI
+
+To use Groq for transcription, you'll need a Groq API key. Copy the `config/config_groq_whisper.yml.example` to `config/config.yml` and update the `api_key` field with your Groq API key.
+
+Note: Transcription is the most resource-intensive part of the process. Local transcription takes about 1 minute per 15 minutes of podcast on an M3 MacBook.
 
 ## Remote Setup
 
@@ -135,8 +154,8 @@ On next launch the database should update.
 Q: How can I enable whisper GPU acceleration?
 
 A: You must install the CUDA version of PyTorch to the virtual environment.
-  
-```pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118```
+
+`pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118`
 
 ## Contributing
 
@@ -165,12 +184,13 @@ pipenv install --dev
 ```
 
 Then, to run the checks,
+
 ```bash
 scripts/ci.sh
 ```
 
-
 This will run all the necessary checks including:
+
 - Type checking with mypy
 - Code formatting checks
 - Unit tests

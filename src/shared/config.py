@@ -20,7 +20,7 @@ class OutputConfig(BaseModel):
     min_confidence: float
 
 
-WhisperConfigTypes = Literal["remote", "local", "test"]
+WhisperConfigTypes = Literal["remote", "local", "test", "groq"]
 
 
 class TestWhisperConfig(BaseModel):
@@ -33,6 +33,13 @@ class RemoteWhisperConfig(BaseModel):
     api_key: str
     language: str = "en"
     model: str = "whisper-1"  # openai model, use your own maybe
+
+
+class GroqWhisperConfig(BaseModel):
+    whisper_type: Literal["groq"] = "groq"
+    api_key: str
+    language: str = "en"
+    model: str = "whisper-large-v3-turbo"
 
 
 class LocalWhisperConfig(BaseModel):
@@ -58,12 +65,10 @@ class Config(BaseModel):
     background_update_interval_minute: Optional[int] = None
     job_timeout: int = 10800  # Default to 3 hours if not set
     threads: int = 1
-    whisper: Optional[LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig] = (
-        Field(
-            default=None,
-            discriminator="whisper_type",
-        )
-    )
+    whisper: Optional[LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig | GroqWhisperConfig] = (Field(
+        default=None,
+        discriminator="whisper_type",
+    ))
     remote_whisper: Optional[bool] = Field(
         default=False,
         deprecated=True,
@@ -96,17 +101,13 @@ class Config(BaseModel):
 
         # if we have old style, change to the equivalent new style
         if self.remote_whisper:
-            assert (
-                self.llm_api_key is not None
-            ), "must supply api key to use remote whisper"
+            assert (self.llm_api_key is not None), "must supply api key to use remote whisper"
             self.whisper = RemoteWhisperConfig(
                 api_key=self.llm_api_key,
                 base_url=self.openai_base_url or "https://api.openai.com/v1",
             )
         else:
-            assert (
-                self.whisper_model is not None
-            ), "must supply whisper model to use local whisper"
+            assert (self.whisper_model is not None), "must supply whisper model to use local whisper"
             self.whisper = LocalWhisperConfig(model=self.whisper_model)
 
         self.whisper_model = None
@@ -117,9 +118,7 @@ class Config(BaseModel):
 
 def get_config(path: str) -> Config:
     if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"No config file found at {path}. Please copy from config/config.yml.example"
-        )
+        raise FileNotFoundError(f"No config file found at {path}. Please copy from config/config.yml.example")
 
     with open(path, "r") as f:
         config_str = f.read()
