@@ -106,7 +106,7 @@ class RemoteWhisperTranscriber(Transcriber):
         self.logger.info("Using remote whisper")
         audio_chunk_path = audio_file_path + "_parts"
 
-        chunks = split_audio(Path(audio_file_path), Path(audio_chunk_path), 12 * 1024 * 1024)
+        chunks = split_audio(Path(audio_file_path), Path(audio_chunk_path), 24 * 1024 * 1024)
 
         all_segments: List[TranscriptionSegment] = []
 
@@ -181,7 +181,7 @@ class GroqWhisperTranscriber(Transcriber):
         self.logger.info("Using Groq whisper")
         audio_chunk_path = audio_file_path + "_parts"
 
-        chunks = split_audio(Path(audio_file_path), Path(audio_chunk_path), 24 * 1024 * 1024)
+        chunks = split_audio(Path(audio_file_path), Path(audio_chunk_path), 12 * 1024 * 1024)
 
         all_segments: List[GroqTranscriptionSegment] = []
 
