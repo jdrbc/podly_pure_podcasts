@@ -65,7 +65,9 @@ class LocalWhisperTranscriber(Transcriber):
         self.whisper_model = whisper_model
 
     @staticmethod
-    def convert_to_pydantic(transcript_data: List[Any],) -> List[LocalTranscriptSegment]:
+    def convert_to_pydantic(
+        transcript_data: List[Any],
+    ) -> List[LocalTranscriptSegment]:
         return [LocalTranscriptSegment(**item) for item in transcript_data]
 
     @staticmethod
@@ -106,7 +108,9 @@ class RemoteWhisperTranscriber(Transcriber):
         self.logger.info("Using remote whisper")
         audio_chunk_path = audio_file_path + "_parts"
 
-        chunks = split_audio(Path(audio_file_path), Path(audio_chunk_path), 24 * 1024 * 1024)
+        chunks = split_audio(
+            Path(audio_file_path), Path(audio_chunk_path), 24 * 1024 * 1024
+        )
 
         all_segments: List[TranscriptionSegment] = []
 
@@ -120,14 +124,19 @@ class RemoteWhisperTranscriber(Transcriber):
 
     @staticmethod
     def convert_segments(segments: List[TranscriptionSegment]) -> List[Segment]:
-        return [Segment(
-            start=seg.start,
-            end=seg.end,
-            text=seg.text,
-        ) for seg in segments]
+        return [
+            Segment(
+                start=seg.start,
+                end=seg.end,
+                text=seg.text,
+            )
+            for seg in segments
+        ]
 
     @staticmethod
-    def add_offset_to_segments(segments: List[TranscriptionSegment], offset_ms: int) -> List[TranscriptionSegment]:
+    def add_offset_to_segments(
+        segments: List[TranscriptionSegment], offset_ms: int
+    ) -> List[TranscriptionSegment]:
         offset_sec = float(offset_ms) / 1000.0
         for segment in segments:
             segment.start += offset_sec
@@ -181,7 +190,9 @@ class GroqWhisperTranscriber(Transcriber):
         self.logger.info("Using Groq whisper")
         audio_chunk_path = audio_file_path + "_parts"
 
-        chunks = split_audio(Path(audio_file_path), Path(audio_chunk_path), 12 * 1024 * 1024)
+        chunks = split_audio(
+            Path(audio_file_path), Path(audio_chunk_path), 12 * 1024 * 1024
+        )
 
         all_segments: List[GroqTranscriptionSegment] = []
 
@@ -195,15 +206,19 @@ class GroqWhisperTranscriber(Transcriber):
 
     @staticmethod
     def convert_segments(segments: List[GroqTranscriptionSegment]) -> List[Segment]:
-        return [Segment(
-            start=seg.start,
-            end=seg.end,
-            text=seg.text,
-        ) for seg in segments]
+        return [
+            Segment(
+                start=seg.start,
+                end=seg.end,
+                text=seg.text,
+            )
+            for seg in segments
+        ]
 
     @staticmethod
-    def add_offset_to_segments(segments: List[GroqTranscriptionSegment],
-                               offset_ms: int) -> List[GroqTranscriptionSegment]:
+    def add_offset_to_segments(
+        segments: List[GroqTranscriptionSegment], offset_ms: int
+    ) -> List[GroqTranscriptionSegment]:
         offset_sec = float(offset_ms) / 1000.0
         for segment in segments:
             segment.start += offset_sec
@@ -247,28 +262,41 @@ class GroqWhisperTranscriber(Transcriber):
                             backoff_time *= self.backoff_factor
                             continue
                         else:
-                            self.logger.error(f"Error with Groq API after {retries+1} attempts: {response.text}")
-                            raise Exception(f"Groq API error: {response.status_code} - {response.text}")
+                            self.logger.error(
+                                f"Error with Groq API after {retries+1} attempts: {response.text}"
+                            )
+                            raise Exception(
+                                f"Groq API error: {response.status_code} - {response.text}"
+                            )
 
                     response_data = response.json()
                     self.logger.debug("Got transcription")
 
                     # Parse the response into our model
                     if "segments" not in response_data:
-                        self.logger.error(f"Unexpected response format: {response_data}")
+                        self.logger.error(
+                            f"Unexpected response format: {response_data}"
+                        )
                         return []
 
-                    groq_segments = [GroqTranscriptionSegment(**seg) for seg in response_data["segments"]]
+                    groq_segments = [
+                        GroqTranscriptionSegment(**seg)
+                        for seg in response_data["segments"]
+                    ]
                     self.logger.debug(f"Got {len(groq_segments)} segments")
 
                     return groq_segments
 
             except (requests.RequestException, IOError) as e:
                 if retries < self.max_retries:
-                    self.logger.warning(f"Request error (attempt {retries+1}/{self.max_retries+1}): {str(e)}")
+                    self.logger.warning(
+                        f"Request error (attempt {retries+1}/{self.max_retries+1}): {str(e)}"
+                    )
                     retries += 1
                     time.sleep(backoff_time)
                     backoff_time *= self.backoff_factor
                 else:
-                    self.logger.error(f"Request failed after {retries+1} attempts: {str(e)}")
+                    self.logger.error(
+                        f"Request failed after {retries+1} attempts: {str(e)}"
+                    )
                     raise

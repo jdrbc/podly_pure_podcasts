@@ -69,15 +69,21 @@ class PodcastProcessor:
         litellm.api_base = self.config.openai_base_url
         litellm.api_key = self.config.llm_api_key
 
-        assert self.config.whisper is not None, ("validate_whisper_config ensures that even if old style whisper "
-                                                 "config is given, it will be translated and config.whisper set.")
+        assert self.config.whisper is not None, (
+            "validate_whisper_config ensures that even if old style whisper "
+            "config is given, it will be translated and config.whisper set."
+        )
 
         if isinstance(self.config.whisper, TestWhisperConfig):
             self.transcriber = TestWhisperTranscriber(self.logger)
         elif isinstance(self.config.whisper, RemoteWhisperConfig):
-            self.transcriber = RemoteWhisperTranscriber(self.logger, self.config.whisper)
+            self.transcriber = RemoteWhisperTranscriber(
+                self.logger, self.config.whisper
+            )
         elif isinstance(self.config.whisper, LocalWhisperConfig):
-            self.transcriber = LocalWhisperTranscriber(self.logger, self.config.whisper.model)
+            self.transcriber = LocalWhisperTranscriber(
+                self.logger, self.config.whisper.model
+            )
         elif isinstance(self.config.whisper, GroqWhisperConfig):
             self.transcriber = GroqWhisperTranscriber(self.logger, self.config.whisper)
         else:
@@ -93,10 +99,14 @@ class PodcastProcessor:
         with PodcastProcessor.lock_lock:
             if processed_audio_path not in PodcastProcessor.locks:
                 PodcastProcessor.locks[processed_audio_path] = threading.Lock()
-                PodcastProcessor.locks[processed_audio_path].acquire()  # no contention expected
+                PodcastProcessor.locks[
+                    processed_audio_path
+                ].acquire()  # no contention expected
                 locked = True
 
-        if not locked and not PodcastProcessor.locks[processed_audio_path].acquire(blocking=blocking):
+        if not locked and not PodcastProcessor.locks[processed_audio_path].acquire(
+            blocking=blocking
+        ):
             raise ProcessorException("Processing job in progress")
 
         try:
@@ -105,8 +115,12 @@ class PodcastProcessor:
                 return processed_audio_path
             self.make_dirs(working_paths)
             transcript_segments = self.transcribe(post)
-            user_prompt_template = self.get_user_prompt_template(self.config.processing.user_prompt_template_path)
-            system_prompt = self.get_system_prompt(self.config.processing.system_prompt_path)
+            user_prompt_template = self.get_user_prompt_template(
+                self.config.processing.user_prompt_template_path
+            )
+            system_prompt = self.get_system_prompt(
+                self.config.processing.system_prompt_path
+            )
             self.classify(
                 transcript_segments=transcript_segments,
                 model=self.config.llm_model,
@@ -116,7 +130,9 @@ class PodcastProcessor:
                 post=post,
                 classification_path=working_paths.classification_dir,
             )
-            ad_segments = self.get_ad_segments(transcript_segments, working_paths.classification_dir)
+            ad_segments = self.get_ad_segments(
+                transcript_segments, working_paths.classification_dir
+            )
 
             duration_ms = get_audio_duration_ms(post.unprocessed_audio_path)
             assert duration_ms is not None
@@ -124,8 +140,12 @@ class PodcastProcessor:
             merged_ad_segments = self.merge_ad_segments(
                 duration_ms=duration_ms,
                 ad_segments=ad_segments,
-                min_ad_segment_length_seconds=float(self.config.output.min_ad_segment_length_seconds),
-                min_ad_segment_separation_seconds=float(self.config.output.min_ad_segement_separation_seconds),  # pylint: disable=line-too-long
+                min_ad_segment_length_seconds=float(
+                    self.config.output.min_ad_segment_length_seconds
+                ),
+                min_ad_segment_separation_seconds=float(
+                    self.config.output.min_ad_segement_separation_seconds
+                ),  # pylint: disable=line-too-long
             )
             clip_segments_with_fade(
                 in_path=post.unprocessed_audio_path,
@@ -142,7 +162,9 @@ class PodcastProcessor:
             PodcastProcessor.locks[processed_audio_path].release()
 
     def make_dirs(self, processing_paths: ProcessingPaths) -> None:
-        processing_paths.post_processed_audio_path.parent.mkdir(parents=True, exist_ok=True)
+        processing_paths.post_processed_audio_path.parent.mkdir(
+            parents=True, exist_ok=True
+        )
         processing_paths.audio_processing_dir.mkdir(parents=True, exist_ok=True)
         processing_paths.classification_dir.mkdir(parents=True, exist_ok=True)
 
@@ -193,17 +215,25 @@ class PodcastProcessor:
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
             start = i
             end = min(i + num_segments_per_prompt, len(transcript_segments))
-            target_dir = (classification_path / f"{transcript_segments[start].start}_{transcript_segments[end-1].end}")
+            target_dir = (
+                classification_path
+                / f"{transcript_segments[start].start}_{transcript_segments[end-1].end}"
+            )
             identification_path = target_dir / "identification.txt"
             prompt_path = target_dir / "prompt.txt"
             target_dir.mkdir(exist_ok=True)
 
             # Check if we already have a valid identification
             if identification_path.exists():
-                self.logger.info(f"Responses for segments {start} to {end} already received")
+                self.logger.info(
+                    f"Responses for segments {start} to {end} already received"
+                )
                 continue
 
-            excerpts = [f"[{segment.start}] {segment.text}" for segment in transcript_segments[start:end]]
+            excerpts = [
+                f"[{segment.start}] {segment.text}"
+                for segment in transcript_segments[start:end]
+            ]
             if start == 0:
                 excerpts.insert(0, "[TRANSCRIPT START]")
             elif end == len(transcript_segments):
@@ -221,39 +251,42 @@ class PodcastProcessor:
                 with open(target_dir / ".in_progress", "w") as f:
                     f.write("Processing")
 
-                identification = (None if isinstance(self.config.whisper, TestWhisperConfig) else self.call_model(
-                    model, system_prompt, user_prompt))
+                identification = (
+                    None
+                    if isinstance(self.config.whisper, TestWhisperConfig)
+                    else self.call_model(model, system_prompt, user_prompt)
+                )
                 if identification:
                     with open(identification_path, "w") as f:
                         f.write(identification)
                     with open(prompt_path, "w") as f:
                         f.write(user_prompt)
                 else:
-                    self.logger.error(f"Failed to get identification for segments {start} to {end}")
+                    self.logger.error(
+                        f"Failed to get identification for segments {start} to {end}"
+                    )
                     with open(identification_path, "w") as f:
                         f.write('{"ad_segments": [], "confidence": 0.0}')
             finally:
                 if (target_dir / ".in_progress").exists():
                     os.remove(target_dir / ".in_progress")
 
-    def call_model(self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3) -> Optional[str]:
+    def call_model(
+        self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3
+    ) -> Optional[str]:
         attempt = 0
         last_error = None
 
         while attempt < max_retries:
             try:
-                self.logger.info(f"Calling model: {model} (attempt {attempt + 1}/{max_retries})")
+                self.logger.info(
+                    f"Calling model: {model} (attempt {attempt + 1}/{max_retries})"
+                )
                 response = litellm.completion(
                     model=model,
                     messages=[
-                        {
-                            "role": "system",
-                            "content": system_prompt
-                        },
-                        {
-                            "role": "user",
-                            "content": user_prompt
-                        },
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
                     ],
                     max_tokens=self.config.openai_max_tokens,
                     timeout=self.config.openai_timeout,
@@ -285,18 +318,20 @@ class PodcastProcessor:
             raise last_error
         return None
 
-    def get_ad_segments(self, segments: List[Segment], classification_path_path: Path) -> List[Tuple[float, float]]:
+    def get_ad_segments(
+        self, segments: List[Segment], classification_path_path: Path
+    ) -> List[Tuple[float, float]]:
         classification_path = str(classification_path_path)
         segments_by_start = {segment.start: segment for segment in segments}
         ad_segments = []
         for classification_dir in sorted(
-                os.listdir(classification_path),
-                key=lambda filename: (len(filename), filename),
+            os.listdir(classification_path),
+            key=lambda filename: (len(filename), filename),
         ):
             try:
                 with open(
-                        f"{classification_path}/{classification_dir}/identification.txt",
-                        "r",
+                    f"{classification_path}/{classification_dir}/identification.txt",
+                    "r",
                 ) as id_file:
                     prompt_start_timestamp = float(classification_dir.split("_")[0])
                     prompt_end_timestamp = float(classification_dir.split("_")[1])
@@ -305,7 +340,9 @@ class PodcastProcessor:
                     try:
                         prediction = clean_and_parse_model_output(identification)
                     except Exception as e:  # pylint: disable=broad-exception-caught
-                        self.logger.error(f"Error parsing ad segment: {e} for {identification}")
+                        self.logger.error(
+                            f"Error parsing ad segment: {e} for {identification}"
+                        )
                         # can this skip result in hung processing?
                         continue
 
@@ -314,15 +351,21 @@ class PodcastProcessor:
 
                     ad_segment_starts = prediction.ad_segments
                     ad_segment_starts = [
-                        start for start in ad_segment_starts
-                        if (prompt_start_timestamp <= start <= prompt_end_timestamp and start in segments_by_start)
+                        start
+                        for start in ad_segment_starts
+                        if (
+                            prompt_start_timestamp <= start <= prompt_end_timestamp
+                            and start in segments_by_start
+                        )
                     ]
 
                     for ad_segment_start in ad_segment_starts:
                         ad_segment_end = segments_by_start[ad_segment_start].end
                         ad_segments.append((ad_segment_start, ad_segment_end))
             except FileNotFoundError:
-                self.logger.error(f"Identification file not found for {classification_dir}")
+                self.logger.error(
+                    f"Identification file not found for {classification_dir}"
+                )
 
         return ad_segments
 
@@ -336,22 +379,30 @@ class PodcastProcessor:
 
         post = Post.query.get(post_id)
         if not post:
-            self.logger.warning(f"Could not find Post with ID {post_id} to remove files.")
+            self.logger.warning(
+                f"Could not find Post with ID {post_id} to remove files."
+            )
             return
 
         if post.unprocessed_audio_path and os.path.isfile(post.unprocessed_audio_path):
             try:
                 os.remove(post.unprocessed_audio_path)
-                self.logger.info(f"Removed unprocessed file: {post.unprocessed_audio_path}")
+                self.logger.info(
+                    f"Removed unprocessed file: {post.unprocessed_audio_path}"
+                )
             except OSError as e:
-                self.logger.error(f"Failed to remove unprocessed file '{post.unprocessed_audio_path}': {e}")
+                self.logger.error(
+                    f"Failed to remove unprocessed file '{post.unprocessed_audio_path}': {e}"
+                )
 
         if post.processed_audio_path and os.path.isfile(post.processed_audio_path):
             try:
                 os.remove(post.processed_audio_path)
                 self.logger.info(f"Removed processed file: {post.processed_audio_path}")
             except OSError as e:
-                self.logger.error(f"Failed to remove processed file '{post.processed_audio_path}': {e}")
+                self.logger.error(
+                    f"Failed to remove processed file '{post.processed_audio_path}': {e}"
+                )
 
         post.unprocessed_audio_path = None
         post.processed_audio_path = None
@@ -367,27 +418,41 @@ class PodcastProcessor:
     ) -> List[Tuple[int, int]]:
         audio_duration_seconds = 1000 * duration_ms
 
-        self.logger.info(f"Creating new audio with ads segments removed between: {ad_segments}")
+        self.logger.info(
+            f"Creating new audio with ads segments removed between: {ad_segments}"
+        )
         # if any two ad segments overlap by fade_ms, join them into a single segment
         ad_segments = sorted(ad_segments)
         i = 0
         while i < len(ad_segments) - 1:
-            if (ad_segments[i][1] + min_ad_segment_separation_seconds >= ad_segments[i + 1][0]):
+            if (
+                ad_segments[i][1] + min_ad_segment_separation_seconds
+                >= ad_segments[i + 1][0]
+            ):
                 ad_segments[i] = (ad_segments[i][0], ad_segments[i + 1][1])
                 ad_segments.pop(i + 1)
             else:
                 i += 1
 
         # remove any isolated ad segments that are too short, possibly misidentified
-        ad_segments = [segment for segment in ad_segments if segment[1] - segment[0] >= min_ad_segment_length_seconds]
+        ad_segments = [
+            segment
+            for segment in ad_segments
+            if segment[1] - segment[0] >= min_ad_segment_length_seconds
+        ]
         # whisper sometimes drops the last bit of the transcript & this can lead
         # to end-roll not being entirely removed, so bump the ad segment to the
         # end of the audio if it's close enough
-        if len(ad_segments) > 0 and (audio_duration_seconds - ad_segments[-1][1] < min_ad_segment_separation_seconds):
+        if len(ad_segments) > 0 and (
+            audio_duration_seconds - ad_segments[-1][1]
+            < min_ad_segment_separation_seconds
+        ):
             ad_segments[-1] = (ad_segments[-1][0], audio_duration_seconds)
         self.logger.info(f"Joined ad segments into: {ad_segments}")
 
-        ad_segments_ms = [(int(start * 1000), int(end * 1000)) for start, end in ad_segments]
+        ad_segments_ms = [
+            (int(start * 1000), int(end * 1000)) for start, end in ad_segments
+        ]
         return ad_segments_ms
 
 
