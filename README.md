@@ -24,32 +24,49 @@ Here's how it works:
 - Podly removes the ad segments
 - Podly delivers the ad-free version of the podcast to you
 
-## Usage
-
-- `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
-- Start the server & note the URL.
-  - For example, `192.168.0.2:5001`
-- Open 192.168.0.2:5001 in your web browser
-- Add podcast RSS feeds to the interface
-- Open a podcast app & subscribe to the podly endpoint
-  - For example, `http://localhost:5001/feed/1`
-- Select an episode & download
-- Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
-
 ## How To Run
 
-Install ffmpeg
+1. Install ffmpeg
 
 ```shell
 sudo apt install ffmpeg
 ```
 
-Copy `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
+2. Install Python dependencies
 
 ```shell
 pip install pipenv
 pipenv --python 3.11
+pipenv install
 ```
+
+3. Set up configuration
+
+```shell
+# Copy example config and edit
+cp config/config.yml.example config/config.yml
+# Edit config.yml and update openai_api_key with your key
+```
+
+4. Start the server
+
+```shell
+pipenv shell
+python src/main.py
+```
+
+The server will start at http://localhost:5001 by default.
+
+## Usage
+
+Once the server is running:
+
+1. Open http://localhost:5001 in your web browser
+2. Add podcast RSS feeds through the web interface
+3. Open your podcast app and subscribe to the Podly endpoint
+   - For example, `http://localhost:5001/feed/1`
+4. Select an episode & download
+5. Wait patiently 😊 (Transcription takes about 1 minute per 15 minutes of podcast on an M3 MacBook)
 
 ## Transcription Options
 
