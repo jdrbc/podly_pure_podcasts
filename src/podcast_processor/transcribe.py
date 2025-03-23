@@ -240,16 +240,20 @@ class GroqWhisperTranscriber(Transcriber):
                     }
 
                     files = {
-                        "file": (chunk_path, f),
-                        "model": (None, self.config.model),
-                        "response_format": (None, "verbose_json"),
-                        "language": (None, self.config.language),
+                        "file": (Path(chunk_path).name, f, "audio/mpeg"),
+                    }
+
+                    data = {
+                        "model": self.config.model,
+                        "response_format": "verbose_json",
+                        "language": self.config.language,
                     }
 
                     response = requests.post(
                         self.api_url,
                         headers=headers,
                         files=files,
+                        data=data,
                     )
 
                     if response.status_code != 200:
