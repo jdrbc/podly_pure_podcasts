@@ -23,9 +23,12 @@ def refresh_feed(feed: Feed) -> None:
     logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
 
-    if feed.image_url != feed_data.feed.image.href:
-        feed.image_url = feed_data.feed.image.href
-        db.session.add(feed)
+    image_info = feed_data.feed.get("image")
+    if image_info and "href" in image_info:
+        new_image_url = image_info["href"]
+        if feed.image_url != new_image_url:
+            feed.image_url = new_image_url
+            db.session.add(feed)
 
     existing_posts = {post.guid for post in feed.posts}  # type: ignore[attr-defined]
     oldest_post = min(
