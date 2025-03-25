@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import ffmpeg  # type: ignore[import-untyped]
+import math
 
 
 def get_audio_duration_ms(file_path: str) -> Optional[int]:
@@ -94,7 +95,7 @@ def split_audio(
     ) * duration_ms
     chunk_duration_ms = int(chunk_duration_ms)
 
-    num_chunks = (duration_ms + chunk_duration_ms - 1) // chunk_duration_ms
+    num_chunks = math.ceil(duration_ms / chunk_duration_ms)
 
     chunks: List[Tuple[Path, int]] = []
 
