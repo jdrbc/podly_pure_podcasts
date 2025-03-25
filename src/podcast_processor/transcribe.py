@@ -182,9 +182,6 @@ class GroqWhisperTranscriber(Transcriber):
         self.logger = logger
         self.config = config
         self.api_url = "https://api.groq.com/openai/v1/audio/transcriptions"
-        self.max_retries = config.max_retries
-        self.initial_backoff = config.initial_backoff
-        self.backoff_factor = config.backoff_factor
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using Groq whisper")
@@ -228,7 +225,7 @@ class GroqWhisperTranscriber(Transcriber):
 
     def get_segments_for_chunk(self, chunk_path: str) -> List[GroqTranscriptionSegment]:
         retries = 0
-        backoff_time = self.initial_backoff
+        backoff_time = self.config.initial_backoff
 
         while True:
             try:
@@ -257,13 +254,13 @@ class GroqWhisperTranscriber(Transcriber):
                     )
 
                     if response.status_code != 200:
-                        if retries < self.max_retries:
+                        if retries < self.config.max_retries:
                             self.logger.warning(
-                                f"Groq API error (attempt {retries+1}/{self.max_retries+1}): {response.status_code} - {response.text}"
+                                f"Groq API error (attempt {retries+1}/{self.config.max_retries+1}): {response.status_code} - {response.text}"
                             )
                             retries += 1
                             time.sleep(backoff_time)
-                            backoff_time *= self.backoff_factor
+                            backoff_time *= self.config.backoff_factor
                             continue
                         else:
                             self.logger.error(
@@ -292,13 +289,13 @@ class GroqWhisperTranscriber(Transcriber):
                     return groq_segments
 
             except (requests.RequestException, IOError) as e:
-                if retries < self.max_retries:
+                if retries < self.config.max_retries:
                     self.logger.warning(
-                        f"Request error (attempt {retries+1}/{self.max_retries+1}): {str(e)}"
+                        f"Request error (attempt {retries+1}/{self.config.max_retries+1}): {str(e)}"
                     )
                     retries += 1
                     time.sleep(backoff_time)
-                    backoff_time *= self.backoff_factor
+                    backoff_time *= self.config.backoff_factor
                 else:
                     self.logger.error(
                         f"Request failed after {retries+1} attempts: {str(e)}"
