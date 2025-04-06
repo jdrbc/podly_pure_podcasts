@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -9,8 +9,8 @@ WORKDIR /app
 RUN apt-get update && apt-get upgrade -y &&\
   apt-get install -y python3 python3-pip nano ffmpeg
 
+RUN python3 -m pip config set global.break-system-packages true
 COPY Pipfile Pipfile.lock ./
-RUN python3 -m pip install --upgrade pip
 RUN pip install pipenv && pipenv install --dev --system --deploy
 RUN pip install torch
 
