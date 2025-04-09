@@ -59,9 +59,23 @@ def clip_segments_with_fade(
 
 
 def trim_file(in_path: Path, out_path: Path, start_ms: int, end_ms: int) -> None:
-    ffmpeg.input(str(in_path)).filter(
-        "atrim", start=start_ms / 1000.0, end=end_ms / 1000.0
-    ).output(str(out_path)).overwrite_output().run()
+    try:
+        # First decode to PCM then encode to MP3 to avoid frame boundary issues
+        (
+            ffmpeg.input(str(in_path))
+            .filter("aselect", f"between(t,{start_ms/1000},{end_ms/1000})")
+            .filter("asetpts", "PTS-STARTPTS")
+            .output(
+                str(out_path), format="mp3", acodec="libmp3lame", ar=44100, ab="128k"
+            )
+            .overwrite_output()
+            .run(quiet=True)
+        )
+    except ffmpeg.Error as e:
+        print(f"Error trimming file from {start_ms}ms to {end_ms}ms:")
+        if e.stderr:
+            print(e.stderr.decode())
+        raise
 
 
 def split_audio(
@@ -80,13 +94,13 @@ def split_audio(
     ) * duration_ms
     chunk_duration_ms = int(chunk_duration_ms)
 
-    num_chunks = (duration_ms // chunk_duration_ms) + 1
+    num_chunks = (duration_ms + chunk_duration_ms - 1) // chunk_duration_ms
 
     chunks: List[Tuple[Path, int]] = []
 
     for i in range(num_chunks):
         start_offset_ms = i * chunk_duration_ms
-        end_offset_ms = (i + 1) * chunk_duration_ms
+        end_offset_ms = min((i + 1) * chunk_duration_ms, duration_ms)
 
         export_path = audio_chunk_path / f"{i}.mp3"
         trim_file(audio_file_path, export_path, start_offset_ms, end_offset_ms)
