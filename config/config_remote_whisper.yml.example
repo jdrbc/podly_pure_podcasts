@@ -34,7 +34,12 @@ output:
   min_confidence: 0.8
 
 whisper:
+  # Required whisper settings
   whisper_type: remote
   model: whisper-2
   base_url: http://localhost/v99
   api_key: this_is_fake
+  # Optional whisper settings
+  # language: "en"
+  # timeout: 60 # in seconds
+  # chunksize: 60 # in megabyte
