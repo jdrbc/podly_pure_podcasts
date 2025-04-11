@@ -41,5 +41,5 @@ whisper:
   api_key: this_is_fake
   # Optional whisper settings
   # language: "en"
-  # timeout_sec: 60
-  # chunksize_mb: 60
+  # timeout_sec: 600 # http timeout for the whisper connection
+  # chunksize_mb: 24 # File size in MB for audio chunks uploaded sequentially to Whisper
