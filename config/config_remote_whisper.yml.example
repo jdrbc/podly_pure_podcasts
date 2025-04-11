@@ -41,5 +41,5 @@ whisper:
   api_key: this_is_fake
   # Optional whisper settings
   # language: "en"
-  # timeout: 60 # in seconds
-  # chunksize: 60 # in megabyte
+  # timeout_sec: 60
+  # chunksize_mb: 60
