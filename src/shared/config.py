@@ -33,6 +33,8 @@ class RemoteWhisperConfig(BaseModel):
     api_key: str
     language: str = "en"
     model: str = "whisper-1"  # openai model, use your own maybe
+    timeout_sec: int = 600
+    chunksize_mb: int = 24
 
 
 class LocalWhisperConfig(BaseModel):
