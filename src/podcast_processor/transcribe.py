@@ -96,7 +96,7 @@ class RemoteWhisperTranscriber(Transcriber):
         self.openai_client = OpenAI(
             base_url=config.base_url,
             api_key=config.api_key,
-            timeout=config.timeout,
+            timeout=config.timeout_sec,
         )
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
@@ -106,7 +106,7 @@ class RemoteWhisperTranscriber(Transcriber):
         chunks = split_audio(
             Path(audio_file_path),
             Path(audio_chunk_path),
-            self.config.chunksize * 1024 * 1024,
+            self.config.chunksize_mb * 1024 * 1024,
         )
 
         all_segments: List[TranscriptionSegment] = []
