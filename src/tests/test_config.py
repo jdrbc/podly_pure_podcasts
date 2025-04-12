@@ -75,7 +75,7 @@ def test_remote_whisper_example_config() -> None:
         openai_base_url=None,
         whisper=RemoteWhisperConfig(
             model="whisper-2",
-            base_url="http://localhost/v99",
+            base_url="https://api.openai.com/v1",
             api_key="this_is_fake",
         ),
         automatically_whitelist_new_episodes=True,
