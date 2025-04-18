@@ -14,7 +14,10 @@ from litellm.types.utils import Choices
 from app import db, logger
 from app.models import Post, Transcript
 from podcast_processor.audio import clip_segments_with_fade, get_audio_duration_ms
-from podcast_processor.model_output import clean_and_parse_model_output
+from podcast_processor.model_output import (
+    AdSegmentPrediction,
+    clean_and_parse_model_output,
+)
 from shared.config import (
     Config,
     LocalWhisperConfig,
@@ -286,6 +289,7 @@ class PodcastProcessor:
                     ],
                     max_tokens=self.config.openai_max_tokens,
                     timeout=self.config.openai_timeout,
+                    response_format=AdSegmentPrediction,
                 )
 
                 response_first_choice = response.choices[0]
