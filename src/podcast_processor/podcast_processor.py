@@ -342,16 +342,15 @@ class PodcastProcessor:
                         # can this skip result in hung processing?
                         continue
 
-                    if prediction.confidence < self.config.output.min_confidence:
-                        continue
-
-                    ad_segment_starts = prediction.ad_segments
                     ad_segment_starts = [
-                        start
-                        for start in ad_segment_starts
+                        pred.segment_id
+                        for pred in prediction
                         if (
-                            prompt_start_timestamp <= start <= prompt_end_timestamp
-                            and start in segments_by_start
+                            pred.confidence >= self.config.output.min_confidence
+                            and prompt_start_timestamp
+                            <= pred.segment_id
+                            <= prompt_end_timestamp
+                            and pred.segment_id in segments_by_start
                         )
                     ]
 
