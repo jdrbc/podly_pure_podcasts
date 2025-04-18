@@ -15,6 +15,7 @@ from app import db, logger
 from app.models import Post, Transcript
 from podcast_processor.audio import clip_segments_with_fade, get_audio_duration_ms
 from podcast_processor.model_output import clean_and_parse_model_output
+from podcast_processor.prompt import transcript_excerpt_for_prompt
 from shared.config import (
     Config,
     LocalWhisperConfig,
@@ -226,20 +227,15 @@ class PodcastProcessor:
                 )
                 continue
 
-            excerpts = [
-                f"[{segment.start}] {segment.text}"
-                for segment in transcript_segments[start:end]
-            ]
-            if start == 0:
-                excerpts.insert(0, "[TRANSCRIPT START]")
-            elif end == len(transcript_segments):
-                excerpts.append("[TRANSCRIPT END]")
-
             self.logger.info(f"Calling {model}")
             user_prompt = user_prompt_template.render(
                 podcast_title=post.title,
                 podcast_topic=post.description,
-                transcript="\n".join(excerpts),
+                transcript=transcript_excerpt_for_prompt(
+                    segments=transcript_segments[start:end],
+                    includes_start=start == 0,
+                    includes_end=end == len(transcript_segments),
+                ),
             )
 
             try:

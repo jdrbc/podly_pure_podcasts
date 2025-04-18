@@ -1,12 +1,16 @@
 import json
 from typing import List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 
 
 class AdSegmentPrediction(BaseModel):
     segment_offset: float
     confidence: float
+
+
+class AdSegmentPredictionList(RootModel[List[AdSegmentPrediction]]):
+    pass
 
 
 def clean_and_parse_model_output(model_output: str) -> List[AdSegmentPrediction]:
@@ -20,8 +24,4 @@ def clean_and_parse_model_output(model_output: str) -> List[AdSegmentPrediction]
 
     data = json.loads(model_output)
 
-    try:
-        return [AdSegmentPrediction(**item) for item in data]
-    except TypeError:
-        print(f"{model_output=}")
-        raise
+    return AdSegmentPredictionList.parse_raw(data)
