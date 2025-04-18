@@ -1,28 +1,41 @@
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
+FROM python:3.11-slim AS base
 
-# Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-RUN apt-get update && apt-get upgrade -y &&\
-  apt-get install -y python3 python3-pip nano ffmpeg
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update --allow-insecure-repositories && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --allow-unauthenticated \
+    ffmpeg \
+    build-essential \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m pip config set global.break-system-packages true
 COPY Pipfile Pipfile.lock ./
-RUN pip install pipenv && pipenv install --dev --system --deploy
-RUN pip install torch
 
-# Copy the source code into the container.
-COPY . /app
+RUN pip install --no-cache-dir pipenv && \
+    pipenv install --deploy --system --dev
 
-# Creates a non-root user and adds permission to access the /app folder
-RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /app
+RUN groupadd -r appuser && \
+    useradd --no-log-init -r -g appuser -d /home/appuser appuser && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser
+
+FROM base AS final
+
+COPY --chown=appuser:appuser . /app
+RUN mkdir -p /app/config /app/in /app/processing /app/srv /app/src/instance && \
+    touch /app/config/app.log && \
+    chmod 666 /app/config/app.log && \
+    chown -R appuser:appuser /app
+
 USER appuser
 
-# Expose the port that the application listens on.
+ENV HOME=/home/appuser
+
 EXPOSE 5001
 
-# Run the application.
-CMD python3 src/main.py
+CMD ["python", "-u", "src/main.py"]

@@ -30,6 +30,7 @@ ffmpeg-python = "*"
 litellm = ">=1.59.8"
 bleach = "*"
 types-bleach = "*"
+async_timeout = "*"
 
 [dev-packages]
 black = "*"
