@@ -132,7 +132,7 @@ On next launch the database should update.
 
 ## FAQ
 
-Q: Q: What does “whitelisted” mean in the UI?
+Q: What does “whitelisted” mean in the UI?
 
 A: It means an episode is eligible for download and ad removal. By default, new episodes are automatically whitelisted (```automatically_whitelist_new_episodes```), and only a limited number of old episodes are auto-whitelisted (```number_of_episodes_to_whitelist_from_archive_of_new_feed```). This helps control costs by limiting how many episodes are processed. You can adjust these settings in your config.yml for more manual control.
   
