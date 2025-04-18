@@ -3,6 +3,8 @@ from typing import List
 from podcast_processor.model_output import AdSegmentPrediction, AdSegmentPredictionList
 from podcast_processor.transcribe import Segment
 
+DEFAULT_SYSTEM_PROMPT_PATH = "config/system_prompt.txt"
+
 
 def transcript_excerpt_for_prompt(
     segments: List[Segment], includes_start: bool, includes_end: bool
