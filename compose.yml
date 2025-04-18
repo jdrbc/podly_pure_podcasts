@@ -1,5 +1,12 @@
 services:
   server:
+    container_name: podly_pure_podcasts
+    volumes:
+      - ./config/config.yml:/app/config/config.yml
+      - ./in:/app/in
+      - ./processing:/app/processing
+      - ./src/instance/sqlite3.db:/app/src/instance/sqlite3.db
+      - ./srv:/app/srv
     build:
       context: .
     ports:
