@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class AdSegmentPrediction(BaseModel):
-    segment_id: float
+    segment_offset: float
     confidence: float
 
 

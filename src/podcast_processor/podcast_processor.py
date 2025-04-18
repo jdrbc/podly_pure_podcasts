@@ -343,14 +343,14 @@ class PodcastProcessor:
                         continue
 
                     ad_segment_starts = [
-                        pred.segment_id
+                        pred.segment_offset
                         for pred in prediction
                         if (
                             pred.confidence >= self.config.output.min_confidence
                             and prompt_start_timestamp
-                            <= pred.segment_id
+                            <= pred.segment_offset
                             <= prompt_end_timestamp
-                            and pred.segment_id in segments_by_start
+                            and pred.segment_offset in segments_by_start
                         )
                     ]
 
