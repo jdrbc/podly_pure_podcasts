@@ -1,5 +1,6 @@
 from typing import List
-from podcast_processor.model_output import AdSegmentPredictionList, AdSegmentPrediction
+
+from podcast_processor.model_output import AdSegmentPrediction, AdSegmentPredictionList
 from podcast_processor.transcribe import Segment
 
 
@@ -42,12 +43,15 @@ def generate_system_prompt() -> str:
             Segment(
                 start=59.8,
                 end=-1,
-                text="On this week's episode of Wildcard, actor Chris Pine tells us, it's okay not to be perfect.",
+                text="On this week's episode of Wildcard, actor Chris Pine tells "
+                "us, it's okay not to be perfect.",
             ),
             Segment(
                 start=64.8,
                 end=-1,
-                text="My film got absolutely decimated when it premiered, which brings up for me one of my primary triggers or whatever it was like, not being liked.",
+                text="My film got absolutely decimated when it premiered, which "
+                "brings up for me one of my primary triggers or whatever it was "
+                "like, not being liked.",
             ),
             Segment(
                 start=73.8,
@@ -74,6 +78,7 @@ def generate_system_prompt() -> str:
         includes_end=False,
     )
 
+    # pylint: disable=line-too-long
     return f"""Your job is to identify ads in excerpts of podcast transcripts. Ads are for other network podcasts and products or services.
 
 There may be a pre-roll ad before the intro, as well as mid-roll and an end-roll ad after the outro.

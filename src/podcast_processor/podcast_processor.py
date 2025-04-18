@@ -142,7 +142,7 @@ class PodcastProcessor:
                 ),
                 min_ad_segment_separation_seconds=float(
                     self.config.output.min_ad_segement_separation_seconds
-                ),  # pylint: disable=line-too-long
+                ),
             )
             clip_segments_with_fade(
                 in_path=post.unprocessed_audio_path,
