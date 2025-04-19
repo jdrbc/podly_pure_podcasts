@@ -22,7 +22,7 @@ class Segment(BaseModel):
 
 class Transcriber(ABC):
     @abstractmethod
-    def transcribe(self, audio_file_path: str) -> List[Segment]:
+    def transcribe(self, audio_file_path: str, language: str) -> List[Segment]:
         pass
 
 
@@ -46,8 +46,8 @@ class TestWhisperTranscriber(Transcriber):
     def __init__(self, logger: logging.Logger):
         self.logger = logger
 
-    def transcribe(self, _: str) -> List[Segment]:
-        self.logger.info("Using test whisper")
+    def transcribe(self, _: str, language: str = "en") -> List[Segment]:
+        self.logger.info(f"Using test whisper with language: {language}")
         return [
             Segment(start=0, end=1, text="This is a test"),
             Segment(start=1, end=2, text="This is another test"),
@@ -69,16 +69,16 @@ class LocalWhisperTranscriber(Transcriber):
     def local_seg_to_seg(local_segments: List[LocalTranscriptSegment]) -> List[Segment]:
         return [seg.to_segment() for seg in local_segments]
 
-    def transcribe(self, audio_file_path: str) -> List[Segment]:
+    def transcribe(self, audio_file_path: str, language: str) -> List[Segment]:
         self.logger.info("Using local whisper")
         models = whisper.available_models()
         self.logger.info(f"Available models: {models}")
 
         model = whisper.load_model(name=self.whisper_model)
 
-        self.logger.info("Beginning transcription")
+        self.logger.info(f"Beginning transcription with language: {language}")
         start = time.time()
-        result = model.transcribe(audio_file_path, fp16=False, language="English")
+        result = model.transcribe(audio_file_path, fp16=False, language=language)
         end = time.time()
         elapsed = end - start
         self.logger.info(f"Transcription completed in {elapsed}")
@@ -99,7 +99,7 @@ class RemoteWhisperTranscriber(Transcriber):
             timeout=config.timeout_sec,
         )
 
-    def transcribe(self, audio_file_path: str) -> List[Segment]:
+    def transcribe(self, audio_file_path: str, language: str) -> List[Segment]:
         self.logger.info("Using remote whisper")
         audio_chunk_path = audio_file_path + "_parts"
 
@@ -113,7 +113,7 @@ class RemoteWhisperTranscriber(Transcriber):
 
         for chunk in chunks:
             chunk_path, offset = chunk
-            segments = self.get_segments_for_chunk(str(chunk_path))
+            segments = self.get_segments_for_chunk(str(chunk_path), language)
             all_segments.extend(self.add_offset_to_segments(segments, offset))
 
         shutil.rmtree(audio_chunk_path)
@@ -141,15 +141,19 @@ class RemoteWhisperTranscriber(Transcriber):
 
         return segments
 
-    def get_segments_for_chunk(self, chunk_path: str) -> List[TranscriptionSegment]:
+    def get_segments_for_chunk(
+        self, chunk_path: str, language: str
+    ) -> List[TranscriptionSegment]:
         with open(chunk_path, "rb") as f:
-            self.logger.info(f"Transcribing chunk {chunk_path}")
+            self.logger.info(
+                f"Transcribing chunk {chunk_path} with language {language}"
+            )
 
             transcription = self.openai_client.audio.transcriptions.create(
                 model=self.config.model,
                 file=f,
                 timestamp_granularities=["segment"],
-                language=self.config.language,
+                language=language,
                 response_format="verbose_json",
             )
 

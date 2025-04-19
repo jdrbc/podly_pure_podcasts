@@ -40,6 +40,7 @@ class RemoteWhisperConfig(BaseModel):
 class LocalWhisperConfig(BaseModel):
     whisper_type: Literal["local"] = "local"
     model: str = "base"
+    language: str = "en"
 
 
 class Config(BaseModel):
