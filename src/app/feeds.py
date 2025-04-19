@@ -23,6 +23,8 @@ def refresh_feed(feed: Feed) -> None:
     logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
 
+    feed.language = feed_data.feed.get("language", "")
+
     image_info = feed_data.feed.get("image")
     if image_info and "href" in image_info:
         new_image_url = image_info["href"]
@@ -80,6 +82,7 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
             author=feed_data.feed.get("author", ""),
             rss_url=feed_data.href,
             image_url=feed_data.feed.image.href,
+            language=feed_data.feed.get("language", ""),
         )
         db.session.add(feed)
         db.session.commit()
@@ -161,6 +164,7 @@ def generate_feed_xml(feed: Feed) -> Any:
         title="[podly] " + feed.title,
         link=link,
         description=feed.description,
+        language=feed.language,
         lastBuildDate=datetime.datetime.now(),
         image=PyRSS2Gen.Image(url=feed.image_url, title=feed.title, link=link),
         items=items,

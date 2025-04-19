@@ -19,6 +19,7 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     author = db.Column(db.Text)
     rss_url = db.Column(db.Text, unique=True, nullable=False)
     image_url = db.Column(db.Text)
+    language = db.Column(db.String(10), nullable=True)
 
     posts = db.relationship(
         "Post", backref="feed", lazy=True, order_by="Post.release_date.desc()"

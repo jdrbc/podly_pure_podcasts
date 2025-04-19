@@ -171,7 +171,7 @@ class PodcastProcessor:
         if transcript is not None:
             return cast(List[Segment], transcript.get_segments())
 
-        segments = self.transcriber.transcribe(post.unprocessed_audio_path)
+        segments = self.transcriber.transcribe(post.unprocessed_audio_path, language=post.feed.language or self.config.whisper.language)
 
         for segment in segments:
             segment.start = round(segment.start, 1)
