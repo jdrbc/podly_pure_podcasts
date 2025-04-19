@@ -8,6 +8,7 @@ import flask
 import validators
 from flask import Blueprint, Flask, current_app, jsonify, request, send_file, url_for
 from flask.typing import ResponseReturnValue
+from sqlalchemy.orm import sessionmaker
 
 from app import config, db, logger, scheduler
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
@@ -96,54 +97,79 @@ def download_and_process(post: Post, app: Flask) -> Dict[str, Any]:
     Returns:
         dict: A dictionary containing the status and any relevant messages.
     """
+    thread_session = None
+    result = {}
+
     try:
         with app.app_context():  # Push application context
+            engine = db.get_engine()
+            session_factory = sessionmaker(bind=engine)
+            thread_session = session_factory()
+
+            post_in_thread = thread_session.merge(post)
             # Download the episode
-            download_path = download_episode(post)
+            download_path = download_episode(post_in_thread)
             if download_path is None:
-                logger.error(f"Failed to download post: {post.title} (ID: {post.id})")
-                return {
-                    "post_id": post.id,
-                    "title": post.title,
+                logger.error(
+                    f"Failed to download post: {post_in_thread.title} (ID: {post_in_thread.id})"
+                )
+                result = {
+                    "post_id": post_in_thread.id,
+                    "title": post_in_thread.title,
                     "status": "failed",
                     "message": "Download failed.",
                 }
+                return result
 
-            post.unprocessed_audio_path = download_path
-            db.session.commit()
+            post_in_thread.unprocessed_audio_path = download_path
+            thread_session.commit()
 
-            # Process the episode
-            output_path = processor.process(post, blocking=True)
+            output_path = processor.process(post_in_thread, blocking=True)
             if output_path is None:
-                logger.error(f"Failed to process post: {post.title} (ID: {post.id})")
-                return {
-                    "post_id": post.id,
-                    "title": post.title,
+                logger.error(
+                    f"Failed to process post: {post_in_thread.title} (ID: {post_in_thread.id})"
+                )
+                result = {
+                    "post_id": post_in_thread.id,
+                    "title": post_in_thread.title,
                     "status": "failed",
                     "message": "Processing failed.",
                 }
+                return result
 
-            post.processed_audio_path = output_path
-            db.session.commit()
+            post_in_thread.processed_audio_path = output_path
+            thread_session.commit()
 
             logger.info(
-                f"Successfully downloaded and processed post: {post.title} (ID: {post.id})"
+                f"Successfully downloaded and processed post: "
+                f"{post_in_thread.title} (ID: {post_in_thread.id})"
             )
-            return {
-                "post_id": post.id,
-                "title": post.title,
+            result = {
+                "post_id": post_in_thread.id,
+                "title": post_in_thread.title,
                 "status": "success",
                 "message": output_path,
             }
 
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error downloading and processing post {post.id}: {e}")
-        return {
-            "post_id": post.id,
-            "title": post.title,
+        post_id = post.id if "post_in_thread" not in locals() else post_in_thread.id
+        post_title = (
+            post.title if "post_in_thread" not in locals() else post_in_thread.title
+        )
+        logger.error(f"Error downloading and processing post {post_id}: {e}")
+        if thread_session:
+            thread_session.rollback()
+        result = {
+            "post_id": post_id,
+            "title": post_title,
             "status": "error",
             "message": str(e),
         }
+    finally:
+        if thread_session:
+            thread_session.close()
+
+    return result
 
 
 @main_bp.route("/post/<string:p_guid>.mp3", methods=["GET"])
