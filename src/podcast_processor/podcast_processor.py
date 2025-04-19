@@ -133,6 +133,7 @@ class PodcastProcessor:
 
             duration_ms = get_audio_duration_ms(post.unprocessed_audio_path)
             assert duration_ms is not None
+            post.duration = duration_ms / 1000.0  # Store duration in seconds
 
             merged_ad_segments = self.merge_ad_segments(
                 duration_ms=duration_ms,
@@ -152,7 +153,6 @@ class PodcastProcessor:
             )
             self.logger.info(f"Processing podcast: {post} complete")
             post.processed_audio_path = processed_audio_path
-            db.session.commit()
 
             return processed_audio_path
         finally:
@@ -181,11 +181,11 @@ class PodcastProcessor:
         return segments
 
     def update_transcripts(self, post: Post, result: List[Segment]) -> None:
+        # Update the post with the new transcript
         post.transcript = Transcript(
             post_id=post.id,
             content=json.dumps([json.dumps(segment.dict()) for segment in result]),
         )
-        db.session.commit()
 
     def get_system_prompt(self, system_prompt_path: str) -> str:
         with open(system_prompt_path, "r") as f:

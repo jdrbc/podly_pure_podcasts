@@ -107,14 +107,12 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
                 f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. "  # pylint: disable=line-too-long
                 "Updated the database path."
             )
-            db.session.commit()
         else:
             logger.info(f"Downloading post: {post.title}")
             download_path = download_episode(post)
             if download_path is None:
                 raise PostException("Download failed")
             post.unprocessed_audio_path = download_path
-            db.session.commit()
 
     # 2) IF processed_audio_path is missing, try to fix from disk or else run processor
     if post.processed_audio_path is None:
@@ -138,7 +136,6 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
                 f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. "  # pylint: disable=line-too-long
                 "Updated the database path."
             )
-            db.session.commit()
         else:
             logger.info(f"Processing post: {post.title}")
             # Assume 'config' is imported from your configuration module.
@@ -147,9 +144,10 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
             if output_path is None:
                 raise PostException("Processing failed")
             post.processed_audio_path = output_path
-            db.session.commit()
 
     logger.info("Post already downloaded and validated")
+    # Final commit after all checks/updates
+    db.session.commit()
     return cast(Optional[str], post.processed_audio_path)
 
 
