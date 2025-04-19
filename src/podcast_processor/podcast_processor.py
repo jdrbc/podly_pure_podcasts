@@ -152,7 +152,6 @@ class PodcastProcessor:
             )
             self.logger.info(f"Processing podcast: {post} complete")
             post.processed_audio_path = processed_audio_path
-            db.session.commit()
 
             return processed_audio_path
         finally:
@@ -181,11 +180,12 @@ class PodcastProcessor:
         return segments
 
     def update_transcripts(self, post: Post, result: List[Segment]) -> None:
+        # Update the post with the new transcript
         post.transcript = Transcript(
             post_id=post.id,
             content=json.dumps([json.dumps(segment.dict()) for segment in result]),
         )
-        db.session.commit()
+        # Commit is handled by the calling function now (e.g., download_and_process)
 
     def get_system_prompt(self, system_prompt_path: str) -> str:
         with open(system_prompt_path, "r") as f:

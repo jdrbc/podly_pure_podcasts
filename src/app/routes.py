@@ -1,12 +1,12 @@
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List
 
 import bleach
 import flask
 import validators
-from flask import Blueprint, Flask, current_app, jsonify, request, send_file, url_for
+from flask import Blueprint, jsonify, request, send_file, url_for
 from flask.typing import ResponseReturnValue
 
 from app import config, db, logger, scheduler
@@ -85,65 +85,91 @@ def set_whitelist(p_guid: str, val: str) -> flask.Response:
 processor = PodcastProcessor(config)  # pre-initialize here rather than each post
 
 
-def download_and_process(post: Post, app: Flask) -> Dict[str, Any]:
-    """
-    Downloads and processes a single podcast episode.
+# Restore a simplified download_and_process helper
+def download_and_process(post: Post) -> Dict[str, Any]:
+    """Downloads and processes a podcast episode atomically.
+
+    Handles downloading the audio file, processing it (transcription, etc.),
+    and saving all changes to the database in a single transaction.
+    If any step fails, the entire transaction is rolled back.
 
     Args:
-        post (Post): The podcast post to download and process.
-        app (Flask): The Flask application instance.
+        post: The Post object representing the episode to process.
+              This object will be modified in place.
 
     Returns:
-        dict: A dictionary containing the status and any relevant messages.
+        A dictionary containing the status and results:
+            {
+                "status": "success" | "failed" | "error",
+                "message": str (contains output path on success, error message otherwise),
+                "post_id": int,
+                "title": str,
+            }
     """
+    logger.info(f"[download_and_process {post.id}] Starting for post: {post.title}")
     try:
-        with app.app_context():  # Push application context
-            # Download the episode
-            download_path = download_episode(post)
-            if download_path is None:
-                logger.error(f"Failed to download post: {post.title} (ID: {post.id})")
-                return {
-                    "post_id": post.id,
-                    "title": post.title,
-                    "status": "failed",
-                    "message": "Download failed.",
-                }
+        # Assume we are within request context providing app_context and session
 
-            post.unprocessed_audio_path = download_path
-            db.session.commit()
-
-            # Process the episode
-            output_path = processor.process(post, blocking=True)
-            if output_path is None:
-                logger.error(f"Failed to process post: {post.title} (ID: {post.id})")
-                return {
-                    "post_id": post.id,
-                    "title": post.title,
-                    "status": "failed",
-                    "message": "Processing failed.",
-                }
-
-            post.processed_audio_path = output_path
-            db.session.commit()
-
-            logger.info(
-                f"Successfully downloaded and processed post: {post.title} (ID: {post.id})"
-            )
+        # --- Download ---
+        logger.debug(f"[download_and_process {post.id}] Downloading...")
+        download_path = download_episode(post)
+        if download_path is None:
+            logger.error(f"[download_and_process {post.id}] Download failed.")
+            # Return failure without altering DB state yet
             return {
+                "status": "failed",
+                "message": "Download failed",
                 "post_id": post.id,
                 "title": post.title,
-                "status": "success",
-                "message": output_path,
             }
+        post.unprocessed_audio_path = download_path
+        logger.info(
+            f"[download_and_process {post.id}] Download complete: {download_path}"
+        )
 
-    except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error downloading and processing post {post.id}: {e}")
+        # --- Process ---
+        logger.debug(f"[download_and_process {post.id}] Processing...")
+        # processor.process updates the post object in memory (incl. transcript)
+        output_path = processor.process(post, blocking=True)
+        if output_path is None:
+            logger.error(
+                f"[download_and_process {post.id}] Processing failed internally."
+            )
+            raise ValueError("Processor returned None")  # Will trigger rollback
+        post.processed_audio_path = output_path
+        logger.info(
+            f"[download_and_process {post.id}] Processing complete: {output_path}"
+        )
+
+        # --- Single Commit ---
+        logger.debug(
+            f"[download_and_process {post.id}] Merging final state before commit."
+        )
+        # Merge 'post' state before commit. Necessary because this function receives 'post'
+        # as input and is called by 'download_all_posts' using threads. This ensures
+        # the session in *this* thread reflects all changes made to 'post' before commit.
+        db.session.merge(post)  # Ensure session sees all changes
+        logger.debug(f"[download_and_process {post.id}] >>> ATTEMPTING FINAL COMMIT.")
+        db.session.commit()
+        logger.info(f"[download_and_process {post.id}] >>> COMMIT SUCCESSFUL.")
         return {
+            "status": "success",
+            "message": output_path,
             "post_id": post.id,
             "title": post.title,
+        }
+
+    except Exception as e:
+        logger.error(f"[download_and_process {post.id}] Exception: {e}", exc_info=True)
+        logger.debug(f"[download_and_process {post.id}] >>> ROLLING BACK transaction.")
+        db.session.rollback()
+        return {
             "status": "error",
             "message": str(e),
+            "post_id": post.id,
+            "title": post.title,
         }
+    # No complex session removal needed here, assuming Flask handles request session lifecycle.
 
 
 @main_bp.route("/post/<string:p_guid>.mp3", methods=["GET"])
@@ -154,23 +180,48 @@ def download_post(p_guid: str) -> flask.Response:
         logger.warning(f"Post with GUID: {p_guid} not found")
         return flask.make_response(("Post not found", 404))
 
+    # Check if already processed and file exists
+    if post.processed_audio_path:
+        processed_path = Path(post.processed_audio_path)
+        if processed_path.is_file() and processed_path.stat().st_size > 0:
+            logger.info(f"Processed file found for post {post.id}. Sending file.")
+            try:
+                return send_file(path_or_file=processed_path.resolve())
+            except Exception as e:
+                logger.error(f"Error sending file '{processed_path}': {e}")
+                return flask.make_response(("Error sending file", 500))
+        else:
+            logger.warning(
+                f"Processed path in DB for post {post.id} but file missing/empty. Will re-process."
+            )
+    else:  # Explicitly handle case where path is None
+        logger.info(f"Processed path not set for post {post.id}. Will process.")
+
+    # Check whitelist status (moved here to be checked just before processing)
     if not post.whitelisted:
-        logger.warning(f"Post: {post.title} is not whitelisted")
+        logger.warning(f"Post: {post.title} is not whitelisted for processing/download")
         return flask.make_response(("Episode not whitelisted", 403))
 
-    # pylint: disable=protected-access
-    app = cast(Flask, current_app._get_current_object())  # type: ignore[attr-defined]
+    logger.info(f"Attempting synchronous download/process for post {post.id}.")
+    result = download_and_process(post)  # Call the simplified helper
 
-    result = download_and_process(post, app)
     if result["status"] == "success":
         try:
             output_path = result["message"]
+            logger.info(
+                f"Processing successful for post {post.id}. Sending file: {output_path}"
+            )
             return send_file(path_or_file=Path(output_path).resolve())
-        except Exception as e:  # pylint: disable=broad-except
-            logger.error(f"Error sending file: {e}")
-            return flask.make_response(("Error sending file", 500))
+        except Exception as e:
+            logger.error(f"Error sending file after processing post {post.id}: {e}")
+            return flask.make_response(("Error sending file after processing", 500))
     else:
-        return flask.make_response((result["message"], 500))
+        logger.error(
+            f"Processing failed for post {post.id}: {result.get('message', 'Unknown error')}"
+        )
+        return flask.make_response(
+            (f"Processing failed: {result.get('message', 'Unknown error')}", 500)
+        )
 
 
 @main_bp.route("/download_all", methods=["POST"])
@@ -186,15 +237,10 @@ def download_all_posts() -> flask.Response:
     # Determine the number of worker threads based on config
     max_workers = config.threads if config.threads > 0 else 1  # Default to 1 if not set
 
-    # Retrieve the Flask application instance
-
-    # pylint: disable=protected-access
-    app = current_app._get_current_object()  # type: ignore[attr-defined]
-
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all download tasks to the executor, passing both post and app
+        # Submit tasks using the simplified download_and_process helper
         future_to_post = {
-            executor.submit(download_and_process, post, app): post for post in posts
+            executor.submit(download_and_process, post): post for post in posts
         }
 
         for future in as_completed(future_to_post):
