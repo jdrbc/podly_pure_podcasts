@@ -75,9 +75,9 @@
 				{% set seconds = post.duration % 60 %}
 
 				{% if hours > 0 %}
-					{{ hours }}h {{ minutes }}m {{ seconds }}s
+					{{ hours | int }}h {{ minutes | int }}m {{ seconds | round(0) | int }}s
 				{% else %}
-					{{ minutes }}m {{ seconds }}s
+					{{ minutes | int }}m {{ seconds | round(0) | int }}s
 				{% endif %}
 			{% else %}
 				No duration available
