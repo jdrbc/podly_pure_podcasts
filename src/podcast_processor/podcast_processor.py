@@ -133,6 +133,8 @@ class PodcastProcessor:
 
             duration_ms = get_audio_duration_ms(post.unprocessed_audio_path)
             assert duration_ms is not None
+            post.duration = duration_ms / 1000.0 # Store duration in seconds
+
 
             merged_ad_segments = self.merge_ad_segments(
                 duration_ms=duration_ms,
@@ -185,7 +187,6 @@ class PodcastProcessor:
             post_id=post.id,
             content=json.dumps([json.dumps(segment.dict()) for segment in result]),
         )
-        # Commit is handled by the calling function now (e.g., download_and_process)
 
     def get_system_prompt(self, system_prompt_path: str) -> str:
         with open(system_prompt_path, "r") as f:
