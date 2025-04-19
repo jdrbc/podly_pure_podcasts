@@ -159,7 +159,7 @@ def download_and_process(post: Post) -> Dict[str, Any]:
             "title": post.title,
         }
 
-    except Exception as e:
+    except OSError as e:
         logger.error(f"[download_and_process {post.id}] Exception: {e}", exc_info=True)
         logger.debug(f"[download_and_process {post.id}] >>> ROLLING BACK transaction.")
         db.session.rollback()
@@ -173,6 +173,9 @@ def download_and_process(post: Post) -> Dict[str, Any]:
 
 
 @main_bp.route("/post/<string:p_guid>.mp3", methods=["GET"])
+# pylint: disable=too-many-return-statements
+# Early returns are used for clarity in this route handler
+# for various conditions (404, 403, errors, file sending).
 def download_post(p_guid: str) -> flask.Response:
     logger.info(f"Request to download post with GUID: {p_guid}")
     post = Post.query.filter_by(guid=p_guid).first()
@@ -187,7 +190,7 @@ def download_post(p_guid: str) -> flask.Response:
             logger.info(f"Processed file found for post {post.id}. Sending file.")
             try:
                 return send_file(path_or_file=processed_path.resolve())
-            except Exception as e:
+            except OSError as e:
                 logger.error(f"Error sending file '{processed_path}': {e}")
                 return flask.make_response(("Error sending file", 500))
         else:
@@ -212,7 +215,7 @@ def download_post(p_guid: str) -> flask.Response:
                 f"Processing successful for post {post.id}. Sending file: {output_path}"
             )
             return send_file(path_or_file=Path(output_path).resolve())
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error sending file after processing post {post.id}: {e}")
             return flask.make_response(("Error sending file after processing", 500))
     else:
