@@ -42,6 +42,46 @@ def test_local_transcribe() -> None:
     assert transcription == []
 
 
+@pytest.mark.skip
+def test_groq_transcribe(mocker: MockerFixture) -> None:
+    # import here instead of the toplevel because dependencies aren't installed properly in CI.
+    from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel
+        GroqWhisperTranscriber,
+    )
+    from shared.config import (
+        GroqWhisperConfig,
+    )  # pylint: disable=import-outside-toplevel
+
+    # Mock the requests call
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "segments": [
+            {"start": 0.0, "end": 1.0, "text": "This is a test segment."},
+            {"start": 1.0, "end": 2.0, "text": "This is another test segment."},
+        ]
+    }
+    mocker.patch("requests.post", return_value=mock_response)
+
+    # Mock file operations
+    mocker.patch("builtins.open", mocker.mock_open(read_data="test audio data"))
+    mocker.patch("pathlib.Path.exists", return_value=True)
+    mocker.patch("podcast_processor.audio.split_audio", return_value=[("test.mp3", 0)])
+    mocker.patch("shutil.rmtree")
+
+    logger = logging.getLogger("global_logger")
+    config = GroqWhisperConfig(
+        api_key="test_key", model="whisper-large-v3-turbo", language="en"
+    )
+
+    transcriber = GroqWhisperTranscriber(logger, config)
+    transcription = transcriber.transcribe("test.mp3")
+
+    assert len(transcription) == 2
+    assert transcription[0].text == "This is a test segment."
+    assert transcription[1].text == "This is another test segment."
+
+
 def test_offset() -> None:
     # import here instead of the toplevel because torch is not installed properly in CI.
     from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel

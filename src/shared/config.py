@@ -20,7 +20,7 @@ class OutputConfig(BaseModel):
     min_confidence: float
 
 
-WhisperConfigTypes = Literal["remote", "local", "test"]
+WhisperConfigTypes = Literal["remote", "local", "test", "groq"]
 
 
 class TestWhisperConfig(BaseModel):
@@ -35,6 +35,16 @@ class RemoteWhisperConfig(BaseModel):
     model: str = "whisper-1"  # openai model, use your own maybe
     timeout_sec: int = 600
     chunksize_mb: int = 24
+
+
+class GroqWhisperConfig(BaseModel):
+    whisper_type: Literal["groq"] = "groq"
+    api_key: str
+    language: str = "en"
+    model: str = "whisper-large-v3-turbo"
+    max_retries: int = 3
+    initial_backoff: float = 1.0
+    backoff_factor: float = 2.0
 
 
 class LocalWhisperConfig(BaseModel):
@@ -60,11 +70,11 @@ class Config(BaseModel):
     background_update_interval_minute: Optional[int] = None
     job_timeout: int = 10800  # Default to 3 hours if not set
     threads: int = 1
-    whisper: Optional[LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig] = (
-        Field(
-            default=None,
-            discriminator="whisper_type",
-        )
+    whisper: Optional[
+        LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig | GroqWhisperConfig
+    ] = Field(
+        default=None,
+        discriminator="whisper_type",
     )
     remote_whisper: Optional[bool] = Field(
         default=False,
