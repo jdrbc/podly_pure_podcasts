@@ -1,21 +1,21 @@
 services:
   server:
     container_name: podly_pure_podcasts
+    command: ${PODLY_COMMAND:-pipenv run python src/main.py}
     volumes:
       - ./config/config.yml:/app/config/config.yml
       - ./in:/app/in
       - ./processing:/app/processing
       - ./src/instance/sqlite3.db:/app/src/instance/sqlite3.db
       - ./srv:/app/srv
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+      - podly_home:/home/appuser
     build:
       context: .
     ports:
       - 5001:5001
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities:
-                - gpu
+
+volumes:
+  podly_home:
+    driver: local
