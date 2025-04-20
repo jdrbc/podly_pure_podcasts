@@ -87,7 +87,7 @@ def split_audio(
 
     for i in range(num_chunks):
         start_offset_ms = i * chunk_duration_ms
-        end_offset_ms = min((i + 1) * chunk_duration_ms, duration_ms)
+        end_offset_ms = (i + 1) * chunk_duration_ms
 
         export_path = audio_chunk_path / f"{i}.mp3"
         trim_file(audio_file_path, export_path, start_offset_ms, end_offset_ms)
