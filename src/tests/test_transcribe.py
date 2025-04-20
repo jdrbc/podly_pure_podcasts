@@ -1,15 +1,8 @@
 import logging
-from unittest.mock import MagicMock
 
 import pytest
 import yaml
 from openai.types.audio.transcription_segment import TranscriptionSegment
-from pytest_mock import MockerFixture
-
-
-@pytest.fixture(autouse=True)
-def mock_whisper_fixture(mocker: MockerFixture) -> None:
-    mocker.patch.dict("sys.modules", {"whisper": MagicMock()})
 
 
 @pytest.mark.skip
