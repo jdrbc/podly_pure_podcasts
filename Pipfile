@@ -30,7 +30,6 @@ ffmpeg-python = "*"
 litellm = ">=1.59.8"
 bleach = "*"
 types-bleach = "*"
-requests = "*"
 groq = "*"
 
 [dev-packages]
@@ -46,6 +45,7 @@ isort = "*"
 types-flask-migrate = "*"
 pytest-mock = "*"
 watchdog = "*"
+requests = "*"
 
 [requires]
 python_version = "3.11"
