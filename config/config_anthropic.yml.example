@@ -1,5 +1,5 @@
-openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
-openai_model: anthropic/claude-3-5-sonnet-20240620
+llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
+llm_model: anthropic/claude-3-5-sonnet-20240620
 
 
 number_of_episodes_to_whitelist_from_archive_of_new_feed: 1

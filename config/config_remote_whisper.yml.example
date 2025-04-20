@@ -1,5 +1,5 @@
 # Required openai settings
-openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
+llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # Optional openai settings
 # openai_base_url: http://127.0.0.1:11434/v1
 # openai_timeout: 300
