@@ -9,8 +9,7 @@ import whisper  # type: ignore[import-untyped]
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
-import json
-import requests
+from groq import Groq, APIError
 
 from podcast_processor.audio import split_audio
 from shared.config import GroqWhisperConfig, RemoteWhisperConfig
@@ -172,16 +171,15 @@ class GroqTranscriptionSegment(BaseModel):
     text: str
 
 
-class GroqTranscriptionResponse(BaseModel):
-    segments: List[GroqTranscriptionSegment]
-
-
 class GroqWhisperTranscriber(Transcriber):
 
     def __init__(self, logger: logging.Logger, config: GroqWhisperConfig):
         self.logger = logger
         self.config = config
-        self.api_url = "https://api.groq.com/openai/v1/audio/transcriptions"
+        self.client = Groq(
+            api_key=config.api_key,
+            max_retries=config.max_retries,
+        )
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using Groq whisper")
@@ -224,80 +222,39 @@ class GroqWhisperTranscriber(Transcriber):
         return segments
 
     def get_segments_for_chunk(self, chunk_path: str) -> List[GroqTranscriptionSegment]:
-        retries = 0
-        backoff_time = self.config.initial_backoff
+        try:
+            self.logger.info(f"Transcribing chunk {chunk_path} using groq client")
+            transcription = self.client.audio.transcriptions.create(
+                file=Path(chunk_path),
+                model=self.config.model,
+                response_format="verbose_json",  # Ensure segments are included
+                language=self.config.language,
+            )
+            self.logger.debug("Got transcription from groq client")
 
-        while True:
-            try:
-                with open(chunk_path, "rb") as f:
-                    self.logger.info(f"Transcribing chunk {chunk_path}")
+            if transcription.segments is None:
+                self.logger.warning(
+                    f"No segments found in transcription for {chunk_path}"
+                )
+                return []
 
-                    headers = {
-                        "Authorization": f"Bearer {self.config.api_key}",
-                    }
+            groq_segments = [
+                GroqTranscriptionSegment(
+                    start=seg["start"], end=seg["end"], text=seg["text"]
+                )
+                for seg in transcription.segments
+            ]
 
-                    files = {
-                        "file": (Path(chunk_path).name, f, "audio/mpeg"),
-                    }
+            self.logger.debug(f"Got {len(groq_segments)} segments")
+            return groq_segments
 
-                    data = {
-                        "model": self.config.model,
-                        "response_format": "verbose_json",
-                        "language": self.config.language,
-                    }
-
-                    response = requests.post(
-                        self.api_url,
-                        headers=headers,
-                        files=files,
-                        data=data,
-                    )
-
-                    if response.status_code != 200:
-                        if retries < self.config.max_retries:
-                            self.logger.warning(
-                                f"Groq API error (attempt {retries+1}/{self.config.max_retries+1}): {response.status_code} - {response.text}"
-                            )
-                            retries += 1
-                            time.sleep(backoff_time)
-                            backoff_time *= self.config.backoff_factor
-                            continue
-                        else:
-                            self.logger.error(
-                                f"Error with Groq API after {retries+1} attempts: {response.text}"
-                            )
-                            raise Exception(
-                                f"Groq API error: {response.status_code} - {response.text}"
-                            )
-
-                    response_data = response.json()
-                    self.logger.debug("Got transcription")
-
-                    # Parse the response into our model
-                    if "segments" not in response_data:
-                        self.logger.error(
-                            f"Unexpected response format: {response_data}"
-                        )
-                        return []
-
-                    groq_segments = [
-                        GroqTranscriptionSegment(**seg)
-                        for seg in response_data["segments"]
-                    ]
-                    self.logger.debug(f"Got {len(groq_segments)} segments")
-
-                    return groq_segments
-
-            except (requests.RequestException, IOError) as e:
-                if retries < self.config.max_retries:
-                    self.logger.warning(
-                        f"Request error (attempt {retries+1}/{self.config.max_retries+1}): {str(e)}"
-                    )
-                    retries += 1
-                    time.sleep(backoff_time)
-                    backoff_time *= self.config.backoff_factor
-                else:
-                    self.logger.error(
-                        f"Request failed after {retries+1} attempts: {str(e)}"
-                    )
-                    raise
+        except APIError as e:
+            self.logger.error(
+                f"Groq API error after retries for chunk {chunk_path}: {e.status_code} - {e.message}"
+            )
+            raise Exception(f"Groq API transcription failed: {e.message}") from e
+        except Exception as e:
+            self.logger.error(
+                f"An unexpected error occurred during transcription for chunk {chunk_path}: {str(e)}"
+            )
+            raise Exception("An unexpected error occurred during transcription.") from e
