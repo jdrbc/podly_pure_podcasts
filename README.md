@@ -159,9 +159,9 @@ If you experience Docker build issues, try the test build option to validate you
 ./run_podly_docker.sh --test-build
 ```
 
-### Advanced Docker Options
+### Docker Options
 
-You can also use command-line options with the run script:
+You can use these command-line options with the run script:
 
 ```bash
 # Force CPU mode even if GPU is available
@@ -170,32 +170,12 @@ You can also use command-line options with the run script:
 # Force GPU mode (will fail if no GPU is available)
 ./run_podly_docker.sh --gpu
 
-# Only build the Docker images without starting containers
+# Only build the Docker image without starting containers
 ./run_podly_docker.sh --build
 
 # Test if the Docker build works (helpful for troubleshooting)
 ./run_podly_docker.sh --test-build
-
-# Run in development mode with auto-reloading
-./run_podly_docker.sh --dev
-
-# Show help message
-./run_podly_docker.sh --help
 ```
-
-### Manual Configuration
-
-You can also manually run Docker Compose commands:
-
-- Standard configuration (works on any machine):
-  ```bash
-  docker compose up
-  ```
-
-- NVIDIA GPU-accelerated configuration:
-  ```bash
-  docker compose -f compose.yml -f compose.nvidia.yml up
-  ```
 
 ## FAQ
 
