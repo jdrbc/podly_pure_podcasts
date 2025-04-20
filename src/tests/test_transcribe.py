@@ -48,9 +48,9 @@ def test_groq_transcribe(mocker: MockerFixture) -> None:
     from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel
         GroqWhisperTranscriber,
     )
-    from shared.config import (
+    from shared.config import (  # pylint: disable=import-outside-toplevel
         GroqWhisperConfig,
-    )  # pylint: disable=import-outside-toplevel
+    )
 
     # Mock the requests call
     mock_response = MagicMock()

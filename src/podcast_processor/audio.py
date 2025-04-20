@@ -1,8 +1,8 @@
+import math
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import ffmpeg  # type: ignore[import-untyped]
-import math
 
 
 def get_audio_duration_ms(file_path: str) -> Optional[int]:

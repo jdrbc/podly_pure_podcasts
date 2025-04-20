@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import whisper  # type: ignore[import-untyped]
+from groq import APIError, Groq
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
-from groq import Groq, APIError
 
 from podcast_processor.audio import split_audio
 from shared.config import GroqWhisperConfig, RemoteWhisperConfig
@@ -232,7 +232,7 @@ class GroqWhisperTranscriber(Transcriber):
             )
             self.logger.debug("Got transcription from groq client")
 
-            if transcription.segments is None:
+            if transcription.segments is None:  # type: ignore [attr-defined]
                 self.logger.warning(
                     f"No segments found in transcription for {chunk_path}"
                 )
@@ -242,7 +242,7 @@ class GroqWhisperTranscriber(Transcriber):
                 GroqTranscriptionSegment(
                     start=seg["start"], end=seg["end"], text=seg["text"]
                 )
-                for seg in transcription.segments
+                for seg in transcription.segments  # type: ignore [attr-defined]
             ]
 
             self.logger.debug(f"Got {len(groq_segments)} segments")
@@ -250,7 +250,7 @@ class GroqWhisperTranscriber(Transcriber):
 
         except APIError as e:
             self.logger.error(
-                f"Groq API error after retries for chunk {chunk_path}: {e.status_code} - {e.message}"
+                f"Groq API error after retries for chunk {chunk_path}: {e.message}"
             )
             raise Exception(f"Groq API transcription failed: {e.message}") from e
         except Exception as e:

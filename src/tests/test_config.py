@@ -131,10 +131,6 @@ def test_anthropic_example_config() -> None:
 def test_groq_whisper_example_config() -> None:
     expected_config = Config(
         openai_api_key="sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX",
-        openai_base_url=None,
-        openai_max_tokens=4096,
-        openai_model="phi3:14b-medium-4k-instruct-q5_K_M",
-        openai_timeout=300,
         output=OutputConfig(
             fade_ms=3000,
             min_ad_segement_separation_seconds=60,
