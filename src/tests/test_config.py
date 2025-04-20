@@ -153,8 +153,6 @@ def test_groq_whisper_example_config() -> None:
             language="en",
             model="whisper-large-v3-turbo",
             max_retries=3,
-            initial_backoff=1.0,
-            backoff_factor=2.0,
         ),
         remote_whisper=None,
         whisper_model=None,
