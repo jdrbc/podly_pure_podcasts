@@ -70,15 +70,11 @@
 			<td>Duration</td>
 			<td>
 			{% if post and post.duration is not none %}
-				{% set hours = post.duration // 3600 %}
-				{% set minutes = (post.duration % 3600) // 60 %}
-				{% set seconds = post.duration % 60 %}
+				{% set hours = (post.duration // 3600) | int %}
+				{% set minutes = ((post.duration % 3600) // 60) | int %}
+				{% set seconds = (post.duration % 60 | round(0)) | int %}
 
-				{% if hours > 0 %}
-					{{ hours }}h {{ minutes }}m {{ seconds }}s
-				{% else %}
-					{{ minutes }}m {{ seconds }}s
-				{% endif %}
+				{{ (hours > 0 and (hours|string + 'h ') or '') }}{{ minutes }}m {{ seconds }}s
 			{% else %}
 				No duration available
 			{% endif %}
