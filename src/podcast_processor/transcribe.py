@@ -3,7 +3,7 @@ import shutil
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, List
 
 import whisper  # type: ignore[import-untyped]
 from groq import APIError, Groq
@@ -222,39 +222,26 @@ class GroqWhisperTranscriber(Transcriber):
         return segments
 
     def get_segments_for_chunk(self, chunk_path: str) -> List[GroqTranscriptionSegment]:
-        try:
-            self.logger.info(f"Transcribing chunk {chunk_path} using groq client")
-            transcription = self.client.audio.transcriptions.create(
-                file=Path(chunk_path),
-                model=self.config.model,
-                response_format="verbose_json",  # Ensure segments are included
-                language=self.config.language,
+
+        self.logger.info(f"Transcribing chunk {chunk_path} using groq client")
+        transcription = self.client.audio.transcriptions.create(
+            file=Path(chunk_path),
+            model=self.config.model,
+            response_format="verbose_json",  # Ensure segments are included
+            language=self.config.language,
+        )
+        self.logger.debug("Got transcription from groq client")
+
+        if transcription.segments is None:  # type: ignore [attr-defined]
+            self.logger.warning(f"No segments found in transcription for {chunk_path}")
+            return []
+
+        groq_segments = [
+            GroqTranscriptionSegment(
+                start=seg["start"], end=seg["end"], text=seg["text"]
             )
-            self.logger.debug("Got transcription from groq client")
+            for seg in transcription.segments  # type: ignore [attr-defined]
+        ]
 
-            if transcription.segments is None:  # type: ignore [attr-defined]
-                self.logger.warning(
-                    f"No segments found in transcription for {chunk_path}"
-                )
-                return []
-
-            groq_segments = [
-                GroqTranscriptionSegment(
-                    start=seg["start"], end=seg["end"], text=seg["text"]
-                )
-                for seg in transcription.segments  # type: ignore [attr-defined]
-            ]
-
-            self.logger.debug(f"Got {len(groq_segments)} segments")
-            return groq_segments
-
-        except APIError as e:
-            self.logger.error(
-                f"Groq API error after retries for chunk {chunk_path}: {e.message}"
-            )
-            raise Exception(f"Groq API transcription failed: {e.message}") from e
-        except Exception as e:
-            self.logger.error(
-                f"An unexpected error occurred during transcription for chunk {chunk_path}: {str(e)}"
-            )
-            raise Exception("An unexpected error occurred during transcription.") from e
+        self.logger.debug(f"Got {len(groq_segments)} segments")
+        return groq_segments
