@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, List
 
 import whisper  # type: ignore[import-untyped]
-from groq import APIError, Groq
+from groq import Groq
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
