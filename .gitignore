@@ -46,3 +46,4 @@ srv/**/*.mp3
 config/config.yml
 *.db
 *.sqlite
+.DS_Store
