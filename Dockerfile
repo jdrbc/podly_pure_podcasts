@@ -13,6 +13,7 @@ RUN if [ -f /etc/debian_version ]; then \
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ffmpeg \
         build-essential \
+        gosu \
         && apt-get clean && \
         rm -rf /var/lib/apt/lists/* ; \
     fi
@@ -29,9 +30,11 @@ RUN if [ $(command -v pip3) ]; then \
         pipenv install --deploy --system --dev; \
     fi
 
-# Install CUDA-enabled PyTorch if using NVIDIA base
+# Install PyTorch - CUDA version if using NVIDIA base, CPU version otherwise
 RUN if echo ${BASE_IMAGE} | grep -q "nvidia"; then \
         pip install torch --index-url https://download.pytorch.org/whl/cu118; \
+    else \
+        pip install torch --index-url https://download.pytorch.org/whl/cpu; \
     fi
 
 # Create non-root user
@@ -48,17 +51,28 @@ RUN if getent group appuser > /dev/null 2>&1; then \
     mkdir -p /home/appuser && \
     chown -R appuser:appuser /home/appuser
 
-# Copy application code
-COPY --chown=appuser:appuser . /app
+# Create required directories with proper permissions
 RUN mkdir -p /app/config /app/in /app/processing /app/srv /app/src/instance && \
     touch /app/config/app.log && \
+    chmod -R 777 /app/config /app/in /app/processing /app/srv /app/src/instance && \
     chmod 666 /app/config/app.log && \
     chown -R appuser:appuser /app
 
-USER appuser
-ENV HOME=/home/appuser
+# Copy src directory for the entry point
+COPY --chown=appuser:appuser src /app/src
+
+# Ensure the app is fully accessible to the user
+RUN chmod -R 777 /app
+
+# Create entrypoint script to handle user permissions
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod 755 /docker-entrypoint.sh
+
+# Run as root initially to allow user switching in entrypoint
+USER root
 
 EXPOSE 5001
 
-# Run the application
+# Run the application through the entrypoint script
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["python", "-u", "src/main.py"] 

@@ -1,0 +1,47 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Virtual environments
+venv/
+.env/
+.venv/
+env/
+ENV/
+
+# Build artifacts
+*.so
+*.egg-info/
+dist/
+build/
+
+# Input/Output directories (these can be mounted as volumes instead)
+in/
+processing/
+
+# Logs
+*.log
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Local configuration files
+.env
+.env.*
+!.env.example 

@@ -68,10 +68,12 @@ if [ "$USE_GPU" = true ]; then
     echo "Building with NVIDIA GPU support..."
     BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04"
     DOCKER_RUNTIME="--runtime=nvidia"
+    CUDA_ENV=""
 else
     echo "Building without GPU support..."
     BASE_IMAGE="python:3.11-slim"
     DOCKER_RUNTIME=""
+    CUDA_ENV="-e CUDA_VISIBLE_DEVICES=-1"
 fi
 
 # Build the Docker image
@@ -83,11 +85,23 @@ if [ "$BUILD_ONLY" = true ] || [ "$TEST_BUILD" = true ]; then
     exit 0
 fi
 
+# Get current user's UID and GID
+USER_ID=$(id -u)
+GROUP_ID=$(id -g)
+
+# Ensure mounted directories exist and have correct permissions
+mkdir -p "$(pwd)/config" "$(pwd)/in" "$(pwd)/processing" "$(pwd)/srv"
+touch "$(pwd)/config/app.log"
+chmod 666 "$(pwd)/config/app.log"
+
 # Run the container
 echo "Starting Podly..."
-docker run -it --rm \
+docker run --rm \
     $DOCKER_RUNTIME \
     -p 5001:5001 \
+    -e PUID=$USER_ID \
+    -e PGID=$GROUP_ID \
+    $CUDA_ENV \
     -v "$(pwd)/config:/app/config" \
     -v "$(pwd)/in:/app/in" \
     -v "$(pwd)/processing:/app/processing" \
