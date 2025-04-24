@@ -35,7 +35,7 @@ output:
 
 whisper:
   # Required whisper settings
-  whisper_type: remote
+  whisper_type: remote # or groq
   model: whisper-2
   api_key: this_is_fake
   # Optional whisper settings
