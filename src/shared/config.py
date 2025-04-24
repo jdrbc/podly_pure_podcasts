@@ -28,8 +28,8 @@ class TestWhisperConfig(BaseModel):
 
 
 class RemoteWhisperConfig(BaseModel):
-    whisper_type: Literal["remote"] = "remote"
-    base_url: str = "https://api.openai.com/v1"
+    whisper_type: Literal["remote", "groq"] = "remote"
+    base_url: str = "https://api.openai.com/v1"  # ignored if groq is used
     api_key: str
     language: str = "en"
     model: str = "whisper-1"  # openai model, use your own maybe

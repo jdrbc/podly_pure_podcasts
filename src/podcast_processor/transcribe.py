@@ -3,9 +3,10 @@ import shutil
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Union
 
 import whisper  # type: ignore[import-untyped]
+from groq import Groq
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
@@ -89,18 +90,32 @@ class LocalWhisperTranscriber(Transcriber):
 
 
 class RemoteWhisperTranscriber(Transcriber):
+    client: Union[OpenAI, Groq]
+
     def __init__(self, logger: logging.Logger, config: RemoteWhisperConfig):
         self.logger = logger
         self.config = config
 
-        self.openai_client = OpenAI(
-            base_url=config.base_url,
-            api_key=config.api_key,
-            timeout=config.timeout_sec,
-        )
+        if config.whisper_type == "remote":
+            self.client = OpenAI(
+                base_url=config.base_url,
+                api_key=config.api_key,
+                timeout=config.timeout_sec,
+            )
+        elif config.whisper_type == "groq":
+            self.client = Groq(api_key=config.api_key, timeout=config.timeout_sec)
+        else:
+            raise ValueError(
+                f"Unsupported whisper_type in RemoteWhisperConfig: {config.whisper_type}"
+            )
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
-        self.logger.info("Using remote whisper")
+        self.logger.info(
+            "Using remote whisper service: "
+            + self.config.whisper_type
+            + " with model: "
+            + self.config.model
+        )
         audio_chunk_path = audio_file_path + "_parts"
 
         chunks = split_audio(
@@ -145,7 +160,7 @@ class RemoteWhisperTranscriber(Transcriber):
         with open(chunk_path, "rb") as f:
             self.logger.info(f"Transcribing chunk {chunk_path}")
 
-            transcription = self.openai_client.audio.transcriptions.create(
+            transcription = self.client.audio.transcriptions.create(
                 model=self.config.model,
                 file=f,
                 timestamp_granularities=["segment"],
@@ -155,8 +170,41 @@ class RemoteWhisperTranscriber(Transcriber):
 
             self.logger.debug("Got transcription")
 
-            segments = transcription.segments
-            assert segments is not None
+            # Ensure we have the verbose response type which includes segments
+            if not hasattr(transcription, "segments"):
+                self.logger.error(
+                    f"Transcription response does not have 'segments'. Type: {type(transcription)}"
+                )
+                # Potentially raise an error or return empty list depending on desired handling
+                raise TypeError(
+                    "Expected verbose transcription response with segments."
+                )
+
+            raw_segments = transcription.segments
+            assert raw_segments is not None
+
+            # Convert dicts to TranscriptionSegment objects if using Groq
+            if self.config.whisper_type == "groq":
+                try:
+                    # Assuming Groq returns dicts with compatible keys
+                    segments = []
+                    for seg in raw_segments:
+                        if not isinstance(seg, dict):
+                            # Log or raise error if the assumption is wrong
+                            self.logger.error(
+                                f"Expected dict segment from Groq, got {type(seg)}"
+                            )
+                            raise TypeError("Groq segment format unexpected.")
+                        segments.append(TranscriptionSegment(**seg))
+                except Exception as e:
+                    self.logger.error(
+                        f"Error converting Groq segments to TranscriptionSegment: {e}"
+                    )
+                    self.logger.error(f"Raw segment data: {raw_segments}")
+                    raise  # Re-raise the error after logging
+            else:
+                # Assume OpenAI client already returned List[TranscriptionSegment]
+                segments = raw_segments
 
             self.logger.debug(f"Got {len(segments)} segments")
 
