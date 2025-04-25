@@ -26,7 +26,7 @@ Here's how it works:
 
 ## Usage
 
-- `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
+- `config/config.yml.example` into new file `config/config.yml`. Update `llm_api_key` with your key.
 - Start the server & note the URL.
   - For example, `192.168.0.2:5001`
 - Open 192.168.0.2:5001 in your web browser
@@ -44,7 +44,7 @@ Install ffmpeg
 sudo apt install ffmpeg
 ```
 
-Copy `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
+Copy `config/config.yml.example` into new file `config/config.yml`. Update `llm_api_key` with your key.
 
 ```shell
 pip install pipenv
