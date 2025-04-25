@@ -4,6 +4,8 @@ FROM ${BASE_IMAGE} AS base
 # Environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ARG CUDA_VERSION=12.1
+ARG USE_GPU=false
 
 WORKDIR /app
 
@@ -22,54 +24,27 @@ RUN if [ -f /etc/debian_version ]; then \
 COPY Pipfile Pipfile.lock ./
 
 # Install pipenv and dependencies
-RUN if [ $(command -v pip3) ]; then \
-        pip3 install --no-cache-dir pipenv && \
-        pipenv install --deploy --system --dev; \
-    else \
-        pip install --no-cache-dir pipenv && \
-        pipenv install --deploy --system --dev; \
-    fi
+RUN pip3 install --no-cache-dir pipenv && \
+    pipenv install --deploy --system --dev
 
-# Install PyTorch - CUDA version if using NVIDIA base, CPU version otherwise
-RUN if echo ${BASE_IMAGE} | grep -q "nvidia"; then \
-        pip install torch --index-url https://download.pytorch.org/whl/cu118; \
+# Install PyTorch with CUDA support if using NVIDIA image
+RUN if [ "${USE_GPU}" = "true" ]; then \
+        # Extract CUDA version for PyTorch index URL  
+        CUDA_SHORT=$(echo ${CUDA_VERSION} | sed 's/\.\([0-9]\)$/\1/'); \
+        pip install torch --index-url https://download.pytorch.org/whl/cu${CUDA_SHORT}; \
     else \
         pip install torch --index-url https://download.pytorch.org/whl/cpu; \
     fi
 
-# Create non-root user
-RUN if getent group appuser > /dev/null 2>&1; then \
-        echo "Group exists"; \
-    else \
-        groupadd -r appuser; \
-    fi && \
-    if id appuser > /dev/null 2>&1; then \
-        echo "User exists"; \
-    else \
-        useradd --no-log-init -r -g appuser -d /home/appuser appuser; \
-    fi && \
+# Create non-root user for running the application
+RUN groupadd -r appuser && \
+    useradd --no-log-init -r -g appuser -d /home/appuser appuser && \
     mkdir -p /home/appuser && \
     chown -R appuser:appuser /home/appuser
 
-# Create required directories with proper permissions
-RUN mkdir -p /app/config /app/in /app/processing /app/srv /app/src/instance && \
-    touch /app/config/app.log && \
-    chmod -R 777 /app/config /app/in /app/processing /app/srv /app/src/instance && \
-    chmod 666 /app/config/app.log && \
-    chown -R appuser:appuser /app
-
-# Copy src directory for the entry point
-COPY --chown=appuser:appuser src /app/src
-
-# Ensure the app is fully accessible to the user
-RUN chmod -R 777 /app
-
-# Create entrypoint script to handle user permissions
+# Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod 755 /docker-entrypoint.sh
-
-# Run as root initially to allow user switching in entrypoint
-USER root
 
 EXPOSE 5001
 

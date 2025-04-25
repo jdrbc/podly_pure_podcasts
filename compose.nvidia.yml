@@ -1,14 +1,11 @@
 services:
   server:
-    container_name: podly_pure_podcasts
-    build:
-      context: .
-      dockerfile: Dockerfile.nvidia
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
-              capabilities:
-                - gpu 
+              capabilities: [gpu] 
