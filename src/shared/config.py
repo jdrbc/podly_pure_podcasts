@@ -33,6 +33,8 @@ class RemoteWhisperConfig(BaseModel):
     api_key: str
     language: str = "en"
     model: str = "whisper-1"  # openai model, use your own maybe
+    timeout_sec: int = 600
+    chunksize_mb: int = 24
 
 
 class GroqWhisperConfig(BaseModel):
@@ -51,8 +53,8 @@ class LocalWhisperConfig(BaseModel):
 
 
 class Config(BaseModel):
-    llm_api_key: Optional[str] = Field(default=None, alias="openai_api_key")
-    llm_model: str = Field(default="gpt-4o", alias="openai_model")
+    llm_api_key: Optional[str] = Field(default=None)
+    llm_model: str = Field(default="gpt-4o")
     openai_base_url: Optional[str] = None
     openai_max_tokens: int = 4096
     openai_timeout: int = 300
@@ -90,7 +92,7 @@ class Config(BaseModel):
     def redacted(self) -> Config:
         return self.model_copy(
             update={
-                "openai_api_key": "X" * 10,
+                "llm_api_key": "X" * 10,
             },
             deep=True,
         )
@@ -139,5 +141,11 @@ def get_config(path: str) -> Config:
 
 def get_config_from_str(config_str: str) -> Config:
     config_dict = yaml.safe_load(config_str)
+
+    # translate old open ai values to agnostic values for backwards compatibility
+    if "llm_api_key" not in config_dict and "openai_api_key" in config_dict:
+        config_dict["llm_api_key"] = config_dict["openai_api_key"]
+    if "llm_model" not in config_dict and "openai_model" in config_dict:
+        config_dict["llm_model"] = config_dict["openai_model"]
 
     return Config(**config_dict)

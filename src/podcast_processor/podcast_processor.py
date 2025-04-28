@@ -15,6 +15,7 @@ from app import db, logger
 from app.models import Post, Transcript
 from podcast_processor.audio import clip_segments_with_fade, get_audio_duration_ms
 from podcast_processor.model_output import clean_and_parse_model_output
+from podcast_processor.prompt import transcript_excerpt_for_prompt
 from shared.config import (
     Config,
     GroqWhisperConfig,
@@ -136,6 +137,7 @@ class PodcastProcessor:
 
             duration_ms = get_audio_duration_ms(post.unprocessed_audio_path)
             assert duration_ms is not None
+            post.duration = duration_ms / 1000.0  # Store duration in seconds
 
             merged_ad_segments = self.merge_ad_segments(
                 duration_ms=duration_ms,
@@ -145,7 +147,7 @@ class PodcastProcessor:
                 ),
                 min_ad_segment_separation_seconds=float(
                     self.config.output.min_ad_segement_separation_seconds
-                ),  # pylint: disable=line-too-long
+                ),
             )
             clip_segments_with_fade(
                 in_path=post.unprocessed_audio_path,
@@ -230,20 +232,15 @@ class PodcastProcessor:
                 )
                 continue
 
-            excerpts = [
-                f"[{segment.start}] {segment.text}"
-                for segment in transcript_segments[start:end]
-            ]
-            if start == 0:
-                excerpts.insert(0, "[TRANSCRIPT START]")
-            elif end == len(transcript_segments):
-                excerpts.append("[TRANSCRIPT END]")
-
             self.logger.info(f"Calling {model}")
             user_prompt = user_prompt_template.render(
                 podcast_title=post.title,
                 podcast_topic=post.description,
-                transcript="\n".join(excerpts),
+                transcript=transcript_excerpt_for_prompt(
+                    segments=transcript_segments[start:end],
+                    includes_start=start == 0,
+                    includes_end=end == len(transcript_segments),
+                ),
             )
 
             try:
@@ -346,16 +343,15 @@ class PodcastProcessor:
                         # can this skip result in hung processing?
                         continue
 
-                    if prediction.confidence < self.config.output.min_confidence:
-                        continue
-
-                    ad_segment_starts = prediction.ad_segments
                     ad_segment_starts = [
-                        start
-                        for start in ad_segment_starts
+                        pred.segment_offset
+                        for pred in prediction
                         if (
-                            prompt_start_timestamp <= start <= prompt_end_timestamp
-                            and start in segments_by_start
+                            pred.confidence >= self.config.output.min_confidence
+                            and prompt_start_timestamp
+                            <= pred.segment_offset
+                            <= prompt_end_timestamp
+                            and pred.segment_offset in segments_by_start
                         )
                     ]
 

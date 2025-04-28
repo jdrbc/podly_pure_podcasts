@@ -1,5 +1,5 @@
 # Required openai settings
-openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
+llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # Optional openai settings
 # openai_base_url: http://127.0.0.1:11434/v1
 # openai_timeout: 300
@@ -34,7 +34,12 @@ output:
   min_confidence: 0.8
 
 whisper:
+  # Required whisper settings
   whisper_type: remote
   model: whisper-2
-  base_url: http://localhost/v99
   api_key: this_is_fake
+  # Optional whisper settings
+  # base_url: http://localhost/v99 # Default is the OpenAI Whisper service
+  # language: "en"
+  # timeout_sec: 600 # HTTP timeout in seconds for the Whisper connection
+  # chunksize_mb: 24 # File size in MB for audio chunks uploaded sequentially to Whisper

@@ -1,10 +1,13 @@
-# Required openai settings
-openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
+# Required global setting
+llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
+
+# Optional global setting (default gpt-4o)
+# llm_model: phi3:14b-medium-4k-instruct-q5_K_M
+
 # Optional openai settings
 # openai_base_url: http://127.0.0.1:11434/v1
 # openai_timeout: 300
 # openai_max_tokens: 4096
-# openai_model: phi3:14b-medium-4k-instruct-q5_K_M
 
 # server: http://my.domain.com
 # server_port: 5001
