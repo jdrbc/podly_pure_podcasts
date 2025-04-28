@@ -1,8 +1,10 @@
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
 from openai.types.audio.transcription_segment import TranscriptionSegment
+from pytest_mock import MockerFixture
 
 
 @pytest.mark.skip

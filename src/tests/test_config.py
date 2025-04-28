@@ -130,7 +130,7 @@ def test_anthropic_example_config() -> None:
 
 def test_groq_whisper_example_config() -> None:
     expected_config = Config(
-        openai_api_key="sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX",
+        llm_api_key="sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX",
         output=OutputConfig(
             fade_ms=3000,
             min_ad_segement_separation_seconds=60,
