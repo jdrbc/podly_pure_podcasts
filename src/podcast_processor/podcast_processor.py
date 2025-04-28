@@ -18,6 +18,7 @@ from podcast_processor.model_output import clean_and_parse_model_output
 from podcast_processor.prompt import transcript_excerpt_for_prompt
 from shared.config import (
     Config,
+    GroqWhisperConfig,
     LocalWhisperConfig,
     RemoteWhisperConfig,
     TestWhisperConfig,
@@ -25,8 +26,9 @@ from shared.config import (
 from shared.processing_paths import ProcessingPaths, paths_from_unprocessed_path
 
 from .transcribe import (
+    GroqWhisperTranscriber,
     LocalWhisperTranscriber,
-    RemoteWhisperTranscriber,
+    OpenAIWhisperTranscriber,
     Segment,
     TestWhisperTranscriber,
     Transcriber,
@@ -76,13 +78,15 @@ class PodcastProcessor:
         if isinstance(self.config.whisper, TestWhisperConfig):
             self.transcriber = TestWhisperTranscriber(self.logger)
         elif isinstance(self.config.whisper, RemoteWhisperConfig):
-            self.transcriber = RemoteWhisperTranscriber(
+            self.transcriber = OpenAIWhisperTranscriber(
                 self.logger, self.config.whisper
             )
         elif isinstance(self.config.whisper, LocalWhisperConfig):
             self.transcriber = LocalWhisperTranscriber(
                 self.logger, self.config.whisper.model
             )
+        elif isinstance(self.config.whisper, GroqWhisperConfig):
+            self.transcriber = GroqWhisperTranscriber(self.logger, self.config.whisper)
         else:
             raise ValueError(f"unhandled whisper config {config.whisper}")
 
