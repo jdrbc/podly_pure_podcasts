@@ -11,14 +11,14 @@ from pytest_mock import MockerFixture
 def test_remote_transcribe() -> None:
     # import here instead of the toplevel because torch is not installed properly in CI.
     from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel
-        RemoteWhisperTranscriber,
+        OpenAIWhisperTranscriber,
     )
 
     logger = logging.getLogger("global_logger")
     with open("config/config.yml", "r") as f:
         config = yaml.safe_load(f)
 
-    transcriber = RemoteWhisperTranscriber(logger, config)
+    transcriber = OpenAIWhisperTranscriber(logger, config)
 
     transcription = transcriber.transcribe("file.mp3")
     assert transcription == []
@@ -80,10 +80,10 @@ def test_groq_transcribe(mocker: MockerFixture) -> None:
 def test_offset() -> None:
     # import here instead of the toplevel because torch is not installed properly in CI.
     from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel
-        RemoteWhisperTranscriber,
+        OpenAIWhisperTranscriber,
     )
 
-    assert RemoteWhisperTranscriber.add_offset_to_segments(
+    assert OpenAIWhisperTranscriber.add_offset_to_segments(
         [
             TranscriptionSegment(
                 id=1,

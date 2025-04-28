@@ -92,7 +92,7 @@ class LocalWhisperTranscriber(Transcriber):
         return self.local_seg_to_seg(typed_segments)
 
 
-class RemoteWhisperTranscriber(Transcriber):
+class OpenAIWhisperTranscriber(Transcriber):
 
     def __init__(self, logger: logging.Logger, config: RemoteWhisperConfig):
         self.logger = logger

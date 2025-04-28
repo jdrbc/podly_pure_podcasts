@@ -28,7 +28,7 @@ from shared.processing_paths import ProcessingPaths, paths_from_unprocessed_path
 from .transcribe import (
     GroqWhisperTranscriber,
     LocalWhisperTranscriber,
-    RemoteWhisperTranscriber,
+    OpenAIWhisperTranscriber,
     Segment,
     TestWhisperTranscriber,
     Transcriber,
@@ -78,7 +78,7 @@ class PodcastProcessor:
         if isinstance(self.config.whisper, TestWhisperConfig):
             self.transcriber = TestWhisperTranscriber(self.logger)
         elif isinstance(self.config.whisper, RemoteWhisperConfig):
-            self.transcriber = RemoteWhisperTranscriber(
+            self.transcriber = OpenAIWhisperTranscriber(
                 self.logger, self.config.whisper
             )
         elif isinstance(self.config.whisper, LocalWhisperConfig):
