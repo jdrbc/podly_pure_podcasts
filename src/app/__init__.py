@@ -59,6 +59,10 @@ def create_app() -> Flask:
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db?timeout=90"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+    # Groq's client logs the entire binary input file when set to DEBUG, which we never want to do.
+    groq_logger = logging.getLogger("groq")
+    groq_logger.setLevel(logging.INFO)
+
     db.init_app(app)
     migrate.init_app(app, db)
 

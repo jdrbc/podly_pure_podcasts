@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Any, List
 
 import whisper  # type: ignore[import-untyped]
+from groq import Groq
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
 
 from podcast_processor.audio import split_audio
-from shared.config import RemoteWhisperConfig
+from shared.config import GroqWhisperConfig, RemoteWhisperConfig
 
 
 class Segment(BaseModel):
@@ -21,6 +22,7 @@ class Segment(BaseModel):
 
 
 class Transcriber(ABC):
+
     @abstractmethod
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         pass
@@ -43,6 +45,7 @@ class LocalTranscriptSegment(BaseModel):
 
 
 class TestWhisperTranscriber(Transcriber):
+
     def __init__(self, logger: logging.Logger):
         self.logger = logger
 
@@ -55,6 +58,7 @@ class TestWhisperTranscriber(Transcriber):
 
 
 class LocalWhisperTranscriber(Transcriber):
+
     def __init__(self, logger: logging.Logger, whisper_model: str):
         self.logger = logger
         self.whisper_model = whisper_model
@@ -88,7 +92,8 @@ class LocalWhisperTranscriber(Transcriber):
         return self.local_seg_to_seg(typed_segments)
 
 
-class RemoteWhisperTranscriber(Transcriber):
+class OpenAIWhisperTranscriber(Transcriber):
+
     def __init__(self, logger: logging.Logger, config: RemoteWhisperConfig):
         self.logger = logger
         self.config = config
@@ -161,3 +166,85 @@ class RemoteWhisperTranscriber(Transcriber):
             self.logger.debug(f"Got {len(segments)} segments")
 
             return segments
+
+
+class GroqTranscriptionSegment(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+class GroqWhisperTranscriber(Transcriber):
+
+    def __init__(self, logger: logging.Logger, config: GroqWhisperConfig):
+        self.logger = logger
+        self.config = config
+        self.client = Groq(
+            api_key=config.api_key,
+            max_retries=config.max_retries,
+        )
+
+    def transcribe(self, audio_file_path: str) -> List[Segment]:
+        self.logger.info("Using Groq whisper")
+        audio_chunk_path = audio_file_path + "_parts"
+
+        chunks = split_audio(
+            Path(audio_file_path), Path(audio_chunk_path), 12 * 1024 * 1024
+        )
+
+        all_segments: List[GroqTranscriptionSegment] = []
+
+        for chunk in chunks:
+            chunk_path, offset = chunk
+            segments = self.get_segments_for_chunk(str(chunk_path))
+            all_segments.extend(self.add_offset_to_segments(segments, offset))
+
+        shutil.rmtree(audio_chunk_path)
+        return self.convert_segments(all_segments)
+
+    @staticmethod
+    def convert_segments(segments: List[GroqTranscriptionSegment]) -> List[Segment]:
+        return [
+            Segment(
+                start=seg.start,
+                end=seg.end,
+                text=seg.text,
+            )
+            for seg in segments
+        ]
+
+    @staticmethod
+    def add_offset_to_segments(
+        segments: List[GroqTranscriptionSegment], offset_ms: int
+    ) -> List[GroqTranscriptionSegment]:
+        offset_sec = float(offset_ms) / 1000.0
+        for segment in segments:
+            segment.start += offset_sec
+            segment.end += offset_sec
+
+        return segments
+
+    def get_segments_for_chunk(self, chunk_path: str) -> List[GroqTranscriptionSegment]:
+
+        self.logger.info(f"Transcribing chunk {chunk_path} using groq client")
+        transcription = self.client.audio.transcriptions.create(
+            file=Path(chunk_path),
+            model=self.config.model,
+            response_format="verbose_json",  # Ensure segments are included
+            language=self.config.language,
+        )
+        self.logger.debug("Got transcription from groq client")
+
+        if transcription.segments is None:  # type: ignore [attr-defined]
+            self.logger.warning(f"No segments found in transcription for {chunk_path}")
+            return []
+
+        groq_segments = [
+            GroqTranscriptionSegment(
+                start=seg["start"], end=seg["end"], text=seg["text"]
+            )
+            for seg in transcription.segments  # type: ignore [attr-defined]
+        ]
+
+        self.logger.debug(f"Got {len(groq_segments)} segments")
+        return groq_segments

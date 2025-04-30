@@ -20,7 +20,7 @@ class OutputConfig(BaseModel):
     min_confidence: float
 
 
-WhisperConfigTypes = Literal["remote", "local", "test"]
+WhisperConfigTypes = Literal["remote", "local", "test", "groq"]
 
 
 class TestWhisperConfig(BaseModel):
@@ -37,14 +37,24 @@ class RemoteWhisperConfig(BaseModel):
     chunksize_mb: int = 24
 
 
+class GroqWhisperConfig(BaseModel):
+    whisper_type: Literal["groq"] = "groq"
+    api_key: str
+    language: str = "en"
+    model: str = "whisper-large-v3-turbo"
+    max_retries: int = 3
+    initial_backoff: float = 1.0
+    backoff_factor: float = 2.0
+
+
 class LocalWhisperConfig(BaseModel):
     whisper_type: Literal["local"] = "local"
     model: str = "base"
 
 
 class Config(BaseModel):
-    llm_api_key: Optional[str] = Field(default=None, alias="openai_api_key")
-    llm_model: str = Field(default="gpt-4o", alias="openai_model")
+    llm_api_key: Optional[str] = Field(default=None)
+    llm_model: str = Field(default="gpt-4o")
     openai_base_url: Optional[str] = None
     openai_max_tokens: int = 4096
     openai_timeout: int = 300
@@ -60,11 +70,11 @@ class Config(BaseModel):
     background_update_interval_minute: Optional[int] = None
     job_timeout: int = 10800  # Default to 3 hours if not set
     threads: int = 1
-    whisper: Optional[LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig] = (
-        Field(
-            default=None,
-            discriminator="whisper_type",
-        )
+    whisper: Optional[
+        LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig | GroqWhisperConfig
+    ] = Field(
+        default=None,
+        discriminator="whisper_type",
     )
     remote_whisper: Optional[bool] = Field(
         default=False,
@@ -82,7 +92,7 @@ class Config(BaseModel):
     def redacted(self) -> Config:
         return self.model_copy(
             update={
-                "openai_api_key": "X" * 10,
+                "llm_api_key": "X" * 10,
             },
             deep=True,
         )
@@ -131,5 +141,11 @@ def get_config(path: str) -> Config:
 
 def get_config_from_str(config_str: str) -> Config:
     config_dict = yaml.safe_load(config_str)
+
+    # translate old open ai values to agnostic values for backwards compatibility
+    if "llm_api_key" not in config_dict and "openai_api_key" in config_dict:
+        config_dict["llm_api_key"] = config_dict["openai_api_key"]
+    if "llm_model" not in config_dict and "openai_model" in config_dict:
+        config_dict["llm_model"] = config_dict["openai_model"]
 
     return Config(**config_dict)

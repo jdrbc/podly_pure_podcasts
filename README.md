@@ -24,35 +24,71 @@ Here's how it works:
 - Podly removes the ad segments
 - Podly delivers the ad-free version of the podcast to you
 
-## Usage
-
-- `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
-- Start the server & note the URL.
-  - For example, `192.168.0.2:5001`
-- Open 192.168.0.2:5001 in your web browser
-- Add podcast RSS feeds to the interface
-- Open a podcast app & subscribe to the podly endpoint
-  - For example, `http://localhost:5001/feed/1`
-- Select an episode & download
-- Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 
 ## How To Run
 
-Install ffmpeg
+1. Install ffmpeg
 
 ```shell
 sudo apt install ffmpeg
 ```
 
-Copy `config/config.yml.example` into new file `config/config.yml`. Update `openai_api_key` with your key.
+
+2. Install Python dependencies
 
 ```shell
 pip install pipenv
 pipenv --python 3.11
 pipenv install
+```
+
+3. Set up configuration
+
+```shell
+# Copy example config and edit
+cp config/config.yml.example config/config.yml
+# Edit config.yml and update openai_api_key with your key
+```
+
+4. Start the server
+
+```shell
 pipenv shell
 python src/main.py
 ```
+
+The server will start at http://localhost:5001 by default.
+
+## Usage
+
+Once the server is running:
+
+1. Open http://localhost:5001 in your web browser
+2. Add podcast RSS feeds through the web interface
+3. Open your podcast app and subscribe to the Podly endpoint
+   - For example, `http://localhost:5001/feed/1`
+4. Select an episode & download
+5. Wait patiently 😊 (Transcription takes about 1 minute per 15 minutes of podcast on an M3 MacBook)
+
+## Transcription Options
+
+Podly supports multiple options for audio transcription:
+
+1. **Local Whisper (Default)** - Uses OpenAI's Whisper model running locally on your machine
+
+   - See `config/config.yml.example` for configuration
+   - Slower but doesn't require an external API (~ 1 minute per 15 minutes of podcast on an M3 MacBook)
+
+2. **OpenAI Hosted Whisper** - Uses OpenAI's hosted Whisper service
+
+   - See `config/config_remote_whisper.yml.example` for configuration
+   - Fast and accurate but requires OpenAI API credits
+
+3. **Groq Hosted Whisper** - Uses Groq's hosted Whisper service
+   - See `config/config_groq_whisper.yml.example` for configuration
+   - Fast and cost-effective alternative to OpenAI
+
+To use Groq for transcription, you'll need a Groq API key. Copy the `config/config_groq_whisper.yml.example` to `config/config.yml` and update the `api_key` field with your Groq API key.
 
 ## Remote Setup
 
@@ -130,17 +166,72 @@ pipenv run flask --app ./src/main.py db migrate -m "[change description]"
 
 On next launch the database should update.
 
+## Docker Support
+
+Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA environments.
+
+### Quick Start with Docker
+
+1. Set up your configuration:
+   ```
+   cp config/config.yml.example config/config.yml
+   # Edit config.yml with your settings
+   ```
+
+2. Run Podly with Docker:
+   ```bash
+   # Make the script executable first
+   chmod +x run_podly_docker.sh
+   ./run_podly_docker.sh
+   ```
+
+   This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
+
+### Docker Setup Troubleshooting
+
+If you experience Docker build issues, try the test build option to validate your setup:
+
+```bash
+./run_podly_docker.sh --test-build
+```
+
+### Docker Options
+
+You can use these command-line options with the run script:
+
+```bash
+# Force CPU mode even if GPU is available
+./run_podly_docker.sh --cpu
+
+# Force GPU mode (will fail if no GPU is available)
+./run_podly_docker.sh --gpu
+
+# Only build the Docker image without starting containers
+./run_podly_docker.sh --build
+
+# Test if the Docker build works (helpful for troubleshooting)
+./run_podly_docker.sh --test-build
+```
+
 ## FAQ
 
-Q: What does “whitelisted” mean in the UI?
+Q: What does "whitelisted" mean in the UI?
 
 A: It means an episode is eligible for download and ad removal. By default, new episodes are automatically whitelisted (```automatically_whitelist_new_episodes```), and only a limited number of old episodes are auto-whitelisted (```number_of_episodes_to_whitelist_from_archive_of_new_feed```). This helps control costs by limiting how many episodes are processed. You can adjust these settings in your config.yml for more manual control.
   
 Q: How can I enable whisper GPU acceleration?
 
-A: You must install the CUDA version of PyTorch to the virtual environment.
-  
-```pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118```
+A: There are two ways to enable GPU acceleration:
+
+1. **Using Docker**: 
+   - Use the provided Docker setup with `run_podly_docker.sh` which automatically detects and uses NVIDIA GPUs if available
+   - You can force GPU mode with `./run_podly_docker.sh --gpu` or force CPU mode with `./run_podly_docker.sh --cpu`
+
+2. **In a local environment**:
+   - Install the CUDA version of PyTorch to your virtual environment:
+   ```bash
+   pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+   ```
 
 ## Contributing
 
@@ -169,12 +260,13 @@ pipenv install --dev
 ```
 
 Then, to run the checks,
+
 ```bash
 scripts/ci.sh
 ```
 
-
 This will run all the necessary checks including:
+
 - Type checking with mypy
 - Code formatting checks
 - Unit tests
