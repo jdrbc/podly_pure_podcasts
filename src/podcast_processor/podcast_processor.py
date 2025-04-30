@@ -266,7 +266,9 @@ class PodcastProcessor:
                         f"Failed to get identification for segments {start} to {end}"
                     )
                     with open(identification_path, "w") as f:
-                        f.write(AdSegmentPredictionList([]).model_dump_json())
+                        f.write(
+                            AdSegmentPredictionList(ad_segments=[]).model_dump_json()
+                        )
             finally:
                 if (target_dir / ".in_progress").exists():
                     os.remove(target_dir / ".in_progress")
@@ -350,7 +352,7 @@ class PodcastProcessor:
 
                     ad_segment_starts = [
                         pred.segment_offset
-                        for pred in prediction.root
+                        for pred in prediction.ad_segments
                         if (
                             pred.confidence >= self.config.output.min_confidence
                             and prompt_start_timestamp

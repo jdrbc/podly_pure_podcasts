@@ -21,16 +21,16 @@ def transcript_excerpt_for_prompt(
 
 def generate_system_prompt() -> str:
     valid_non_empty_example = AdSegmentPredictionList(
-        [
+        ad_segments=[
             AdSegmentPrediction(segment_offset=12.34, confidence=0.9),
             AdSegmentPrediction(segment_offset=56.78, confidence=0.8),
         ]
     ).model_dump_json()
 
-    valid_empty_example = AdSegmentPredictionList([]).model_dump_json()
+    valid_empty_example = AdSegmentPredictionList(ad_segments=[]).model_dump_json()
 
     output_for_one_shot_example = AdSegmentPredictionList(
-        [
+        ad_segments=[
             AdSegmentPrediction(segment_offset=59.8, confidence=0.9),
             AdSegmentPrediction(segment_offset=64.8, confidence=0.8),
             AdSegmentPrediction(segment_offset=73.8, confidence=0.9),
