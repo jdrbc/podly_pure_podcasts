@@ -20,7 +20,7 @@ def test_remote_transcribe() -> None:
 
     transcriber = OpenAIWhisperTranscriber(logger, config)
 
-    transcription = transcriber.transcribe("file.mp3")
+    transcription = transcriber.transcribe("file.mp3", language="en")
     assert transcription == []
 
 
@@ -33,7 +33,7 @@ def test_local_transcribe() -> None:
 
     logger = logging.getLogger("global_logger")
     transcriber = LocalWhisperTranscriber(logger, "base")
-    transcription = transcriber.transcribe("src/tests/file.mp3")
+    transcription = transcriber.transcribe("src/tests/file.mp3", language="en")
     assert transcription == []
 
 
