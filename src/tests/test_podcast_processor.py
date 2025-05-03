@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from podcast_processor.model_output import AdSegmentPredictionList
 from shared.config import get_config
 
 
@@ -22,4 +23,4 @@ def test_call_model() -> None:
     resp = processor.call_model(
         config.llm_model, system_prompt="ANSWER ME", user_prompt="who are you?"
     )
-    assert resp == ""
+    assert resp == AdSegmentPredictionList(ad_segments=[])

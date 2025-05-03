@@ -14,7 +14,10 @@ from litellm.types.utils import Choices
 from app import db, logger
 from app.models import Post, Transcript
 from podcast_processor.audio import clip_segments_with_fade, get_audio_duration_ms
-from podcast_processor.model_output import clean_and_parse_model_output
+from podcast_processor.model_output import (
+    AdSegmentPredictionList,
+    clean_and_parse_model_output,
+)
 from podcast_processor.prompt import transcript_excerpt_for_prompt
 from shared.config import (
     Config,
@@ -255,7 +258,7 @@ class PodcastProcessor:
                 )
                 if identification:
                     with open(identification_path, "w") as f:
-                        f.write(identification)
+                        f.write(identification.json())
                     with open(prompt_path, "w") as f:
                         f.write(user_prompt)
                 else:
@@ -263,14 +266,16 @@ class PodcastProcessor:
                         f"Failed to get identification for segments {start} to {end}"
                     )
                     with open(identification_path, "w") as f:
-                        f.write('{"ad_segments": [], "confidence": 0.0}')
+                        f.write(
+                            AdSegmentPredictionList(ad_segments=[]).model_dump_json()
+                        )
             finally:
                 if (target_dir / ".in_progress").exists():
                     os.remove(target_dir / ".in_progress")
 
     def call_model(
         self, model: str, system_prompt: str, user_prompt: str, max_retries: int = 3
-    ) -> Optional[str]:
+    ) -> AdSegmentPredictionList:
         attempt = 0
         last_error = None
 
@@ -287,6 +292,7 @@ class PodcastProcessor:
                     ],
                     max_tokens=self.config.openai_max_tokens,
                     timeout=self.config.openai_timeout,
+                    response_format=AdSegmentPredictionList,
                 )
 
                 response_first_choice = response.choices[0]
@@ -294,7 +300,7 @@ class PodcastProcessor:
                 content = response_first_choice.message.content
                 assert content is not None
 
-                return content
+                return clean_and_parse_model_output(content)
 
             except InternalServerError as e:
                 last_error = e
@@ -313,7 +319,8 @@ class PodcastProcessor:
         self.logger.error(f"Failed to call model after {max_retries} attempts")
         if last_error:
             raise last_error
-        return None
+
+        raise RuntimeError("Maximum retries exceeded")
 
     def get_ad_segments(
         self, segments: List[Segment], classification_path_path: Path
@@ -345,7 +352,7 @@ class PodcastProcessor:
 
                     ad_segment_starts = [
                         pred.segment_offset
-                        for pred in prediction
+                        for pred in prediction.ad_segments
                         if (
                             pred.confidence >= self.config.output.min_confidence
                             and prompt_start_timestamp
