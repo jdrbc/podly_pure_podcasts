@@ -29,7 +29,7 @@ class SchedulerConfig:
     SCHEDULER_JOBSTORES = {
         "default": {
             "type": "sqlalchemy",
-            "url": "sqlite:////app/src/instance/jobs.sqlite",
+            "url": "sqlite:///src/instance/jobs.sqlite",
         }
     }
     SCHEDULER_EXECUTORS = {"default": {"type": "threadpool", "max_workers": 1}}
