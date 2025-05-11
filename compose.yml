@@ -1,21 +1,30 @@
 services:
   server:
     container_name: podly_pure_podcasts
-    command: ${PODLY_COMMAND:-pipenv run python src/main.py}
+    image: podly-app
     volumes:
-      - ./config/config.yml:/app/config/config.yml
+      - ./config:/app/config
       - ./in:/app/in
       - ./processing:/app/processing
-      - ./src/instance/sqlite3.db:/app/src/instance/sqlite3.db
       - ./srv:/app/srv
       - ./src:/app/src
       - ./scripts:/app/scripts
-      - podly_home:/home/appuser
     build:
       context: .
+      args:
+        - BASE_IMAGE=${BASE_IMAGE:-python:3.11-slim}
+        - CUDA_VERSION=${CUDA_VERSION:-12.1}
+        - USE_GPU=${USE_GPU:-false}
     ports:
       - 5001:5001
-
-volumes:
-  podly_home:
-    driver: local
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
+    # restart: unless-stopped
+    # healthcheck:
+    #   test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 10s

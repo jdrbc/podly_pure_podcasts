@@ -1,95 +1,123 @@
 #!/bin/bash
 
 # Colors for output
-GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
-echo -e "${YELLOW}Checking for Docker...${NC}"
+# Central configuration defaults
+CUDA_VERSION="12.1"
+CPU_BASE_IMAGE="python:3.11-slim"
+GPU_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
+
+# Check dependencies
+echo -e "${YELLOW}Checking dependencies...${NC}"
 if ! command -v docker &> /dev/null; then
     echo -e "${RED}Docker not found. Please install Docker first.${NC}"
     exit 1
 fi
 
-echo -e "${YELLOW}Checking for Docker Compose...${NC}"
 if ! docker compose version &> /dev/null; then
-    echo -e "${RED}Docker Compose not found. Please install Docker Compose first.${NC}"
+    echo -e "${RED}Docker Compose not found. Please install Docker Compose V2.${NC}"
     exit 1
 fi
 
 # Default values
 BUILD_ONLY=false
 TEST_BUILD=false
-USE_GPU=false
+FORCE_CPU=false
+FORCE_GPU=false
 
-# Check if NVIDIA GPU is available
+# Detect NVIDIA GPU
+NVIDIA_GPU_AVAILABLE=false
 if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
     NVIDIA_GPU_AVAILABLE=true
-else
-    NVIDIA_GPU_AVAILABLE=false
+    echo -e "${GREEN}NVIDIA GPU detected.${NC}"
 fi
 
 # Parse command line arguments
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --build)
             BUILD_ONLY=true
-            shift
             ;;
         --test-build)
             TEST_BUILD=true
-            shift
             ;;
         --gpu)
-            USE_GPU=true
-            shift
+            FORCE_GPU=true
             ;;
         --cpu)
-            USE_GPU=false
-            shift
+            FORCE_CPU=true
+            ;;
+        --cuda=*)
+            CUDA_VERSION="${1#*=}"
+            GPU_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
             ;;
         *)
-            echo "Unknown argument: $arg"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu]"
+            echo "Unknown argument: $1"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION]"
             exit 1
             ;;
     esac
+    shift
 done
 
-# Determine if GPU should be used
-if [ "$USE_GPU" = false ] && [ "$NVIDIA_GPU_AVAILABLE" = true ] && [ "$TEST_BUILD" = false ]; then
-    echo "NVIDIA GPU detected. To force CPU usage, use --cpu flag."
+# Determine if GPU should be used based on availability and flags
+USE_GPU=false
+if [ "$FORCE_CPU" = true ]; then
+    USE_GPU=false
+    echo -e "${YELLOW}Forcing CPU mode${NC}"
+elif [ "$FORCE_GPU" = true ]; then
+    if [ "$NVIDIA_GPU_AVAILABLE" = false ]; then
+        echo -e "${RED}Warning: GPU requested but no NVIDIA GPU detected. Build may fail.${NC}"
+    fi
     USE_GPU=true
-fi
-
-# Set base image and build arguments
-if [ "$USE_GPU" = true ]; then
-    echo "Building with NVIDIA GPU support..."
-    BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04"
-    DOCKER_RUNTIME="--runtime=nvidia"
+    echo -e "${YELLOW}Forcing GPU mode${NC}"
+elif [ "$NVIDIA_GPU_AVAILABLE" = true ]; then
+    USE_GPU=true
+    echo -e "${YELLOW}Using GPU mode (auto-detected)${NC}"
 else
-    echo "Building without GPU support..."
-    BASE_IMAGE="python:3.11-slim"
-    DOCKER_RUNTIME=""
+    echo -e "${YELLOW}Using CPU mode (no GPU detected)${NC}"
 fi
 
-# Build the Docker image
-docker build --build-arg BASE_IMAGE="$BASE_IMAGE" -t podly-app -f Dockerfile .
-
-# If only building, exit here
-if [ "$BUILD_ONLY" = true ] || [ "$TEST_BUILD" = true ]; then
-    echo "Build completed successfully."
-    exit 0
+# Set base image and CUDA environment
+if [ "$USE_GPU" = true ]; then
+    BASE_IMAGE="$GPU_BASE_IMAGE"
+    CUDA_VISIBLE_DEVICES=0
+else
+    BASE_IMAGE="$CPU_BASE_IMAGE"
+    CUDA_VISIBLE_DEVICES=-1
 fi
 
-# Run the container
-echo "Starting Podly..."
-docker run -it --rm \
-    $DOCKER_RUNTIME \
-    -p 5001:5001 \
-    -v "$(pwd)/config:/app/config" \
-    -v "$(pwd)/in:/app/in" \
-    -v "$(pwd)/processing:/app/processing" \
-    -v "$(pwd)/srv:/app/srv" \
-    podly-app 
+# Ensure directories exist
+mkdir -p config in processing srv scripts
+
+# Get current user's UID and GID
+export PUID=$(id -u)
+export PGID=$(id -g)
+export BASE_IMAGE
+export CUDA_VERSION
+export CUDA_VISIBLE_DEVICES
+export USE_GPU
+
+# Setup Docker Compose configuration
+COMPOSE_FILES="-f compose.yml"
+if [ "$USE_GPU" = true ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f compose.nvidia.yml"
+fi
+
+# Execute appropriate Docker Compose command
+if [ "$BUILD_ONLY" = true ]; then
+    echo -e "${YELLOW}Building container only...${NC}"
+    docker compose $COMPOSE_FILES build
+    echo -e "${GREEN}Build completed successfully.${NC}"
+elif [ "$TEST_BUILD" = true ]; then
+    echo -e "${YELLOW}Testing build with no cache...${NC}"
+    docker compose $COMPOSE_FILES build --no-cache
+    echo -e "${GREEN}Test build completed successfully.${NC}"
+else
+    echo -e "${YELLOW}Starting Podly...${NC}"
+    docker compose $COMPOSE_FILES up
+fi 

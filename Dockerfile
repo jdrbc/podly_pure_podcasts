@@ -4,6 +4,8 @@ FROM ${BASE_IMAGE} AS base
 # Environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ARG CUDA_VERSION=12.1
+ARG USE_GPU=false
 
 WORKDIR /app
 
@@ -13,6 +15,7 @@ RUN if [ -f /etc/debian_version ]; then \
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ffmpeg \
         build-essential \
+        gosu \
         && apt-get clean && \
         rm -rf /var/lib/apt/lists/* ; \
     fi
@@ -21,44 +24,30 @@ RUN if [ -f /etc/debian_version ]; then \
 COPY Pipfile Pipfile.lock ./
 
 # Install pipenv and dependencies
-RUN if [ $(command -v pip3) ]; then \
-        pip3 install --no-cache-dir pipenv && \
-        pipenv install --deploy --system --dev; \
+RUN pip3 install --no-cache-dir pipenv && \
+    pipenv install --deploy --system --dev
+
+# Install PyTorch with CUDA support if using NVIDIA image
+RUN if [ "${USE_GPU}" = "true" ]; then \
+        # Extract CUDA version for PyTorch index URL  
+        CUDA_SHORT=$(echo ${CUDA_VERSION} | sed 's/\.\([0-9]\)$/\1/'); \
+        pip install torch --index-url https://download.pytorch.org/whl/cu${CUDA_SHORT}; \
     else \
-        pip install --no-cache-dir pipenv && \
-        pipenv install --deploy --system --dev; \
+        pip install torch --index-url https://download.pytorch.org/whl/cpu; \
     fi
 
-# Install CUDA-enabled PyTorch if using NVIDIA base
-RUN if echo ${BASE_IMAGE} | grep -q "nvidia"; then \
-        pip install torch --index-url https://download.pytorch.org/whl/cu118; \
-    fi
-
-# Create non-root user
-RUN if getent group appuser > /dev/null 2>&1; then \
-        echo "Group exists"; \
-    else \
-        groupadd -r appuser; \
-    fi && \
-    if id appuser > /dev/null 2>&1; then \
-        echo "User exists"; \
-    else \
-        useradd --no-log-init -r -g appuser -d /home/appuser appuser; \
-    fi && \
+# Create non-root user for running the application
+RUN groupadd -r appuser && \
+    useradd --no-log-init -r -g appuser -d /home/appuser appuser && \
     mkdir -p /home/appuser && \
     chown -R appuser:appuser /home/appuser
 
-# Copy application code
-COPY --chown=appuser:appuser . /app
-RUN mkdir -p /app/config /app/in /app/processing /app/srv /app/src/instance && \
-    touch /app/config/app.log && \
-    chmod 666 /app/config/app.log && \
-    chown -R appuser:appuser /app
-
-USER appuser
-ENV HOME=/home/appuser
+# Copy entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod 755 /docker-entrypoint.sh
 
 EXPOSE 5001
 
-# Run the application
+# Run the application through the entrypoint script
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["python", "-u", "src/main.py"] 

@@ -47,7 +47,7 @@ pipenv install
 ```shell
 # Copy example config and edit
 cp config/config.yml.example config/config.yml
-# Edit config.yml and update openai_api_key with your key
+# Edit config.yml and update llm_api_key with your key
 ```
 
 4. Start the server
