@@ -24,35 +24,71 @@ Here's how it works:
 - Podly removes the ad segments
 - Podly delivers the ad-free version of the podcast to you
 
-## Usage
-
-- `config/config.yml.example` into new file `config/config.yml`. Update `llm_api_key` with your key.
-- Start the server & note the URL.
-  - For example, `192.168.0.2:5001`
-- Open 192.168.0.2:5001 in your web browser
-- Add podcast RSS feeds to the interface
-- Open a podcast app & subscribe to the podly endpoint
-  - For example, `http://localhost:5001/feed/1`
-- Select an episode & download
-- Wait patiently :). Transcription is the slowest part & takes about 1 minute per 15 minutes of podcast on an M3 macbook.
 
 ## How To Run
 
-Install ffmpeg
+1. Install ffmpeg
 
 ```shell
 sudo apt install ffmpeg
 ```
 
-Copy `config/config.yml.example` into new file `config/config.yml`. Update `llm_api_key` with your key.
+
+2. Install Python dependencies
 
 ```shell
 pip install pipenv
 pipenv --python 3.11
 pipenv install
+```
+
+3. Set up configuration
+
+```shell
+# Copy example config and edit
+cp config/config.yml.example config/config.yml
+# Edit config.yml and update openai_api_key with your key
+```
+
+4. Start the server
+
+```shell
 pipenv shell
 python src/main.py
 ```
+
+The server will start at http://localhost:5001 by default.
+
+## Usage
+
+Once the server is running:
+
+1. Open http://localhost:5001 in your web browser
+2. Add podcast RSS feeds through the web interface
+3. Open your podcast app and subscribe to the Podly endpoint
+   - For example, `http://localhost:5001/feed/1`
+4. Select an episode & download
+5. Wait patiently 😊 (Transcription takes about 1 minute per 15 minutes of podcast on an M3 MacBook)
+
+## Transcription Options
+
+Podly supports multiple options for audio transcription:
+
+1. **Local Whisper (Default)** - Uses OpenAI's Whisper model running locally on your machine
+
+   - See `config/config.yml.example` for configuration
+   - Slower but doesn't require an external API (~ 1 minute per 15 minutes of podcast on an M3 MacBook)
+
+2. **OpenAI Hosted Whisper** - Uses OpenAI's hosted Whisper service
+
+   - See `config/config_remote_whisper.yml.example` for configuration
+   - Fast and accurate but requires OpenAI API credits
+
+3. **Groq Hosted Whisper** - Uses Groq's hosted Whisper service
+   - See `config/config_groq_whisper.yml.example` for configuration
+   - Fast and cost-effective alternative to OpenAI
+
+To use Groq for transcription, you'll need a Groq API key. Copy the `config/config_groq_whisper.yml.example` to `config/config.yml` and update the `api_key` field with your Groq API key.
 
 ## Remote Setup
 
@@ -224,12 +260,13 @@ pipenv install --dev
 ```
 
 Then, to run the checks,
+
 ```bash
 scripts/ci.sh
 ```
 
-
 This will run all the necessary checks including:
+
 - Type checking with mypy
 - Code formatting checks
 - Unit tests
