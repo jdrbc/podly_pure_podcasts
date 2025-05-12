@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug - {{ post.feed.title }} - {{ post.title }}</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.5;
+            margin: 20px;
+            color: #333;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin-left: 20px;
+        }
+        .summary-card {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-item {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            display: block;
+            color: #3498db;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        .tabs {
+            margin-bottom: 20px;
+        }
+        .tab-buttons {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 15px;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-weight: bold;
+            color: #7f8c8d;
+        }
+        .tab-button.active {
+            color: #3498db;
+            border-bottom: 3px solid #3498db;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        .status-pending {
+            color: #f39c12;
+        }
+        .status-success {
+            color: #2ecc71;
+        }
+        .status-failed {
+            color: #e74c3c;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            color: white;
+        }
+        .badge-ad {
+            background-color: #e74c3c;
+        }
+        .badge-content {
+            background-color: #2ecc71;
+        }
+        .expand-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #3498db;
+        }
+        .details-row {
+            display: none;
+            background-color: #f8f9fa;
+        }
+        .monospace {
+            font-family: monospace;
+            white-space: pre-wrap;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .navigation {
+            margin-bottom: 20px;
+        }
+        .navigation a {
+            color: #3498db;
+            text-decoration: none;
+            margin-right: 15px;
+        }
+        .navigation a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{{ url_for('main.index') }}">
+            <img src="{{ url_for('static', filename='images/logos/logo_with_text.png') }}" alt="Podly Logo" style="width: 150px" />
+        </a>
+        <h1>Processing Debug - {{ post.title }}</h1>
+    </div>
+
+    <div class="navigation">
+        <a href="{{ url_for('main.index') }}">← Back to Home</a>
+        <a href="{{ url_for('main.post_page', p_guid=post.guid) }}">← Back to Episode Page</a>
+    </div>
+
+    <div class="summary-card">
+        <h2>Episode Information</h2>
+        <p><strong>Feed:</strong> {{ post.feed.title }}</p>
+        <p><strong>Title:</strong> {{ post.title }}</p>
+        <p><strong>Release Date:</strong> {{ post.release_date }}</p>
+        <p><strong>Duration:</strong> 
+            {% if post and post.duration is not none %}
+                {% set hours = (post.duration // 3600) | int %}
+                {% set minutes = ((post.duration % 3600) // 60) | int %}
+                {% set seconds = (post.duration % 60 | round(0)) | int %}
+                {{ (hours > 0 and (hours|string + 'h ') or '') }}{{ minutes }}m {{ seconds }}s
+            {% else %}
+                No duration available
+            {% endif %}
+        </p>
+    </div>
+
+    <h2>Processing Statistics</h2>
+    <div class="stats-grid">
+        <div class="stat-item">
+            <span class="stat-value">{{ stats.total_segments }}</span>
+            <span class="stat-label">Transcript Segments</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value">{{ stats.total_model_calls }}</span>
+            <span class="stat-label">Model Calls</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value">{{ stats.ad_segments_count }}</span>
+            <span class="stat-label">Ad Segments Identified</span>
+        </div>
+        {% for status, count in stats.model_call_statuses.items() %}
+        <div class="stat-item">
+            <span class="stat-value">{{ count }}</span>
+            <span class="stat-label">{{ status|capitalize }} Model Calls</span>
+        </div>
+        {% endfor %}
+        {% for model, count in stats.model_types.items() %}
+        <div class="stat-item">
+            <span class="stat-value">{{ count }}</span>
+            <span class="stat-label">{{ model }} Calls</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="tabs">
+        <div class="tab-buttons">
+            <button class="tab-button active" onclick="openTab(event, 'tab-model-calls')">Model Calls</button>
+            <button class="tab-button" onclick="openTab(event, 'tab-transcript')">Transcript Segments</button>
+            <button class="tab-button" onclick="openTab(event, 'tab-identifications')">Identifications</button>
+        </div>
+
+        <div id="tab-model-calls" class="tab-content active">
+            <h3>Model Calls ({{ model_calls|length }})</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Model</th>
+                        <th>Segment Range</th>
+                        <th>Status</th>
+                        <th>Timestamp</th>
+                        <th>Retry</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for call in model_calls %}
+                    <tr>
+                        <td>{{ call.id }}</td>
+                        <td>{{ call.model_name }}</td>
+                        <td>{{ call.first_segment_sequence_num }}-{{ call.last_segment_sequence_num }}</td>
+                        <td class="status-{{ call.status }}">{{ call.status }}</td>
+                        <td>{{ call.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ call.retry_attempts }}</td>
+                        <td>
+                            <button class="expand-btn" onclick="toggleDetails('call-details-{{ call.id }}')">Details</button>
+                        </td>
+                    </tr>
+                    <tr id="call-details-{{ call.id }}" class="details-row">
+                        <td colspan="7">
+                            <h4>Prompt:</h4>
+                            <div class="monospace">{{ call.prompt }}</div>
+                            {% if call.error_message %}
+                            <h4>Error Message:</h4>
+                            <div class="monospace">{{ call.error_message }}</div>
+                            {% endif %}
+                            {% if call.response %}
+                            <h4>Response:</h4>
+                            <div class="monospace">{{ call.response }}</div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div id="tab-transcript" class="tab-content">
+            <h3>Transcript Segments ({{ transcript_segments|length }})</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Seq #</th>
+                        <th>Time Range</th>
+                        <th>Labels</th>
+                        <th>Text</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for segment in transcript_segments %}
+                    <tr>
+                        <td>{{ segment.sequence_num }}</td>
+                        <td>{{ segment.start_time|round(1) }}s - {{ segment.end_time|round(1) }}s</td>
+                        <td>
+                            {% set ad_identifications = segment.identifications.filter_by(label='ad').all() %}
+                            {% if ad_identifications %}
+                                <span class="badge badge-ad">Ad</span>
+                            {% else %}
+                                <span class="badge badge-content">Content</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ segment.text }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div id="tab-identifications" class="tab-content">
+            <h3>Identifications ({{ identifications|length }})</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Segment ID</th>
+                        <th>Time Range</th>
+                        <th>Label</th>
+                        <th>Confidence</th>
+                        <th>Model Call ID</th>
+                        <th>Text</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for identification in identifications %}
+                    <tr>
+                        <td>{{ identification.id }}</td>
+                        <td>{{ identification.transcript_segment_id }}</td>
+                        <td>
+                            {% set segment = identification.transcript_segment %}
+                            {{ segment.start_time|round(1) }}s - {{ segment.end_time|round(1) }}s
+                        </td>
+                        <td>
+                            <span class="badge badge-{{ identification.label }}">{{ identification.label }}</span>
+                        </td>
+                        <td>{{ identification.confidence|round(2) if identification.confidence else 'N/A' }}</td>
+                        <td>{{ identification.model_call_id }}</td>
+                        <td>{{ identification.transcript_segment.text }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function openTab(evt, tabId) {
+            // Hide all tab content
+            const tabContents = document.getElementsByClassName("tab-content");
+            for (let i = 0; i < tabContents.length; i++) {
+                tabContents[i].classList.remove("active");
+            }
+
+            // Remove active class from all tab buttons
+            const tabButtons = document.getElementsByClassName("tab-button");
+            for (let i = 0; i < tabButtons.length; i++) {
+                tabButtons[i].classList.remove("active");
+            }
+
+            // Show the selected tab content and mark button as active
+            document.getElementById(tabId).classList.add("active");
+            evt.currentTarget.classList.add("active");
+        }
+
+        function toggleDetails(detailsId) {
+            const detailsRow = document.getElementById(detailsId);
+            detailsRow.style.display = detailsRow.style.display === "table-row" ? "none" : "table-row";
+        }
+    </script>
+</body>
+</html> 

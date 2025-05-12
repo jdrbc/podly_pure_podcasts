@@ -5,7 +5,6 @@ services:
     volumes:
       - ./config:/app/config
       - ./in:/app/in
-      - ./processing:/app/processing
       - ./srv:/app/srv
       - ./src:/app/src
       - ./scripts:/app/scripts

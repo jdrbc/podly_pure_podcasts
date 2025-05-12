@@ -2,31 +2,26 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-PROCESSING_DIR: str = "processing"
-
 
 @dataclass
 class ProcessingPaths:
     post_processed_audio_path: Path
-    audio_processing_dir: Path
-    classification_dir: Path
 
 
 def paths_from_unprocessed_path(
     unprocessed_path: str, feed_title: str
 ) -> ProcessingPaths:
     unprocessed_filename = Path(unprocessed_path).name
-    sanitized_feed_title = re.sub(r"[^a-zA-Z0-9\s]", "", feed_title)
-
-    audio_processing_dir = (
-        Path(PROCESSING_DIR) / sanitized_feed_title / unprocessed_filename
-    )
-    classification_dir = audio_processing_dir / "classification"
+    # Sanitize feed_title to prevent illegal characters in paths
+    # Keep spaces, alphanumeric. Remove others.
+    sanitized_feed_title = re.sub(r"[^a-zA-Z0-9\s_.-]", "", feed_title).strip()
+    # Remove any trailing dots that might result from sanitization
+    sanitized_feed_title = sanitized_feed_title.rstrip(".")
+    # Replace spaces with underscores for friendlier directory names
+    sanitized_feed_title = re.sub(r"\s+", "_", sanitized_feed_title)
 
     return ProcessingPaths(
         post_processed_audio_path=Path("srv")
         / sanitized_feed_title
         / unprocessed_filename,
-        audio_processing_dir=audio_processing_dir,
-        classification_dir=classification_dir,
     )

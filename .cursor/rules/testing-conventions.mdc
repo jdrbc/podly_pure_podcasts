@@ -1,0 +1,52 @@
+---
+description: Writing tests
+globs: 
+alwaysApply: false
+---
+# Testing Conventions
+
+This document describes testing conventions used in the Podly project.
+
+## Fixtures and Dependency Injection
+
+The project uses pytest fixtures for dependency injection and test setup. Common fixtures are defined in [src/tests/conftest.py](mdc:src/tests/conftest.py).
+
+Key fixtures include:
+- `app` - Flask application context for testing
+- `test_config` - Configuration loaded from config.yml
+- `mock_db_session` - Mock database session
+- Mock classes for core components (TranscriptionManager, AdClassifier, etc.)
+
+## SQLAlchemy Model Mocking
+
+When testing code that uses SQLAlchemy models, prefer creating custom mock classes over using `MagicMock(spec=ModelClass)` to avoid Flask context issues:
+
+```python
+# Example from test_podcast_downloader.py
+class MockPost:
+    """A mock Post class that doesn't require Flask context."""
+    def __init__(self, id=1, title="Test Episode", download_url="https://example.com/podcast.mp3"):
+        self.id = id
+        self.title = title
+        self.download_url = download_url
+```
+
+See [src/tests/test_podcast_downloader.py](mdc:src/tests/test_podcast_downloader.py) for a complete example.
+
+## Dependency Injection
+
+Prefer injecting dependencies via the contstructor rather than patching. See [src/tests/test_podcast_processor.py](mdc:src/tests/test_podcast_processor.py) for examples of:
+- Creating test fixtures with mock dependencies
+- Testing error handling with failing components
+- Using Flask app context when needed
+
+## Improving Coverage
+
+When writing tests to improve coverage:
+1. Focus on one module at a time
+2. Create mock objects for dependencies
+3. Test successful and error paths 
+4. Use `monkeypatch` to replace functions that access external resources
+5. Use `tmp_path` fixture for file operations
+
+See [src/tests/test_feeds.py](mdc:src/tests/test_feeds.py) for comprehensive examples of these patterns.

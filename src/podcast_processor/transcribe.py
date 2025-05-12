@@ -23,6 +23,11 @@ class Segment(BaseModel):
 
 class Transcriber(ABC):
 
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        pass
+
     @abstractmethod
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         pass
@@ -49,6 +54,10 @@ class TestWhisperTranscriber(Transcriber):
     def __init__(self, logger: logging.Logger):
         self.logger = logger
 
+    @property
+    def model_name(self) -> str:
+        return "test_whisper"
+
     def transcribe(self, _: str) -> List[Segment]:
         self.logger.info("Using test whisper")
         return [
@@ -62,6 +71,10 @@ class LocalWhisperTranscriber(Transcriber):
     def __init__(self, logger: logging.Logger, whisper_model: str):
         self.logger = logger
         self.whisper_model = whisper_model
+
+    @property
+    def model_name(self) -> str:
+        return f"local_{self.whisper_model}"
 
     @staticmethod
     def convert_to_pydantic(
@@ -103,6 +116,10 @@ class OpenAIWhisperTranscriber(Transcriber):
             api_key=config.api_key,
             timeout=config.timeout_sec,
         )
+
+    @property
+    def model_name(self) -> str:
+        return self.config.model  # e.g. "whisper-1"
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using remote whisper")
@@ -183,6 +200,10 @@ class GroqWhisperTranscriber(Transcriber):
             api_key=config.api_key,
             max_retries=config.max_retries,
         )
+
+    @property
+    def model_name(self) -> str:
+        return f"groq_{self.config.model}"
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using Groq whisper")

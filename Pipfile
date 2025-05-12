@@ -32,6 +32,7 @@ bleach = "*"
 types-bleach = "*"
 groq = "*"
 async_timeout = "*"
+pytest-cov = "*"
 
 [dev-packages]
 black = "*"

@@ -89,19 +89,26 @@
 			</td>
         </tr>
         <tr>
+            <td>Debug</td>
+            <td>
+                <a href="{{ url_for('main.post_debug', p_guid=post.guid) }}" target="_blank">View Processing Debug Info</a>
+            </td>
+        </tr>
+        <tr>
             <td>Transcript</td>
 			<td>
 				<style>
 					.transcript p {
 						margin: 5px 0;
 					}
+					.ad-segment {
+						background-color: #ffeeee;
+						border-left: 3px solid red;
+						padding-left: 5px;
+					}
 				</style>
 				<div class="transcript">
-					{% if post.transcript %}
-						{{ post.transcript.render_segments_as_html() | safe }}
-					{% else %}
-						None
-					{% endif %}
+					{{ transcript_html | safe }}
 				</div>
 			</td>
         </tr>
