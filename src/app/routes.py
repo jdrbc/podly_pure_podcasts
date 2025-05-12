@@ -407,7 +407,7 @@ def get_feed_by_alt_or_url(feed_alt_or_url: str) -> flask.Response:
 
 
 @main_bp.route("/post/<string:p_guid>/json", methods=["GET"])
-def api_post_details(p_guid: str) -> flask.Response:
+def get_post_json(p_guid: str) -> flask.Response:
     logger.info(f"API request for post details with GUID: {p_guid}")
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
