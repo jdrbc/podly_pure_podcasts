@@ -92,7 +92,7 @@ else
 fi
 
 # Ensure directories exist
-mkdir -p config in processing srv scripts
+mkdir -p config in srv scripts
 
 # Get current user's UID and GID
 export PUID=$(id -u)
