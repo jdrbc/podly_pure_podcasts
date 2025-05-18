@@ -1,12 +1,10 @@
 from pathlib import Path
 from typing import Optional, cast
 
-from app import config, db, logger
+from app import db, logger
 from app.models import Post
-from podcast_processor.podcast_processor import (
-    PodcastProcessor,
-    get_post_processed_audio_path,
-)
+from app.processor import get_processor
+from podcast_processor.podcast_processor import get_post_processed_audio_path
 from shared.podcast_downloader import (
     download_episode,
     get_and_make_download_path,
@@ -142,8 +140,7 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
         else:
             logger.info(f"Processing post: {post.title}")
             # Assume 'config' is imported from your configuration module.
-            processor = PodcastProcessor(config)
-            output_path = processor.process(post, blocking)
+            output_path = get_processor().process(post, blocking)
             if output_path is None:
                 raise PostException("Processing failed")
             post.processed_audio_path = output_path
@@ -151,6 +148,12 @@ def download_and_process_post(p_guid: str, blocking: bool = True) -> Optional[st
 
     logger.info("Post already downloaded and validated")
     return cast(Optional[str], post.processed_audio_path)
+
+
+def process_post(post: Post, blocking: bool = False) -> str | None:
+    """Process a post and return the path to the processed audio file."""
+    output_path = get_processor().process(post, blocking)
+    return output_path
 
 
 class PostException(Exception):

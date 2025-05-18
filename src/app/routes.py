@@ -14,8 +14,8 @@ from app import config, db, logger, scheduler
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.jobs import run_refresh_feed
 from app.models import Feed, Identification, ModelCall, Post, TranscriptSegment
+from app.processor import get_processor
 from app.utils.renderers import render_transcript_html
-from podcast_processor.podcast_processor import PodcastProcessor
 from shared.podcast_downloader import download_episode
 
 main_bp = Blueprint("main", __name__)
@@ -90,9 +90,6 @@ def set_whitelist(p_guid: str, val: str) -> flask.Response:
     return index()
 
 
-processor = PodcastProcessor(config)  # pre-initialize here rather than each post
-
-
 def download_and_process(post: Post, app: Flask) -> Dict[str, Any]:
     """
     Downloads and processes a single podcast episode.
@@ -131,7 +128,7 @@ def download_and_process(post: Post, app: Flask) -> Dict[str, Any]:
             post_in_thread.unprocessed_audio_path = download_path
             thread_session.commit()
 
-            output_path = processor.process(post_in_thread, blocking=True)
+            output_path = get_processor().process(post_in_thread, blocking=True)
             if output_path is None:
                 logger.error(
                     f"Failed to process post: {post_in_thread.title} (ID: {post_in_thread.id})"
