@@ -16,8 +16,6 @@ logger = logging.getLogger("global_logger")
 
 
 def setup_dirs() -> None:
-    if not os.path.exists("processing"):
-        os.makedirs("processing")
     if not os.path.exists("in"):
         os.makedirs("in")
     if not os.path.exists("srv"):

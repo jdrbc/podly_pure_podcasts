@@ -32,5 +32,4 @@ This project creates ad-free RSS feeds for podcasts using OpenAI's Whisper for t
   - podcast_processor/: Core podcast processing logic
   - shared/: Shared utilities
 - config/: Configuration files
-- processing/: Runtime processing directory
 - in/: Input files directory

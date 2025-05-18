@@ -16,6 +16,7 @@ disable=
     W0621, # redefined-outer-name
     W0212, # protected-access
     W0613, # Unused argument
+    C0415, # Import outside toplevel
     W0622,
     R0902
 
