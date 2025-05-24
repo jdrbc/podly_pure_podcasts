@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, List
 
-import whisper  # type: ignore[import-untyped]
 from groq import Groq
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
@@ -87,6 +86,15 @@ class LocalWhisperTranscriber(Transcriber):
         return [seg.to_segment() for seg in local_segments]
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
+        # Import whisper only when needed to avoid CUDA dependencies during module import
+        try:
+            import whisper  # type: ignore[import-untyped]
+        except ImportError as e:
+            self.logger.error(f"Failed to import whisper: {e}")
+            raise ImportError(
+                "whisper library is required for LocalWhisperTranscriber"
+            ) from e
+
         self.logger.info("Using local whisper")
         models = whisper.available_models()
         self.logger.info(f"Available models: {models}")

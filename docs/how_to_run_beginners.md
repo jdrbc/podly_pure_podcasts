@@ -12,15 +12,14 @@ Open the AI chat in the IDE. Enable 'Agent' mode if available, which will allow 
 
 Paste the one of the prompts below into the chat box.
 
-If you don't have git installed or the repo downloaded:
+If you don't have the repo downloaded:
 ```
 Help me install git, and run podly https://github.com/jdrbc/podly_pure_podcasts 
 After the project is cloned, follow the 'podly_pure_podcasts/docs/how_to_run_beginners.md' guide to run podly.
-Review this project, follow this guide and start podly on my computer. 
 Be sure to check if a dependency is already installed before downloading.
 We recommend docker because installing ffmpeg & local whisper can be difficult.
 The docker image have both ffmpeg & local whisper preconfigured.
-Podly works with many different LLMs, it does not need to work with open-ai.
+Podly works with many different LLMs, it does not require an open-ai key.
 Check your work by retrieving the index page at the end.
 ```
 

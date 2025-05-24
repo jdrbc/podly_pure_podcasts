@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 
 from flask import Flask
 from flask_apscheduler import APScheduler  # type: ignore
@@ -10,7 +11,12 @@ from flask_sqlalchemy import SQLAlchemy
 from app.logger import setup_logger
 from shared.config import get_config
 
-config = get_config("config/config.yml")
+is_test = "pytest" in sys.modules
+config = (
+    get_config("config/config.yml")
+    if not is_test
+    else get_config("config/config_test.yml")
+)
 setup_logger("global_logger", "config/app.log")
 logger = logging.getLogger("global_logger")
 

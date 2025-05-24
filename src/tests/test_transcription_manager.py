@@ -46,7 +46,7 @@ def app() -> Generator[Flask, None, None]:
 
 @pytest.fixture
 def test_config() -> Config:
-    config = get_config("config/config.yml")
+    config = get_config("config/config_test.yml")
     # Override whisper config to use test mode
     config.whisper = TestWhisperConfig()
     return config

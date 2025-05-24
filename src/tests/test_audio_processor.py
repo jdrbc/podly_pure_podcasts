@@ -66,7 +66,7 @@ def test_get_ad_segments(app: Flask) -> None:
 
         # Create processor with mocks
         test_processor = AudioProcessor(
-            config=get_config("config/config.yml"),
+            config=get_config("config/config_test.yml"),
             identification_query=mock_identification_query,
         )
 

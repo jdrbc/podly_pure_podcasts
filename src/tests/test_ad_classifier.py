@@ -28,7 +28,7 @@ def app() -> Generator[Flask, None, None]:
 
 @pytest.fixture
 def test_config() -> Config:
-    return get_config("config/config.yml")
+    return get_config("config/config_test.yml")
 
 
 @pytest.fixture
