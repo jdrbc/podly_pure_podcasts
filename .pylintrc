@@ -9,6 +9,22 @@ disable=
     W1203, # logging-fstring-interpolation
     W1514, # using-constant-test
     E0401, # import-error
+    C0301, # line-too-long
+
+[MASTER:src/tests/*.py]
+disable=
+    W0621, # redefined-outer-name
+    W0212, # protected-access
+    W0613, # Unused argument
+    C0415, # Import outside toplevel
+    W0622,
+    R0902
+
+
+[MASTER:scripts/*.py]
+disable=
+    R0917, 
+    W0718
 
 
 [SIMILARITIES]

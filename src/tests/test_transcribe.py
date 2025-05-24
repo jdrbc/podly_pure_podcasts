@@ -15,7 +15,7 @@ def test_remote_transcribe() -> None:
     )
 
     logger = logging.getLogger("global_logger")
-    with open("config/config.yml", "r") as f:
+    with open("config/config_test.yml", "r") as f:
         config = yaml.safe_load(f)
 
     transcriber = OpenAIWhisperTranscriber(logger, config)

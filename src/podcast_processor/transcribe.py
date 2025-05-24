@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, List
 
-import whisper  # type: ignore[import-untyped]
 from groq import Groq
 from openai import OpenAI
 from openai.types.audio.transcription_segment import TranscriptionSegment
@@ -22,6 +21,11 @@ class Segment(BaseModel):
 
 
 class Transcriber(ABC):
+
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        pass
 
     @abstractmethod
     def transcribe(self, audio_file_path: str) -> List[Segment]:
@@ -49,6 +53,10 @@ class TestWhisperTranscriber(Transcriber):
     def __init__(self, logger: logging.Logger):
         self.logger = logger
 
+    @property
+    def model_name(self) -> str:
+        return "test_whisper"
+
     def transcribe(self, _: str) -> List[Segment]:
         self.logger.info("Using test whisper")
         return [
@@ -63,6 +71,10 @@ class LocalWhisperTranscriber(Transcriber):
         self.logger = logger
         self.whisper_model = whisper_model
 
+    @property
+    def model_name(self) -> str:
+        return f"local_{self.whisper_model}"
+
     @staticmethod
     def convert_to_pydantic(
         transcript_data: List[Any],
@@ -74,6 +86,15 @@ class LocalWhisperTranscriber(Transcriber):
         return [seg.to_segment() for seg in local_segments]
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
+        # Import whisper only when needed to avoid CUDA dependencies during module import
+        try:
+            import whisper  # type: ignore[import-untyped]
+        except ImportError as e:
+            self.logger.error(f"Failed to import whisper: {e}")
+            raise ImportError(
+                "whisper library is required for LocalWhisperTranscriber"
+            ) from e
+
         self.logger.info("Using local whisper")
         models = whisper.available_models()
         self.logger.info(f"Available models: {models}")
@@ -103,6 +124,10 @@ class OpenAIWhisperTranscriber(Transcriber):
             api_key=config.api_key,
             timeout=config.timeout_sec,
         )
+
+    @property
+    def model_name(self) -> str:
+        return self.config.model  # e.g. "whisper-1"
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using remote whisper")
@@ -183,6 +208,10 @@ class GroqWhisperTranscriber(Transcriber):
             api_key=config.api_key,
             max_retries=config.max_retries,
         )
+
+    @property
+    def model_name(self) -> str:
+        return f"groq_{self.config.model}"
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
         self.logger.info("Using Groq whisper")
