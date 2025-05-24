@@ -6,6 +6,7 @@ from app import config, db, logger, scheduler
 from app.feeds import refresh_feed
 from app.models import Feed, Post
 from app.posts import download_and_process_post, remove_associated_files
+from app.processor import get_processor
 from app.timeout_decorator import TimeoutException, timeout_decorator
 
 
@@ -35,10 +36,29 @@ def process_post(post: Post) -> None:
             # (resolves partial processes getting stuck)
             remove_associated_files(post)
 
-            download_and_process_post(post.guid, blocking=False)
+            download_and_process_post(post.guid)
             logger.info(f"Post {post.title} (ID: {post.id}) processed successfully.")
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error(f"Error processing post {post.title} (ID: {post.id}): {e}")
+
+
+@timeout_decorator(config.job_timeout)
+def process_episode_async(post_guid: str) -> None:
+    """Process a single episode with status tracking using existing PodcastProcessor."""
+    with scheduler.app.app_context():
+        try:
+            # Get the post
+            post = Post.query.filter_by(guid=post_guid).first()
+            if not post:
+                logger.error(f"Post with GUID {post_guid} not found")
+                return
+
+            processor = get_processor()
+            processor.process(post)
+
+        except Exception as e:
+            # Processor handles its own job status updates, but catch any unexpected errors
+            logger.error(f"Unexpected error processing {post_guid}: {e}")
 
 
 def refresh_all_feeds() -> None:

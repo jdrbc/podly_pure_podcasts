@@ -15,22 +15,30 @@ Paste the one of the prompts below into the chat box.
 If you don't have the repo downloaded:
 ```
 Help me install git, and run podly https://github.com/jdrbc/podly_pure_podcasts 
-After the project is cloned, follow the 'podly_pure_podcasts/docs/how_to_run_beginners.md' guide to run podly.
+After the project is cloned, follow the 'podly_pure_podcasts/docs/how_to_run_beginners.md' guide to run podly. Briefly, help me:
+- install docker & docker compose
+- get an OpenAI API key, and configure config/config.yml
+- run the `./run-podly-docker.sh --build` and then `./run-podly-docker.sh -d` scripts
 Be sure to check if a dependency is already installed before downloading.
 We recommend docker because installing ffmpeg & local whisper can be difficult.
 The docker image have both ffmpeg & local whisper preconfigured.
+Help me setup config/config.yml
 Podly works with many different LLMs, it does not require an open-ai key.
-Check your work by retrieving the index page at the end.
+Check your work by retrieving the index page from localhost:5001 at the end.
 ```
 
-If you do have the repo pulled:
+If you do have the repo pulled, open this file and prompt:
 ```
 Review this project, follow this guide and start podly on my computer. 
+Briefly, help me:
+- install docker & docker compose
+- get an OpenAI API key, and configure config/config.yml
+- run the `./run-podly-docker.sh --build` and then `./run-podly-docker.sh -d` scripts
 Be sure to check if a dependency is already installed before downloading.
 We recommend docker because installing ffmpeg & local whisper can be difficult.
 The docker image have both ffmpeg & local whisper preconfigured.
 Podly works with many different LLMs, it does not need to work with open-ai.
-Check your work by retrieving the index page at the end.
+Check your work by retrieving the index page from localhost:5001 at the end.
 ```
 
 Follow along as the agent sets up Podly for you!

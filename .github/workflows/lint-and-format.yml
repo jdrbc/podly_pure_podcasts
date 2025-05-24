@@ -35,12 +35,13 @@ jobs:
           pipenv run mypy .
           --exclude 'migrations'
           --exclude 'build'
+          --exclude 'scripts'
           --exclude 'src/tests'
           --exclude 'src/tests/test_routes.py'
           --exclude 'src/app/routes.py'
 
       - name: Run pylint
-        run: pipenv run pylint --ignore=migrations .
+        run: pipenv run pylint .
 
       - name: Run black
         run: pipenv run black --check .

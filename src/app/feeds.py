@@ -8,7 +8,7 @@ from flask import url_for
 
 from app import config, db, logger
 from app.models import Feed, Post
-from shared.podcast_downloader import find_audio_link
+from podcast_processor.podcast_downloader import find_audio_link
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
@@ -119,13 +119,13 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     server_prefix = config.server if config.server is not None else ""
 
     audio_url = server_prefix + url_for(
-        "main.download_post",
+        "api.api_download_post",
         p_guid=post.guid,
         _external=config.server is None,
     )
 
     post_details_url = server_prefix + url_for(
-        "main.post_page",
+        "api.get_post_json",
         p_guid=post.guid,
         _external=config.server is None,
     )
@@ -156,7 +156,7 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
-    link = url_for("main.get_feed", f_id=feed.id, _external=True)
+    link = url_for("feed.get_feed", f_id=feed.id, _external=True)
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
         link=link,
@@ -170,6 +170,32 @@ def generate_feed_xml(feed: Feed) -> Any:
 
 
 def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
+    # Extract episode image URL, fallback to feed image
+    episode_image_url = None
+
+    # Try to get episode-specific image from various RSS fields
+    if hasattr(entry, "image") and entry.image:
+        if isinstance(entry.image, dict) and "href" in entry.image:
+            episode_image_url = entry.image["href"]
+        elif isinstance(entry.image, str):
+            episode_image_url = entry.image
+
+    # Try iTunes image tag
+    if not episode_image_url and hasattr(entry, "itunes_image"):
+        if isinstance(entry.itunes_image, dict) and "href" in entry.itunes_image:
+            episode_image_url = entry.itunes_image["href"]
+        elif isinstance(entry.itunes_image, str):
+            episode_image_url = entry.itunes_image
+
+    # Try media:thumbnail or media:content
+    if not episode_image_url and hasattr(entry, "media_thumbnail"):
+        if entry.media_thumbnail and len(entry.media_thumbnail) > 0:
+            episode_image_url = entry.media_thumbnail[0].get("url")
+
+    # Fallback to feed image if no episode-specific image found
+    if not episode_image_url:
+        episode_image_url = feed.image_url
+
     return Post(
         feed_id=feed.id,
         guid=get_guid(entry),
@@ -182,6 +208,7 @@ def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
             else None
         ),
         duration=get_duration(entry),
+        image_url=episode_image_url,
     )
 
 

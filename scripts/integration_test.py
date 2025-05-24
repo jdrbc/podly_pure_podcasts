@@ -205,21 +205,67 @@ def trigger_and_await_processing(p_guid: str) -> bool:
             "This may take several minutes as the episode is downloaded and processed..."
         )
 
-        # Use a longer timeout for this request
-        response = requests.get(
-            f"{BASE_URL}/post/{p_guid}.mp3",
-            timeout=PROCESSING_TIMEOUT,
-            stream=True,  # Use streaming to avoid loading the entire MP3 into memory
+        # First, start the processing job
+        response = requests.post(
+            f"{BASE_URL}/api/posts/{p_guid}/process",
+            timeout=REQUEST_TIMEOUT,
         )
 
-        # Close the response to prevent memory issues
-        response.close()
+        if response.status_code not in [200, 201, 202]:
+            print(f"Failed to start processing. Status code: {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
 
-        if response.status_code == 200:
-            print(f"Successfully processed episode with GUID: {p_guid}")
+        response_data = response.json()
+        if response_data.get("status") == "completed":
+            print(f"Episode was already processed: {p_guid}")
             return True
-        print(f"Failed to process episode. Status code: {response.status_code}")
-        print(f"Response: {response.text[:1000]}")  # Show first 1000 chars of response
+        elif response_data.get("status") != "started":
+            print(f"Unexpected response when starting processing: {response_data}")
+            return False
+
+        print("Processing started, polling for completion...")
+
+        # Poll for completion
+        import time
+
+        max_wait_time = PROCESSING_TIMEOUT
+        poll_interval = 10  # seconds
+        elapsed_time = 0
+
+        while elapsed_time < max_wait_time:
+            time.sleep(poll_interval)
+            elapsed_time += poll_interval
+
+            # Check status
+            status_response = requests.get(
+                f"{BASE_URL}/api/posts/{p_guid}/status",
+                timeout=REQUEST_TIMEOUT,
+            )
+
+            if status_response.status_code != 200:
+                print(
+                    f"Failed to check status. Status code: {status_response.status_code}"
+                )
+                continue
+
+            status_data = status_response.json()
+            status = status_data.get("status")
+            step_name = status_data.get("step_name", "Unknown")
+
+            print(f"Processing status: {status} - {step_name}")
+
+            if status == "completed":
+                print(f"Successfully processed episode with GUID: {p_guid}")
+                return True
+            elif status == "error":
+                error_msg = status_data.get("error", "Unknown error")
+                print(f"Processing failed with error: {error_msg}")
+                return False
+
+        print(
+            f"Timeout occurred while waiting for episode processing (timeout: {PROCESSING_TIMEOUT}s)."
+        )
         return False
 
     except requests.exceptions.Timeout:
@@ -251,7 +297,7 @@ def download_audio_files(p_guid: str) -> Tuple[str, str]:
     print(f"Downloading original unprocessed audio file for episode {p_guid}...")
     try:
         response = requests.get(
-            f"{BASE_URL}/post/{p_guid}/original.mp3",
+            f"{BASE_URL}/api/posts/{p_guid}/download/original",
             timeout=REQUEST_TIMEOUT,
             stream=True,
         )
@@ -275,7 +321,9 @@ def download_audio_files(p_guid: str) -> Tuple[str, str]:
     print(f"Downloading processed audio file for episode {p_guid}...")
     try:
         response = requests.get(
-            f"{BASE_URL}/post/{p_guid}.mp3", timeout=REQUEST_TIMEOUT, stream=True
+            f"{BASE_URL}/api/posts/{p_guid}/download",
+            timeout=REQUEST_TIMEOUT,
+            stream=True,
         )
 
         if response.status_code != 200:
@@ -347,6 +395,24 @@ def get_post_details(p_guid: str) -> Dict[str, Any]:
     )
 
 
+def whitelist_episode(p_guid: str) -> None:
+    """
+    Whitelists an episode via the API.
+
+    Args:
+        p_guid: The episode GUID to whitelist.
+    """
+    api_request(
+        method="post",
+        endpoint=f"/api/posts/{p_guid}/whitelist",
+        json={"whitelisted": True},
+        success_message=f"Successfully whitelisted episode with GUID: {p_guid}",
+        error_message=f"Error whitelisting episode with GUID: {p_guid}",
+        process_response=lambda r: None,
+        expected_status_codes=[200, 204],
+    )
+
+
 if __name__ == "__main__":
     print("Starting Integration Test - Phase 1-7 (API-driven)...")
 
@@ -389,6 +455,10 @@ if __name__ == "__main__":
     print("\nStep 4: Identify latest episode GUID...")
     latest_episode_guid = get_latest_episode_guid(feed_to_process_id)
     print(f"Successfully identified latest episode GUID: {latest_episode_guid}")
+
+    # Step 4.5: Whitelist the episode
+    print("\nStep 4.5: Whitelist the episode...")
+    whitelist_episode(latest_episode_guid)
 
     # Step 5: Trigger processing and await completion
     print("\nStep 5: Trigger processing and await completion...")

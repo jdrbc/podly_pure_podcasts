@@ -241,8 +241,8 @@ def test_add_feed(mock_post_class, mock_feed_data, mock_db_session):
 def test_feed_item(mock_url_for, mock_post):
     # Mock the url_for function
     mock_url_for.side_effect = [
-        "/download/test-guid",  # For download_post URL
-        "/post/test-guid",  # For post_page URL
+        "/api/posts/test-guid/download",  # For download_post URL
+        "/api/posts/test-guid",  # For post_page URL
     ]
 
     # Mock config.server
@@ -257,7 +257,7 @@ def test_feed_item(mock_url_for, mock_post):
     assert result.guid == mock_post.guid
 
     # Check enclosure
-    assert result.enclosure.url == "/download/test-guid"
+    assert result.enclosure.url == "/api/posts/test-guid/download"
     assert result.enclosure.type == "audio/mpeg"
     assert result.enclosure.length == mock_post._audio_len_bytes
 

@@ -1,0 +1,90 @@
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+#root {
+  height: 100vh !important;
+  overflow: hidden !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Audio Player Styles */
+.audio-player-progress {
+  transition: all 0.1s ease;
+}
+
+.audio-player-progress:hover {
+  height: 6px;
+}
+
+.audio-player-progress-thumb {
+  transition: all 0.2s ease;
+  transform: scale(0);
+}
+
+.audio-player-progress:hover .audio-player-progress-thumb {
+  transform: scale(1);
+}
+
+.audio-player-volume-slider {
+  transition: all 0.2s ease;
+}
+
+/* Custom scrollbar for better UX */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}

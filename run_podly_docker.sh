@@ -29,6 +29,7 @@ TEST_BUILD=false
 FORCE_CPU=false
 FORCE_GPU=false
 DETACHED=false
+DEV_MODE=false
 
 # Detect NVIDIA GPU
 NVIDIA_GPU_AVAILABLE=false
@@ -59,9 +60,12 @@ while [[ $# -gt 0 ]]; do
         -d|--detach)
             DETACHED=true
             ;;
+        --dev)
+            DEV_MODE=true
+            ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev]"
             exit 1
             ;;
     esac
@@ -111,10 +115,14 @@ COMPOSE_FILES="-f compose.yml"
 if [ "$USE_GPU" = true ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f compose.nvidia.yml"
 fi
+if [ "$DEV_MODE" = true ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
+    echo -e "${YELLOW}Development mode enabled - frontend will run with hot reloading${NC}"
+fi
 
 # Execute appropriate Docker Compose command
 if [ "$BUILD_ONLY" = true ]; then
-    echo -e "${YELLOW}Building container only...${NC}"
+    echo -e "${YELLOW}Building containers only...${NC}"
     docker compose $COMPOSE_FILES build
     echo -e "${GREEN}Build completed successfully.${NC}"
 elif [ "$TEST_BUILD" = true ]; then
@@ -126,8 +134,12 @@ else
         echo -e "${YELLOW}Starting Podly in detached mode...${NC}"
         docker compose $COMPOSE_FILES up -d
         echo -e "${GREEN}Podly is running in the background.${NC}"
+        echo -e "${GREEN}Frontend: http://localhost:5002${NC}"
+        echo -e "${GREEN}Backend API: http://localhost:5001${NC}"
     else
         echo -e "${YELLOW}Starting Podly...${NC}"
+        echo -e "${GREEN}Frontend will be available at: http://localhost:5002${NC}"
+        echo -e "${GREEN}Backend API will be available at: http://localhost:5001${NC}"
         docker compose $COMPOSE_FILES up
     fi
 fi 
