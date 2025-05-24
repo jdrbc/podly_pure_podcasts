@@ -27,6 +27,8 @@ Here's how it works:
 
 ## How To Run
 
+For detailed setup instructions, see our [beginner's guide](docs/how_to_run_beginners.md).
+
 1. Install ffmpeg
 
 ```shell

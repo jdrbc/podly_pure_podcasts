@@ -28,6 +28,7 @@ BUILD_ONLY=false
 TEST_BUILD=false
 FORCE_CPU=false
 FORCE_GPU=false
+DETACHED=false
 
 # Detect NVIDIA GPU
 NVIDIA_GPU_AVAILABLE=false
@@ -55,9 +56,12 @@ while [[ $# -gt 0 ]]; do
             CUDA_VERSION="${1#*=}"
             GPU_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
             ;;
+        -d|--detach)
+            DETACHED=true
+            ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach]"
             exit 1
             ;;
     esac
@@ -118,6 +122,12 @@ elif [ "$TEST_BUILD" = true ]; then
     docker compose $COMPOSE_FILES build --no-cache
     echo -e "${GREEN}Test build completed successfully.${NC}"
 else
-    echo -e "${YELLOW}Starting Podly...${NC}"
-    docker compose $COMPOSE_FILES up
+    if [ "$DETACHED" = true ]; then
+        echo -e "${YELLOW}Starting Podly in detached mode...${NC}"
+        docker compose $COMPOSE_FILES up -d
+        echo -e "${GREEN}Podly is running in the background.${NC}"
+    else
+        echo -e "${YELLOW}Starting Podly...${NC}"
+        docker compose $COMPOSE_FILES up
+    fi
 fi 
