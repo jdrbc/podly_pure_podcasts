@@ -38,7 +38,7 @@ Be sure to check if a dependency is already installed before downloading.
 We recommend docker because installing ffmpeg & local whisper can be difficult.
 The docker image have both ffmpeg & local whisper preconfigured.
 Podly works with many different LLMs, it does not need to work with open-ai.
-Check your work by retrieving the index page at the end.
+Check your work by retrieving the index page from localhost:5001 at the end.
 ```
 
 Follow along as the agent sets up Podly for you!
