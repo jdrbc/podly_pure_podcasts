@@ -61,7 +61,7 @@ class Config(BaseModel):
     output: OutputConfig
     processing: ProcessingConfig
     server: Optional[str] = None
-    server_port: int = 5001
+    backend_server_port: int = 5002
     background_update_interval_minute: Optional[int] = None
     job_timeout: int = 10800  # Default to 3 hours if not set
     threads: int = 1

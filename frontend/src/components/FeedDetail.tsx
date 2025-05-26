@@ -229,7 +229,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             <div className="flex items-center gap-3">
               {/* Podly RSS Subscribe Button */}
               <button 
-                onClick={() => window.open(`http://localhost:5001/feed/${feed.id}`, '_blank')}
+                onClick={() => window.open(`http://localhost:5002/feed/${feed.id}`, '_blank')}
                 className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

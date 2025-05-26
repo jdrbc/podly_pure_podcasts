@@ -10,7 +10,9 @@ RUN npm ci
 # Copy source code
 COPY frontend/ ./
 
-# Build the application
+# Build the application with environment variable
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL:-http://localhost:5002}
 RUN npm run build
 
 # Production stage

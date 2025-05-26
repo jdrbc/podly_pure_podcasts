@@ -80,7 +80,7 @@
       <p>We've moved to a new and improved interface!</p>
       <p>You will be automatically redirected to our new UI in <span id="countdown">5</span> seconds.</p>
       
-      <a href="http://{{ request.host.split(':')[0] }}:5002" class="redirect-link">
+      <a href="http://{{ request.host.split(':')[0] }}:5001" class="redirect-link">
         Go to New UI Now
       </a>
       
@@ -100,9 +100,9 @@
         
         if (countdown <= 0) {
           clearInterval(timer);
-          // Redirect to new UI on port 5002
+          // Redirect to new UI on port 5001
           const currentHost = window.location.hostname;
-          window.location.href = `http://${currentHost}:5002`;
+          window.location.href = `http://${currentHost}:5001`;
         }
       }, 1000);
     </script>

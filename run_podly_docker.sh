@@ -11,6 +11,16 @@ CUDA_VERSION="12.1"
 CPU_BASE_IMAGE="python:3.11-slim"
 GPU_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
 
+# Read server URL from config.yml if it exists
+SERVER_URL=""
+if [ -f "config/config.yml" ]; then
+    SERVER_URL=$(grep "^server:" config/config.yml | cut -d' ' -f2- | tr -d ' ')
+    if [ -n "$SERVER_URL" ]; then
+        echo -e "${GREEN}Using server URL from config.yml: ${SERVER_URL}${NC}"
+        export VITE_API_URL="${SERVER_URL}:5002"
+    fi
+fi
+
 # Check dependencies
 echo -e "${YELLOW}Checking dependencies...${NC}"
 if ! command -v docker &> /dev/null; then
@@ -134,12 +144,12 @@ else
         echo -e "${YELLOW}Starting Podly in detached mode...${NC}"
         docker compose $COMPOSE_FILES up -d
         echo -e "${GREEN}Podly is running in the background.${NC}"
-        echo -e "${GREEN}Frontend: http://localhost:5002${NC}"
-        echo -e "${GREEN}Backend API: http://localhost:5001${NC}"
+        echo -e "${GREEN}Frontend: http://localhost:5001${NC}"
+        echo -e "${GREEN}Backend API: http://localhost:5002${NC}"
     else
         echo -e "${YELLOW}Starting Podly...${NC}"
-        echo -e "${GREEN}Frontend will be available at: http://localhost:5002${NC}"
-        echo -e "${GREEN}Backend API will be available at: http://localhost:5001${NC}"
+        echo -e "${GREEN}Frontend will be available at: http://localhost:5001${NC}"
+        echo -e "${GREEN}Backend API will be available at: http://localhost:5002${NC}"
         docker compose $COMPOSE_FILES up
     fi
 fi 

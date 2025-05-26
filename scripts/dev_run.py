@@ -47,16 +47,16 @@ class ProcessManager:
         if os.path.exists(frontend_dir):
             # Set up environment for frontend
             env = os.environ.copy()
-            env["VITE_API_URL"] = "http://localhost:5001"
+            env["VITE_API_URL"] = "http://localhost:5002"
 
             self.processes["frontend"] = subprocess.Popen(
-                "npm run dev -- --host 0.0.0.0 --port 5002",
+                "npm run dev -- --host 0.0.0.0 --port 5001",
                 shell=True,
                 cwd=frontend_dir,
                 env=env,
             )
             print(f"Frontend started with PID: {self.processes['frontend'].pid}")
-            print("Frontend accessible on all network interfaces (0.0.0.0:5002)")
+            print("Frontend accessible on all network interfaces (0.0.0.0:5001)")
         else:
             print("Frontend directory not found, skipping frontend server")
 
@@ -109,8 +109,8 @@ def main():
     try:
         print("\n" + "=" * 60)
         print("🚀 Development servers started!")
-        print("📱 Frontend (React): http://localhost:5002")
-        print("🔧 Backend (Flask): http://localhost:5001")
+        print("📱 Frontend (React): http://localhost:5001")
+        print("🔧 Backend (Flask): http://localhost:5002")
         print("📁 Watching for file changes...")
         print("Press Ctrl+C to stop all servers")
         print("=" * 60 + "\n")

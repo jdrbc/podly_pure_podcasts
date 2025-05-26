@@ -16,7 +16,7 @@ services:
         - CUDA_VERSION=${CUDA_VERSION:-12.1}
         - USE_GPU=${USE_GPU:-false}
     ports:
-      - 5001:5001
+      - 5002:5002
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -24,7 +24,7 @@ services:
       - CORS_ORIGINS=*
     # restart: unless-stopped
     # healthcheck:
-    #   test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+    #   test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5002/health')"]
     #   interval: 30s
     #   timeout: 10s
     #   retries: 3
@@ -37,7 +37,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     ports:
-      - 5002:80
+      - 5001:80
     depends_on:
       - backend
     # restart: unless-stopped

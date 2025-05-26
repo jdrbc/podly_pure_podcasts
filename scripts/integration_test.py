@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 import requests
 
 # Configuration
-BASE_URL = "http://localhost:5001"  # As per config.yml comments
+BASE_URL = "http://localhost:5002"  # As per config.yml comments
 TEST_FEED_URL = "https://feeds.npr.org/510325/podcast.xml"  # NPR Indicator
 REQUEST_TIMEOUT = 30  # Seconds for general requests
 PROCESSING_TIMEOUT = 600  # 10 minutes for processing requests

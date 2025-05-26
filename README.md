@@ -59,16 +59,16 @@ pipenv shell
 python src/main.py
 ```
 
-The server will start at http://localhost:5001 by default.
+The server will start at http://localhost:5002 by default.
 
 ## Usage
 
 Once the server is running:
 
-1. Open http://localhost:5001 in your web browser
+1. Open http://localhost:5002 in your web browser
 2. Add podcast RSS feeds through the web interface
 3. Open your podcast app and subscribe to the Podly endpoint
-   - For example, `http://localhost:5001/feed/1`
+   - For example, `http://localhost:5002/feed/1`
 4. Select an episode & download
 5. Wait patiently 😊 (Transcription takes about 1 minute per 15 minutes of podcast on an M3 MacBook)
 
@@ -106,7 +106,7 @@ Podly supports basic authentication. See below for example setup for `httpd.conf
 LoadModule proxy_module modules/mod_proxy.so
 LoadModule proxy_http_module modules/mod_proxy_http.so
 
-ProxyPass / http://127.0.0.1:5001/
+ProxyPass / http://127.0.0.1:5002/
 RequestHeader set X-Forwarded-Proto http
 RequestHeader set X-Forwarded-Prefix /
 

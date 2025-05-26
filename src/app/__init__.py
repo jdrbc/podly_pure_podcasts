@@ -67,7 +67,16 @@ def create_app() -> Flask:
     app = Flask(__name__, static_folder="static")
 
     # Configure CORS
-    cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5002").split(",")
+    default_origins = ["http://localhost:5001"] 
+    if config.server:
+        server_url = config.server
+        if not server_url.startswith(('http://', 'https://')):
+            server_url = f"http://{server_url}"
+        if config.backend_server_port:
+            server_url = f"{server_url}:{config.backend_server_port}"
+        default_origins.append(server_url)
+    
+    cors_origins = os.environ.get("CORS_ORIGINS", ",".join(default_origins)).split(",")
     CORS(
         app,
         resources={r"/*": {"origins": cors_origins}},
