@@ -49,6 +49,7 @@ def test_example_config() -> None:
         server=None,
         threads=1,
         backend_server_port=5002,
+        frontend_server_port=5001,
     )
 
     assert get_config("config/config.yml.example") == expected_config
@@ -84,6 +85,7 @@ def test_remote_whisper_example_config() -> None:
         server=None,
         threads=1,
         backend_server_port=5002,
+        frontend_server_port=5001,
     )
 
     assert get_config("config/config_remote_whisper.yml.example") == expected_config
@@ -110,6 +112,7 @@ def test_anthropic_example_config() -> None:
         ),
         server=None,
         backend_server_port=5002,
+        frontend_server_port=5001,
         background_update_interval_minute=None,
         threads=1,
         whisper=RemoteWhisperConfig(
@@ -145,6 +148,7 @@ def test_groq_whisper_example_config() -> None:
         ),
         server=None,
         backend_server_port=5002,
+        frontend_server_port=5001,
         background_update_interval_minute=None,
         threads=1,
         whisper=GroqWhisperConfig(

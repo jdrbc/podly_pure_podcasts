@@ -99,15 +99,31 @@ fi
 # Set the API URL for the frontend
 export VITE_API_URL="${SERVER_URL}:${BACKEND_PORT}"
 
+# Set CORS origins for the backend
+if [ "$SERVER_URL" != "http://localhost" ]; then
+    # For external servers, allow both localhost and the configured server
+    export CORS_ORIGINS="http://localhost:${FRONTEND_PORT},${SERVER_URL}:${FRONTEND_PORT}"
+else
+    # For localhost, just use the default
+    export CORS_ORIGINS="http://localhost:${FRONTEND_PORT}"
+fi
+
 echo -e "${GREEN}Environment configured:${NC}"
 echo -e "  Frontend: ${SERVER_URL}:${FRONTEND_PORT}"
 echo -e "  Backend API: ${VITE_API_URL}"
+echo -e "  CORS Origins: ${CORS_ORIGINS}"
 
 # Check if pipenv environment exists
 if ! pipenv --venv &> /dev/null; then
     echo -e "${YELLOW}Setting up Python virtual environment...${NC}"
     pipenv --python 3.11
     pipenv install
+else
+    # Check if dependencies need updating
+    if ! pipenv verify &> /dev/null; then
+        echo -e "${YELLOW}Updating Python dependencies...${NC}"
+        pipenv sync
+    fi
 fi
 
 # Check if frontend dependencies are installed
@@ -116,6 +132,14 @@ if [ ! -d "frontend/node_modules" ]; then
     cd frontend
     npm install
     cd ..
+else
+    # Check if package-lock.json is newer than node_modules
+    if [ "frontend/package-lock.json" -nt "frontend/node_modules" ]; then
+        echo -e "${YELLOW}Updating frontend dependencies...${NC}"
+        cd frontend
+        npm ci
+        cd ..
+    fi
 fi
 
 # Start backend
