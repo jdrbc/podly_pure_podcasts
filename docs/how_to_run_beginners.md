@@ -24,7 +24,7 @@ We recommend docker because installing ffmpeg & local whisper can be difficult.
 The docker image have both ffmpeg & local whisper preconfigured.
 Help me setup config/config.yml
 Podly works with many different LLMs, it does not require an open-ai key.
-Check your work by retrieving the index page from localhost:5002 at the end.
+Check your work by retrieving the index page from localhost:5001 at the end.
 ```
 
 If you do have the repo pulled, open this file and prompt:
@@ -38,7 +38,7 @@ Be sure to check if a dependency is already installed before downloading.
 We recommend docker because installing ffmpeg & local whisper can be difficult.
 The docker image have both ffmpeg & local whisper preconfigured.
 Podly works with many different LLMs, it does not need to work with open-ai.
-Check your work by retrieving the index page from localhost:5002 at the end.
+Check your work by retrieving the index page from localhost:5001 at the end.
 ```
 
 Follow along as the agent sets up Podly for you!
@@ -158,7 +158,7 @@ The first time you run Podly:
 ### 4. Access the Web Interface
 
 1. Open your web browser
-2. Go to: `http://localhost:5002`
+2. Go to: `http://localhost:5001`
 3. You should see the Podly web interface
 
 ## Advanced Options
@@ -217,6 +217,7 @@ The run script supports several options:
 ### Port 5002 already in use
 - Another application is using port 5002
 - Either stop that application or modify the port in `compose.yml`
+- To kill processes on those ports run `(lsof -i :5001; lsof -i :5002) | grep LISTEN | awk '{print $2}' | xargs kill -9`
 
 ### Out of memory errors
 - Close other applications to free up RAM
