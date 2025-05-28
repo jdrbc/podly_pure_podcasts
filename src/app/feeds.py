@@ -4,7 +4,6 @@ from typing import Any, Optional
 
 import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
-from flask import url_for
 
 from app import config, db, logger
 from app.models import Feed, Post
@@ -121,7 +120,7 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     if config.server is not None:
         # Use the configured server with frontend port
         server_url = config.server
-        if not server_url.startswith(('http://', 'https://')):
+        if not server_url.startswith(("http://", "https://")):
             server_url = f"http://{server_url}"
         base_url = f"{server_url}:{config.frontend_server_port}"
     else:
@@ -158,18 +157,18 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
-    
+
     # For backwards compatibility, generate feed link that points to the frontend port
     if config.server is not None:
         # Use the configured server with frontend port
         server_url = config.server
-        if not server_url.startswith(('http://', 'https://')):
+        if not server_url.startswith(("http://", "https://")):
             server_url = f"http://{server_url}"
         link = f"{server_url}:{config.frontend_server_port}/feed/{feed.id}"
     else:
         # Use localhost with frontend port
         link = f"http://localhost:{config.frontend_server_port}/feed/{feed.id}"
-    
+
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
         link=link,

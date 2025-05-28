@@ -237,17 +237,11 @@ def test_add_feed(mock_post_class, mock_feed_data, mock_db_session):
         assert result == mock_feed
 
 
-@mock.patch("app.feeds.url_for")
-def test_feed_item(mock_url_for, mock_post):
-    # Mock the url_for function
-    mock_url_for.side_effect = [
-        "/api/posts/test-guid/download",  # For download_post URL
-        "/api/posts/test-guid",  # For post_page URL
-    ]
-
-    # Mock config.server
+def test_feed_item(mock_post):
+    # Mock config.server and config.frontend_server_port
     with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = None
+        mock_config.server = "http://podly.com"
+        mock_config.frontend_server_port = 5001
 
         result = feed_item(mock_post)
 
@@ -257,17 +251,15 @@ def test_feed_item(mock_url_for, mock_post):
     assert result.guid == mock_post.guid
 
     # Check enclosure
-    assert result.enclosure.url == "/api/posts/test-guid/download"
+    assert result.enclosure.url == "http://podly.com:5001/api/posts/test-guid/download"
     assert result.enclosure.type == "audio/mpeg"
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
-@mock.patch("app.feeds.url_for")
 @mock.patch("app.feeds.feed_item")
-def test_generate_feed_xml(mock_feed_item, mock_url_for, mock_feed, mock_post):
+def test_generate_feed_xml(mock_feed_item, mock_feed, mock_post):
     # Set up mocks
     mock_feed.posts = [mock_post]
-    mock_url_for.return_value = "https://example.com/feed/1"
 
     mock_rss_item = mock.MagicMock(spec=PyRSS2Gen.RSSItem)
     mock_feed_item.return_value = mock_rss_item
