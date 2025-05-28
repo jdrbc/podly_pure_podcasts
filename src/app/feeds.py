@@ -116,19 +116,21 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
     """
 
-    server_prefix = config.server if config.server is not None else ""
+    # For backwards compatibility, generate URLs that point to the frontend port
+    # The frontend will proxy these requests to the backend
+    if config.server is not None:
+        # Use the configured server with frontend port
+        server_url = config.server
+        if not server_url.startswith(('http://', 'https://')):
+            server_url = f"http://{server_url}"
+        base_url = f"{server_url}:{config.frontend_server_port}"
+    else:
+        # Use localhost with frontend port
+        base_url = f"http://localhost:{config.frontend_server_port}"
 
-    audio_url = server_prefix + url_for(
-        "api.api_download_post",
-        p_guid=post.guid,
-        _external=config.server is None,
-    )
-
-    post_details_url = server_prefix + url_for(
-        "api.get_post_json",
-        p_guid=post.guid,
-        _external=config.server is None,
-    )
+    # Generate URLs that will be proxied by the frontend to the backend
+    audio_url = f"{base_url}/api/posts/{post.guid}/download"
+    post_details_url = f"{base_url}/api/posts/{post.guid}"
 
     description = (
         f'{post.description}\n<p><a href="{post_details_url}">Podly Post Page</a></p>'
@@ -156,7 +158,18 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
-    link = url_for("feed.get_feed", f_id=feed.id, _external=True)
+    
+    # For backwards compatibility, generate feed link that points to the frontend port
+    if config.server is not None:
+        # Use the configured server with frontend port
+        server_url = config.server
+        if not server_url.startswith(('http://', 'https://')):
+            server_url = f"http://{server_url}"
+        link = f"{server_url}:{config.frontend_server_port}/feed/{feed.id}"
+    else:
+        # Use localhost with frontend port
+        link = f"http://localhost:{config.frontend_server_port}/feed/{feed.id}"
+    
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
         link=link,

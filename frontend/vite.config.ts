@@ -13,6 +13,18 @@ export default defineConfig({
         target: 'http://localhost:5002',
         changeOrigin: true,
         secure: false
+      },
+      // Proxy feed endpoints for backwards compatibility
+      '/feed': {
+        target: 'http://localhost:5002',
+        changeOrigin: true,
+        secure: false
+      },
+      // Proxy legacy post endpoints for backwards compatibility
+      '/post': {
+        target: 'http://localhost:5002',
+        changeOrigin: true,
+        secure: false
       }
     }
   },
