@@ -1,4 +1,5 @@
 [MASTER]
+ignore=frontend,migrations,scripts
 disable=
     C0114, # missing-module-docstring
     C0115, # missing-class-docstring

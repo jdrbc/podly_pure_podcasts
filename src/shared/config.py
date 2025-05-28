@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, Literal, Optional
+from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -59,14 +59,10 @@ class Config(BaseModel):
     openai_max_tokens: int = 4096
     openai_timeout: int = 300
     output: OutputConfig
-    podcasts: Optional[Dict[str, str]] = Field(
-        default=None,
-        deprecated=True,
-        description="This field is deprecated and will be removed in a future version",
-    )
     processing: ProcessingConfig
     server: Optional[str] = None
-    server_port: int = 5001
+    backend_server_port: int = 5002
+    frontend_server_port: int = 5001
     background_update_interval_minute: Optional[int] = None
     job_timeout: int = 10800  # Default to 3 hours if not set
     threads: int = 1

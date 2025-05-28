@@ -46,7 +46,7 @@ RUN groupadd -r appuser && \
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod 755 /docker-entrypoint.sh
 
-EXPOSE 5001
+EXPOSE 5002
 
 # Run the application through the entrypoint script
 ENTRYPOINT ["/docker-entrypoint.sh"]

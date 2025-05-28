@@ -2,28 +2,43 @@ from unittest import mock
 
 import pytest
 
-from shared.podcast_downloader import (
-    download_episode,
+from app.models import Feed, Post
+from podcast_processor.podcast_downloader import (
+    PodcastDownloader,
     find_audio_link,
-    get_and_make_download_path,
     sanitize_title,
 )
 
 
-class MockPost:
-    """A mock Post class that doesn't require Flask context."""
+@pytest.fixture
+def test_post(app):
+    """Create a real Post object for testing."""
+    with app.app_context():
+        # Create a test feed first
+        feed = Feed(
+            title="Test Feed",
+            description="Test Description",
+            author="Test Author",
+            rss_url="https://example.com/feed.xml",
+        )
 
-    def __init__(
-        self, id=1, title="Test Episode", download_url="https://example.com/podcast.mp3"
-    ):
-        self.id = id
-        self.title = title
-        self.download_url = download_url
+        # Create a test post
+        post = Post(
+            feed_id=1,  # Will be set properly when feed is saved
+            guid="test-guid-123",
+            download_url="https://example.com/podcast.mp3",
+            title="Test Episode",
+            description="Test episode description",
+        )
+        post.feed = feed  # Set the relationship
+
+        return post
 
 
 @pytest.fixture
-def mock_post():
-    return MockPost()
+def downloader(tmp_path):
+    """Create a PodcastDownloader instance with a temporary directory."""
+    return PodcastDownloader(download_dir=str(tmp_path))
 
 
 @pytest.fixture
@@ -50,19 +65,15 @@ def test_sanitize_title():
     assert sanitize_title("") == ""
 
 
-def test_get_and_make_download_path(tmp_path, monkeypatch):
-    # Temporarily set DOWNLOAD_DIR to tmp_path
-    monkeypatch.setattr("shared.podcast_downloader.DOWNLOAD_DIR", str(tmp_path))
-
-    path = get_and_make_download_path("Test Episode!")
+def test_get_and_make_download_path(downloader):
+    path = downloader.get_and_make_download_path("Test Episode!")
 
     # Check that the directory was created
-    assert (tmp_path / "Test Episode").exists()
-    assert (tmp_path / "Test Episode").is_dir()
+    assert path.parent.exists()
+    assert path.parent.is_dir()
 
     # Check that the path is correct
-    expected_path = tmp_path / "Test Episode" / "Test Episode.mp3"
-    assert path == expected_path
+    assert path.name == "Test Episode.mp3"
 
 
 def test_find_audio_link_with_audio_link(mock_entry):
@@ -77,94 +88,94 @@ def test_find_audio_link_without_audio_link():
     assert find_audio_link(entry) == "https://example.com/episode-id"
 
 
-@mock.patch("shared.podcast_downloader.requests.get")
-def test_download_episode_already_exists(mock_get, mock_post, tmp_path, monkeypatch):
-    # Temporarily set DOWNLOAD_DIR to tmp_path
-    monkeypatch.setattr("shared.podcast_downloader.DOWNLOAD_DIR", str(tmp_path))
+@mock.patch("podcast_processor.podcast_downloader.requests.get")
+def test_download_episode_already_exists(mock_get, test_post, downloader, app):
+    with app.app_context():
+        # Create the directory and file
+        episode_dir = downloader.get_and_make_download_path(test_post.title).parent
+        episode_dir.mkdir(parents=True, exist_ok=True)
+        episode_file = episode_dir / "Test Episode.mp3"
+        episode_file.write_bytes(b"dummy data")
 
-    # Create the directory and file
-    episode_dir = tmp_path / "Test Episode"
-    episode_dir.mkdir()
-    episode_file = episode_dir / "Test Episode.mp3"
-    episode_file.write_bytes(b"dummy data")
+        result = downloader.download_episode(test_post)
 
-    result = download_episode(mock_post)
+        # Check that we didn't try to download the file
+        mock_get.assert_not_called()
 
-    # Check that we didn't try to download the file
-    mock_get.assert_not_called()
-
-    # Check that the correct path was returned
-    assert result == str(episode_file)
+        # Check that the correct path was returned
+        assert result == str(episode_file)
 
 
-@mock.patch("shared.podcast_downloader.requests.get")
-def test_download_episode_new_file(mock_get, mock_post, tmp_path, monkeypatch):
-    # Temporarily set DOWNLOAD_DIR to tmp_path
-    monkeypatch.setattr("shared.podcast_downloader.DOWNLOAD_DIR", str(tmp_path))
+@mock.patch("podcast_processor.podcast_downloader.requests.get")
+def test_download_episode_new_file(mock_get, test_post, downloader, app):
+    with app.app_context():
+        # Setup mock response
+        mock_response = mock.MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"podcast audio content"
+        mock_get.return_value = mock_response
 
-    # Setup mock response
-    mock_response = mock.MagicMock()
-    mock_response.status_code = 200
-    mock_response.content = b"podcast audio content"
-    mock_get.return_value = mock_response
+        result = downloader.download_episode(test_post)
 
-    result = download_episode(mock_post)
+        # Check that we tried to download the file
+        mock_get.assert_called_once_with("https://example.com/podcast.mp3")
 
-    # Check that we tried to download the file
-    mock_get.assert_called_once_with("https://example.com/podcast.mp3")
+        # Check that the file was created with the correct content
+        expected_path = downloader.get_and_make_download_path(test_post.title)
+        assert expected_path.exists()
+        assert expected_path.read_bytes() == b"podcast audio content"
 
-    # Check that the file was created with the correct content
-    expected_path = tmp_path / "Test Episode" / "Test Episode.mp3"
-    assert expected_path.exists()
-    assert expected_path.read_bytes() == b"podcast audio content"
-
-    # Check that the correct path was returned
-    assert result == str(expected_path)
+        # Check that the correct path was returned
+        assert result == str(expected_path)
 
 
-@mock.patch("shared.podcast_downloader.requests.get")
-def test_download_episode_download_failed(mock_get, mock_post, tmp_path, monkeypatch):
-    # Temporarily set DOWNLOAD_DIR to tmp_path
-    monkeypatch.setattr("shared.podcast_downloader.DOWNLOAD_DIR", str(tmp_path))
+@mock.patch("podcast_processor.podcast_downloader.requests.get")
+def test_download_episode_download_failed(mock_get, test_post, downloader, app):
+    with app.app_context():
+        # Setup mock response
+        mock_response = mock.MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
 
-    # Setup mock response
-    mock_response = mock.MagicMock()
-    mock_response.status_code = 404
-    mock_get.return_value = mock_response
+        result = downloader.download_episode(test_post)
 
-    result = download_episode(mock_post)
+        # Check that we tried to download the file
+        mock_get.assert_called_once_with("https://example.com/podcast.mp3")
 
-    # Check that we tried to download the file
-    mock_get.assert_called_once_with("https://example.com/podcast.mp3")
+        # Check that no file was created
+        expected_path = downloader.get_and_make_download_path(test_post.title)
+        assert not expected_path.exists()
 
-    # Check that no file was created
-    expected_path = tmp_path / "Test Episode" / "Test Episode.mp3"
-    assert not expected_path.exists()
-
-    # Check that None was returned
-    assert result is None
+        # Check that None was returned
+        assert result is None
 
 
-@mock.patch("shared.podcast_downloader.validators.url")
-@mock.patch("shared.podcast_downloader.abort")
-def test_download_episode_invalid_url(mock_abort, mock_validator, mock_post):
-    # Make the validator fail
-    mock_validator.return_value = False
+@mock.patch("podcast_processor.podcast_downloader.validators.url")
+@mock.patch("podcast_processor.podcast_downloader.abort")
+def test_download_episode_invalid_url(
+    mock_abort, mock_validator, test_post, downloader, app
+):
+    with app.app_context():
+        # Make the validator fail
+        mock_validator.return_value = False
 
-    download_episode(mock_post)
+        downloader.download_episode(test_post)
 
-    # Check that abort was called with 404
-    mock_abort.assert_called_once_with(404)
+        # Check that abort was called with 404
+        mock_abort.assert_called_once_with(404)
 
 
-@mock.patch("shared.podcast_downloader.get_and_make_download_path")
-def test_download_episode_invalid_post(mock_get_path):
-    # Simulate get_and_make_download_path returning None
-    mock_get_path.return_value = None
+def test_download_episode_invalid_post_title(test_post, downloader, app):
+    with app.app_context():
+        # Test with a post that has an invalid title that results in empty sanitized title
+        test_post.title = "!@#$%^&*()"  # This will sanitize to empty string
 
-    post = MockPost()
-    result = download_episode(post)
+        with mock.patch.object(
+            downloader, "get_and_make_download_path"
+        ) as mock_get_path:
+            mock_get_path.return_value = None
 
-    # Check that None was returned
-    assert result is None
-    mock_get_path.assert_called_once_with(post.title)
+            result = downloader.download_episode(test_post)
+
+            # Check that None was returned
+            assert result is None

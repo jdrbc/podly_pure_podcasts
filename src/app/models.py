@@ -1,7 +1,13 @@
 import os
+import uuid
 from datetime import datetime
 
 from app import db
+
+
+def generate_job_id() -> str:
+    """Generate a unique job ID."""
+    return str(uuid.uuid4())
 
 
 # mypy typing issue https://github.com/python/mypy/issues/17918
@@ -38,6 +44,7 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     release_date = db.Column(db.Date)
     duration = db.Column(db.Integer)
     whitelisted = db.Column(db.Boolean, default=False, nullable=False)
+    image_url = db.Column(db.Text)  # Episode thumbnail URL
 
     segments = db.relationship(
         "TranscriptSegment",
@@ -146,3 +153,33 @@ class Identification(db.Model):  # type: ignore[name-defined, misc]
             f"{self.confidence:.2f}" if self.confidence is not None else "N/A"
         )
         return f"<Identification {self.id} TS:{self.transcript_segment_id} MC:{self.model_call_id} L:{self.label} C:{confidence_str}>"
+
+
+class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "processing_job"
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_job_id)
+    post_guid = db.Column(db.String(255), nullable=False, index=True)
+    status = db.Column(
+        db.String(50), nullable=False
+    )  # pending, running, completed, failed, cancelled
+    current_step = db.Column(db.Integer, default=0)  # 0-4 (0=not started, 4=completed)
+    step_name = db.Column(db.String(100))
+    total_steps = db.Column(db.Integer, default=4)
+    progress_percentage = db.Column(db.Float, default=0.0)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    error_message = db.Column(db.Text)
+    scheduler_job_id = db.Column(db.String(255))  # APScheduler job ID
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    post = db.relationship(
+        "Post",
+        backref="processing_jobs",
+        primaryjoin="ProcessingJob.post_guid == Post.guid",
+        foreign_keys=[post_guid],
+    )
+
+    def __repr__(self) -> str:
+        return f"<ProcessingJob {self.id} Post:{self.post_guid} Status:{self.status} Step:{self.current_step}/{self.total_steps}>"

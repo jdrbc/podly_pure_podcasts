@@ -1,5 +1,5 @@
 services:
-  server:
+  backend:
     environment:
       - CUDA_VISIBLE_DEVICES=0
     deploy:

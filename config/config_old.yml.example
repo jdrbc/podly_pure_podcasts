@@ -8,7 +8,7 @@ openai_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # whisper_model: base.en
 
 # server: http://my.domain.com
-# server_port: 5001
+# backend_server_port: 5002
 # threads: 5
 
 # if true then all new episodes will be whitelisted for download

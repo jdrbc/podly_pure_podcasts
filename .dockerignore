@@ -44,4 +44,17 @@ processing/
 # Local configuration files
 .env
 .env.*
-!.env.example 
+!.env.example
+
+# Frontend specific
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/.nyc_output/
+frontend/.eslintcache
+
+# Documentation
+docs/
+*.md
+!README.md 

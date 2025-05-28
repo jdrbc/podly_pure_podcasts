@@ -152,7 +152,7 @@ bash run_podly_docker.sh
 The first time you run Podly:
 1. Docker will download and build the necessary images (this may take 5-15 minutes)
 2. You'll see lots of text scrolling by - this is normal!
-3. Look for a message like: "Running on http://0.0.0.0:5001"
+3. Look for a message like: "Running on http://0.0.0.0:5002"
 4. The application is now ready!
 
 ### 4. Access the Web Interface
@@ -214,9 +214,10 @@ The run script supports several options:
 - Make sure you have billing set up in your OpenAI account
 - Check your usage limits haven't been exceeded
 
-### Port 5001 already in use
-- Another application is using port 5001
+### Port 5002 already in use
+- Another application is using port 5002
 - Either stop that application or modify the port in `compose.yml`
+- To kill processes on those ports run `(lsof -i :5001; lsof -i :5002) | grep LISTEN | awk '{print $2}' | xargs kill -9`
 
 ### Out of memory errors
 - Close other applications to free up RAM

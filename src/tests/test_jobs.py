@@ -57,7 +57,7 @@ class TestJobFunctions:
 
         # Verify functions were called correctly
         mock_remove_files.assert_called_once_with(post)
-        mock_download_process.assert_called_once_with(post.guid, blocking=False)
+        mock_download_process.assert_called_once_with(post.guid)
 
     def test_clean_download_path_no_url(self, app):
         """Test clean_download_path when download_url is missing."""
