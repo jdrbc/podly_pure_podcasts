@@ -7,7 +7,7 @@ GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
 # Central configuration defaults
-CUDA_VERSION="12.1"
+CUDA_VERSION="12.4.1"
 CPU_BASE_IMAGE="python:3.11-slim"
 GPU_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
 
@@ -131,3 +131,4 @@ else
         docker compose $COMPOSE_FILES up
     fi
 fi 
+
