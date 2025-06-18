@@ -4,11 +4,10 @@ from typing import Any, Optional
 
 import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
-from flask import url_for
 
 from app import config, db, logger
 from app.models import Feed, Post
-from shared.podcast_downloader import find_audio_link
+from podcast_processor.podcast_downloader import find_audio_link
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
@@ -116,19 +115,21 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
     """
 
-    server_prefix = config.server if config.server is not None else ""
+    # For backwards compatibility, generate URLs that point to the frontend port
+    # The frontend will proxy these requests to the backend
+    if config.server is not None:
+        # Use the configured server with frontend port
+        server_url = config.server
+        if not server_url.startswith(("http://", "https://")):
+            server_url = f"http://{server_url}"
+        base_url = f"{server_url}:{config.frontend_server_port}"
+    else:
+        # Use localhost with frontend port
+        base_url = f"http://localhost:{config.frontend_server_port}"
 
-    audio_url = server_prefix + url_for(
-        "main.download_post",
-        p_guid=post.guid,
-        _external=config.server is None,
-    )
-
-    post_details_url = server_prefix + url_for(
-        "main.post_page",
-        p_guid=post.guid,
-        _external=config.server is None,
-    )
+    # Generate URLs that will be proxied by the frontend to the backend
+    audio_url = f"{base_url}/api/posts/{post.guid}/download"
+    post_details_url = f"{base_url}/api/posts/{post.guid}"
 
     description = (
         f'{post.description}\n<p><a href="{post_details_url}">Podly Post Page</a></p>'
@@ -156,7 +157,18 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
-    link = url_for("main.get_feed", f_id=feed.id, _external=True)
+
+    # For backwards compatibility, generate feed link that points to the frontend port
+    if config.server is not None:
+        # Use the configured server with frontend port
+        server_url = config.server
+        if not server_url.startswith(("http://", "https://")):
+            server_url = f"http://{server_url}"
+        link = f"{server_url}:{config.frontend_server_port}/feed/{feed.id}"
+    else:
+        # Use localhost with frontend port
+        link = f"http://localhost:{config.frontend_server_port}/feed/{feed.id}"
+
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
         link=link,
@@ -170,6 +182,32 @@ def generate_feed_xml(feed: Feed) -> Any:
 
 
 def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
+    # Extract episode image URL, fallback to feed image
+    episode_image_url = None
+
+    # Try to get episode-specific image from various RSS fields
+    if hasattr(entry, "image") and entry.image:
+        if isinstance(entry.image, dict) and "href" in entry.image:
+            episode_image_url = entry.image["href"]
+        elif isinstance(entry.image, str):
+            episode_image_url = entry.image
+
+    # Try iTunes image tag
+    if not episode_image_url and hasattr(entry, "itunes_image"):
+        if isinstance(entry.itunes_image, dict) and "href" in entry.itunes_image:
+            episode_image_url = entry.itunes_image["href"]
+        elif isinstance(entry.itunes_image, str):
+            episode_image_url = entry.itunes_image
+
+    # Try media:thumbnail or media:content
+    if not episode_image_url and hasattr(entry, "media_thumbnail"):
+        if entry.media_thumbnail and len(entry.media_thumbnail) > 0:
+            episode_image_url = entry.media_thumbnail[0].get("url")
+
+    # Fallback to feed image if no episode-specific image found
+    if not episode_image_url:
+        episode_image_url = feed.image_url
+
     return Post(
         feed_id=feed.id,
         guid=get_guid(entry),
@@ -182,6 +220,7 @@ def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
             else None
         ),
         duration=get_duration(entry),
+        image_url=episode_image_url,
     )
 
 

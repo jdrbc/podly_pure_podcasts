@@ -10,7 +10,7 @@ llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # openai_max_tokens: 4096
 
 # server: http://my.domain.com
-# server_port: 5001
+# backend_server_port: 5002
 # threads: 5
 
 

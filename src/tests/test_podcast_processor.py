@@ -24,11 +24,15 @@ def test_processor(
     mock_ad_classifier: MagicMock,
     mock_audio_processor: MagicMock,
     mock_db_session: MagicMock,
+    mock_downloader: MagicMock,
+    mock_status_manager: MagicMock,
 ) -> PodcastProcessor:
     """Create a PodcastProcessor with mock dependencies"""
     return PodcastProcessor(
         config=test_config,
         logger=test_logger,
+        downloader=mock_downloader,
+        status_manager=mock_status_manager,
         transcription_manager=mock_transcription_manager,
         ad_classifier=mock_ad_classifier,
         audio_processor=mock_audio_processor,
@@ -47,7 +51,10 @@ def test_process_podcast_integration(
     with ctx_manager:
         # Create test post with a mock feed
         post = Post(
-            id=1, title="Test Podcast", unprocessed_audio_path="/path/to/audio.mp3"
+            id=1,
+            title="Test Podcast",
+            unprocessed_audio_path="/path/to/audio.mp3",
+            whitelisted=True,
         )
         mock_feed = MagicMock()
         mock_feed.title = "Test Feed"
@@ -67,7 +74,7 @@ def test_process_podcast_integration(
         ):
 
             # Process the podcast
-            test_processor.process(post, blocking=True)
+            test_processor.process(post)
 
             # Verify component interactions
             test_processor.transcription_manager.transcribe.assert_called_once_with(
@@ -83,6 +90,8 @@ def test_process_podcast_handles_transcription_error(
     mock_ad_classifier: MagicMock,
     mock_audio_processor: MagicMock,
     mock_db_session: MagicMock,
+    mock_downloader: MagicMock,
+    mock_status_manager: MagicMock,
     app: Optional[Flask] = None,
 ) -> None:
     """Test error handling when transcription fails"""
@@ -104,11 +113,16 @@ def test_process_podcast_handles_transcription_error(
             ad_classifier=mock_ad_classifier,
             audio_processor=mock_audio_processor,
             db_session=mock_db_session,
+            downloader=mock_downloader,
+            status_manager=mock_status_manager,
         )
 
         # Create test post with a mock feed
         post = Post(
-            id=1, title="Test Podcast", unprocessed_audio_path="/path/to/audio.mp3"
+            id=1,
+            title="Test Podcast",
+            unprocessed_audio_path="/path/to/audio.mp3",
+            whitelisted=True,
         )
         mock_feed = MagicMock()
         mock_feed.title = "Test Feed"
@@ -128,7 +142,7 @@ def test_process_podcast_handles_transcription_error(
         ):
 
             with pytest.raises(Exception) as exc_info:
-                test_processor.process(post, blocking=True)
+                test_processor.process(post)
 
             assert str(exc_info.value) == "Transcription failed"
             mock_failing_transcription_manager.transcribe.assert_called_once()
@@ -143,6 +157,8 @@ def test_process_podcast_handles_classification_error(
     mock_transcription_manager: MagicMock,
     mock_audio_processor: MagicMock,
     mock_db_session: MagicMock,
+    mock_downloader: MagicMock,
+    mock_status_manager: MagicMock,
     app: Optional[Flask] = None,
 ) -> None:
     """Test error handling when classification fails"""
@@ -164,11 +180,16 @@ def test_process_podcast_handles_classification_error(
             ad_classifier=mock_failing_ad_classifier,
             audio_processor=mock_audio_processor,
             db_session=mock_db_session,
+            downloader=mock_downloader,
+            status_manager=mock_status_manager,
         )
 
         # Create test post with a mock feed
         post = Post(
-            id=1, title="Test Podcast", unprocessed_audio_path="/path/to/audio.mp3"
+            id=1,
+            title="Test Podcast",
+            unprocessed_audio_path="/path/to/audio.mp3",
+            whitelisted=True,
         )
         mock_feed = MagicMock()
         mock_feed.title = "Test Feed"
@@ -188,7 +209,7 @@ def test_process_podcast_handles_classification_error(
         ):
 
             with pytest.raises(Exception) as exc_info:
-                test_processor.process(post, blocking=True)
+                test_processor.process(post)
 
             assert str(exc_info.value) == "Classification failed"
             mock_transcription_manager.transcribe.assert_called_once()
@@ -203,6 +224,8 @@ def test_process_podcast_handles_audio_processing_error(
     mock_transcription_manager: MagicMock,
     mock_ad_classifier: MagicMock,
     mock_db_session: MagicMock,
+    mock_downloader: MagicMock,
+    mock_status_manager: MagicMock,
     app: Optional[Flask] = None,
 ) -> None:
     """Test error handling when audio processing fails"""
@@ -223,11 +246,16 @@ def test_process_podcast_handles_audio_processing_error(
             ad_classifier=mock_ad_classifier,
             audio_processor=mock_failing_audio_processor,
             db_session=mock_db_session,
+            downloader=mock_downloader,
+            status_manager=mock_status_manager,
         )
 
         # Create test post with a mock feed
         post = Post(
-            id=1, title="Test Podcast", unprocessed_audio_path="/path/to/audio.mp3"
+            id=1,
+            title="Test Podcast",
+            unprocessed_audio_path="/path/to/audio.mp3",
+            whitelisted=True,
         )
         mock_feed = MagicMock()
         mock_feed.title = "Test Feed"
@@ -247,7 +275,7 @@ def test_process_podcast_handles_audio_processing_error(
         ):
 
             with pytest.raises(Exception) as exc_info:
-                test_processor.process(post, blocking=True)
+                test_processor.process(post)
 
             assert str(exc_info.value) == "Audio processing failed"
             mock_transcription_manager.transcribe.assert_called_once()

@@ -5,6 +5,7 @@ import sys
 
 from flask import Flask
 from flask_apscheduler import APScheduler  # type: ignore
+from flask_cors import CORS
 from flask_migrate import Migrate, upgrade
 from flask_sqlalchemy import SQLAlchemy
 
@@ -41,8 +42,14 @@ class SchedulerConfig:
 
 
 def setup_scheduler(app: Flask) -> None:
-    scheduler.init_app(app)
-    scheduler.start()
+    """Initialize and start the scheduler."""
+    if not is_test:
+        scheduler.init_app(app)
+        scheduler.start()
+
+
+def add_background_job() -> None:
+    """Add the recurring background job for refreshing feeds."""
     from app.jobs import (  # pylint: disable=import-outside-toplevel
         run_refresh_all_feeds,
     )
@@ -59,6 +66,30 @@ def setup_scheduler(app: Flask) -> None:
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="static")
 
+    # Configure CORS
+    default_origins = [f"http://localhost:{config.frontend_server_port}"]
+    if config.server:
+        server_url = config.server
+        if not server_url.startswith(("http://", "https://")):
+            server_url = f"http://{server_url}"
+
+        # Add frontend URL with configured port
+        frontend_url = f"{server_url}:{config.frontend_server_port}"
+        default_origins.append(frontend_url)
+
+        # Also add the server URL without port for cases where it's served on port 80/443
+        if not server_url.endswith((":80", ":443")):
+            default_origins.append(server_url)
+
+    cors_origins = os.environ.get("CORS_ORIGINS", ",".join(default_origins)).split(",")
+    CORS(
+        app,
+        resources={r"/*": {"origins": cors_origins}},
+        allow_headers=["Content-Type", "Authorization", "Range"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        supports_credentials=True,
+    )
+
     # Load scheduler configuration
     app.config.from_object(SchedulerConfig())
 
@@ -73,20 +104,30 @@ def create_app() -> Flask:
     db.init_app(app)
     migrate.init_app(app, db)
 
-    from app.routes import main_bp  # pylint: disable=import-outside-toplevel
+    # Register all route blueprints
+    from app.routes import register_routes  # pylint: disable=import-outside-toplevel
 
-    app.register_blueprint(main_bp)
+    register_routes(app)
 
     from app import models  # pylint: disable=import-outside-toplevel, unused-import
 
     with app.app_context():
         upgrade()
 
+    # Always start the scheduler for on-demand jobs
+    logger.info(f"Starting scheduler with {config.threads} thread(s).")
+    setup_scheduler(app)
+
+    # Only add the recurring background job if enabled
     if config.background_update_interval_minute is not None:
-        logger.info(f"Background scheduler is enabled with {config.threads} thread(s).")
-        setup_scheduler(app)
+        logger.info(
+            f"Background scheduler is enabled with interval of {config.background_update_interval_minute} minutes."
+        )
+        add_background_job()
     else:
-        logger.info("Background scheduler is disabled by configuration.")
+        logger.info(
+            "Background scheduler is disabled by configuration, but scheduler is available for on-demand jobs."
+        )
 
     return app
 

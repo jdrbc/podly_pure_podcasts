@@ -33,6 +33,7 @@ types-bleach = "*"
 groq = "*"
 async_timeout = "*"
 pytest-cov = "*"
+flask-cors = "*"
 
 [dev-packages]
 black = "*"
@@ -48,6 +49,7 @@ types-flask-migrate = "*"
 pytest-mock = "*"
 watchdog = "*"
 requests = "*"
+types-flask-cors = "*"
 
 [requires]
 python_version = "3.11"

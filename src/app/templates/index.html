@@ -28,278 +28,83 @@
       rel="manifest"
       href="{{ url_for('static', filename='site.webmanifest') }}"
     />
-    <title>Podly</title>
+    <title>Podly - Redirecting to New UI</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin: 50px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        background: white;
+        padding: 40px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      }
+      .logo {
+        width: 300px;
+        margin-bottom: 20px;
+      }
+      .redirect-link {
+        display: inline-block;
+        background-color: #007bff;
+        color: white;
+        padding: 15px 30px;
+        text-decoration: none;
+        border-radius: 5px;
+        font-size: 18px;
+        margin-top: 20px;
+        transition: background-color 0.3s;
+      }
+      .redirect-link:hover {
+        background-color: #0056b3;
+      }
+      .countdown {
+        margin-top: 20px;
+        font-size: 14px;
+        color: #666;
+      }
+    </style>
   </head>
   <body>
-    <div style="text-align: center">
+    <div class="container">
       <img
         src="{{ url_for('static', filename='images/logos/logo_with_text.png') }}"
         alt="Podly Logo"
-        style="width: 500px"
+        class="logo"
       />
-    </div>
-    <p align="center">Ad-block for podcasts. Create an ad-free RSS feed.</p>
-
-    <div style="width: 500px; margin: 0 auto">
-      <h2>Usage</h2>
-      <ul>
-        <li>Add an rss feed using the "Add New Feed" box below</li>
-        <li>
-          Subscribe to the podly RSS feed
-          <ul>
-            <li>for example http://localhost:5001/feed/1</li>
-          </ul>
-        </li>
-        <li>
-          Open a podcast app & subscribe to the podcast using the podly URL
-          whose link was added below. For example
-          <code>http://myserver:5001/feed/1</code>
-        </li>
-
-        <li>Select an episode & download</li>
-        <li>
-          Wait patiently. Transcription is the slowest part & takes about 1
-          minute per 15 minutes of podcast on an M3 MacBook.
-        </li>
-      </ul>
-    </div>
-    <div style="width: 500px; margin: 0 auto">
-      <h2>Add New Feed</h2>
-      <form method="post" action="{{ url_for('main.add_feed') }}">
-        <label for="feed_url">Feed URL:</label>
-        <input type="text" id="feed_url" name="url" required />
-        <button type="submit">Add Feed</button>
-      </form>
-    </div>
-    <div style="width: 500px; margin: 0 auto">
-      <h2>Feeds</h2>
-      <div style="width: 500px; margin: 20px auto; text-align: center;">
-        <button id="download-all-btn" style="padding: 10px 20px; font-size: 16px;">
-          Download All Podcasts
-        </button>
+      <h1>Welcome to Podly</h1>
+      <p>We've moved to a new and improved interface!</p>
+      <p>You will be automatically redirected to our new UI in <span id="countdown">5</span> seconds.</p>
+      
+      <a href="http://{{ request.host.split(':')[0] }}:5001" class="redirect-link">
+        Go to New UI Now
+      </a>
+      
+      <div class="countdown">
+        <p>If you are not redirected automatically, click the button above.</p>
       </div>
-      <div style="width: 500px; margin: 0 auto;" id="download-status"></div>
-      {% for feed in feeds %}
-      <details id="details-{{feed.id}}">
-        <summary>
-          <a href="{{ url_for('main.get_feed', f_id=feed.id) }}"
-            >{{ feed.title }}</a
-          >
-          <button id="refresh-button" onclick="refresh('{{feed.id}}')">
-            Refresh
-          </button>
-          <button
-            id="delete-button"
-            onclick="confirmAndDeleteFeed('{{feed.id}}', '{{feed.title}}')"
-          >
-            Delete
-          </button>
-          <button onclick="toggleWhitelistAll('{{feed.id}}')">Toggle Whitelist All</button>
-        </summary>
-        <table>
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Download</th>
-              <th>Whitelisted</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for post in feed.posts %}
-            <tr>
-              <td>
-                <a href="{{ url_for('main.post_page', p_guid=post.guid) }}"
-                  >{{ post.title }}</a
-                >
-              </td>
-              <td>
-                <a href="{{ url_for('main.download_post', p_guid=post.guid) }}"
-                  >Download</a
-                >
-              </td>
-              <td>
-                <input
-                  data-feed-id="{{ feed.id }}"
-                  type="checkbox"
-                  {%
-                  if
-                  post.whitelisted
-                  %}checked{%
-                  endif
-                  %}
-                  onclick="setWhitelist('{{ post.guid }}', {{ post.whitelisted | lower }})"
-                />
-              </td>
-            </tr>
-            {% else %}
-            <tr>
-              <td colspan="2">No posts available.</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </details>
-      {% else %}
-      <p>No feeds available.</p>
-      {% endfor %}
     </div>
 
     <script>
-      async function toggleWhitelistAll(feedId) {
-        try {
-          // Get all checkboxes for this feed
-          const checkboxes = document.querySelectorAll(`input[type="checkbox"][data-feed-id="${feedId}"]`);
-          
-          // Check if all posts are currently whitelisted
-          const allWhitelisted = Array.from(checkboxes).every(checkbox => checkbox.checked);
-          
-          const response = await fetch(`/feed/${feedId}/toggle-whitelist-all/${allWhitelisted ? "false" : "true"}`, {
-            method: "POST",
-          });
-
-          if (response.ok) {
-            window.location.reload();
-          } else {
-            alert("Failed to whitelist all episodes");
-          }
-        } catch (error) {
-          console.error("Error whitelisting all:", error);
-          alert("An error occurred while whitelisting all episodes");
+      // Auto-redirect after 5 seconds
+      let countdown = 5;
+      const countdownElement = document.getElementById('countdown');
+      
+      const timer = setInterval(() => {
+        countdown--;
+        countdownElement.textContent = countdown;
+        
+        if (countdown <= 0) {
+          clearInterval(timer);
+          // Redirect to new UI on port 5001
+          const currentHost = window.location.hostname;
+          window.location.href = `http://${currentHost}:5001`;
         }
-      }
-
-      async function confirmAndDeleteFeed(feedId, feedName) {
-        // Ensure feedId is valid
-        if (!feedId) {
-          alert("Invalid feed ID");
-          return;
-        }
-
-        // Confirmation dialog
-        const userConfirmed = confirm(
-          `Are you sure you want to delete feed '${feedName}'?`
-        );
-        if (!userConfirmed) {
-          // User canceled the operation
-          return;
-        }
-
-        // Proceed with deletion
-        try {
-          const response = await fetch(`/feed/${feedId}`, {
-            method: "DELETE",
-          });
-
-          if (response.ok) {
-            alert(`Feed with ID ${feedId} deleted successfully.`);
-            // Remove the deleted feed from the UI
-            const detailsElement = document.getElementById(`details-${feedId}`);
-            if (detailsElement) {
-              detailsElement.remove();
-            }
-          } else {
-            alert(`Failed to delete feed. Status: ${response.status}`);
-          }
-        } catch (error) {
-          console.error("Error deleting feed:", error);
-          alert("An error occurred while deleting the feed.");
-        }
-      }
-
-      function setWhitelist(postGuid, old_val) {
-        console.log("set whitelist for post: " + postGuid + " to: " + !old_val);
-        const url = "{{ url_for('main.set_whitelist', p_guid='0', val=False)}}"
-          .replace("0", postGuid)
-          .replace("/False", "/" + !old_val);
-        fetch(url)
-          .then((_) => window.location.reload())
-          .catch((error) => console.error("Error:", error));
-      }
-      function refresh(feedId) {
-        fetch("{{ url_for('main.get_feed', f_id='0')}}" + feedId)
-          .then((_) => window.location.reload())
-          .catch((error) => console.error("Error:", error));
-      }
-      document.addEventListener("DOMContentLoaded", function () {
-        const detailsList = document.querySelectorAll("details");
-        detailsList.forEach(function (details) {
-          const id = details.id;
-          const isOpen = localStorage.getItem(id) === "true";
-          if (isOpen) {
-            details.open = true;
-          }
-
-          details.addEventListener("toggle", function () {
-            console.log("toggling details: " + id);
-            localStorage.setItem(id, details.open);
-          });
-        });
-      });
-      window.addEventListener("load", function () {
-        // Restore scroll position
-        const scrollPosition = localStorage.getItem("scrollPosition");
-        console.log("restoring scroll position: " + scrollPosition);
-        if (scrollPosition !== null) {
-          window.scrollTo(0, parseInt(scrollPosition));
-        }
-      });
-      window.addEventListener("beforeunload", function () {
-        // Save scroll position
-        console.log("saving scroll position: " + window.scrollY);
-        localStorage.setItem("scrollPosition", window.scrollY);
-      });
-      //Function to handle bulk download
-      document.getElementById('download-all-btn').addEventListener('click', function() {
-          if (!confirm("Are you sure you want to download all podcasts? This may take some time.")) {
-              return;
-          }
-
-          // Disable the button to prevent multiple clicks
-          const downloadButton = document.getElementById('download-all-btn');
-          downloadButton.disabled = true;
-          downloadButton.textContent = "Downloading...";
-
-          fetch('/download_all', {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({}), // No additional data needed
-          })
-          .then(response => {
-              if (!response.ok) {
-                  throw new Error('Network response was not ok');
-              }
-              return response.json();
-          })
-          .then(data => {
-              const statusDiv = document.getElementById('download-status');
-              statusDiv.innerHTML = '<h2>Download Results:</h2>';
-              data.forEach(result => {
-                  const p = document.createElement('p');
-                  let statusText = '';
-                  if (result.status === 'success') {
-                      statusText = `✅ Success: ${result.title}`;
-                  } else if (result.status === 'failed') {
-                      statusText = `❌ Failed: ${result.title} - ${result.message}`;
-                  } else if (result.status === 'error') {
-                      statusText = `⚠️ Error: ${result.title} - ${result.message}`;
-                  }
-                  p.textContent = statusText;
-                  statusDiv.appendChild(p);
-              });
-          })
-          .catch((error) => {
-              console.error('Error:', error);
-              alert('An error occurred while downloading podcasts.');
-          })
-          .finally(() => {
-              // Re-enable the button after the process completes
-              const downloadButton = document.getElementById('download-all-btn');
-              downloadButton.disabled = false;
-              downloadButton.textContent = "Download All Podcasts";
-          });
-      });
+      }, 1000);
     </script>
   </body>
 </html>

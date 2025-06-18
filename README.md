@@ -29,37 +29,97 @@ Here's how it works:
 
 For detailed setup instructions, see our [beginner's guide](docs/how_to_run_beginners.md).
 
-1. Install ffmpeg
+### Quick Start - No Docker
 
-```shell
-sudo apt install ffmpeg
-```
+1. Install dependencies:
+   ```shell
+   # Install ffmpeg
+   sudo apt install ffmpeg  # Ubuntu/Debian
+   # or
+   brew install ffmpeg      # macOS
+   
+   # Install Python and Node.js dependencies
+   pip install pipenv
+   ```
+
+2. Set up configuration:
+   ```shell
+   # Copy example config and edit
+   cp config/config.yml.example config/config.yml
+   # Edit config.yml and update llm_api_key with your key
+   ```
+
+3. Run Podly:
+   ```shell
+   # Make script executable
+   chmod +x run_podly.sh
+   
+   # Start Podly (interactive mode)
+   ./run_podly.sh
+   
+   # Or start in background mode
+   ./run_podly.sh -b
+   ```
+
+The script will automatically:
+- Set up Python virtual environment
+- Install frontend dependencies
+- Configure environment variables from config.yml
+- Start both backend and frontend servers
+
+### Quick Start - With Docker
+
+1. Set up your configuration:
+   ```bash
+   cp config/config.yml.example config/config.yml
+   # Edit config.yml with your settings
+   ```
+
+2. Run Podly with Docker:
+   ```bash
+   # Make the script executable first
+   chmod +x run_podly_docker.sh
+   ./run_podly_docker.sh
+   ```
+
+   This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
 
 
-2. Install Python dependencies
+### Manual Setup
 
-```shell
-pip install pipenv
-pipenv --python 3.11
-pipenv install
-```
+If you prefer to run components separately:
 
-3. Set up configuration
+1. Install Python dependencies:
+   ```shell
+   pipenv --python 3.11
+   pipenv install
+   ```
 
-```shell
-# Copy example config and edit
-cp config/config.yml.example config/config.yml
-# Edit config.yml and update llm_api_key with your key
-```
+2. Install frontend dependencies:
+   ```shell
+   cd frontend
+   npm install
+   cd ..
+   ```
 
-4. Start the server
+3. Set up environment variables:
+   ```shell
+   # Set API URL based on your config.yml
+   export VITE_API_URL="http://localhost:5002"  # or your server URL
+   ```
 
-```shell
-pipenv shell
-python src/main.py
-```
+4. Start backend:
+   ```shell
+   pipenv run python src/main.py
+   ```
 
-The server will start at http://localhost:5001 by default.
+5. Start frontend (in another terminal):
+   ```shell
+   cd frontend
+   npm run dev
+   ```
+
+The servers will start at http://localhost:5001 (frontend) and http://localhost:5002 (backend) by default.
 
 ## Usage
 
@@ -106,7 +166,7 @@ Podly supports basic authentication. See below for example setup for `httpd.conf
 LoadModule proxy_module modules/mod_proxy.so
 LoadModule proxy_http_module modules/mod_proxy_http.so
 
-ProxyPass / http://127.0.0.1:5001/
+ProxyPass / http://127.0.0.1:5002/
 RequestHeader set X-Forwarded-Proto http
 RequestHeader set X-Forwarded-Prefix /
 
@@ -170,12 +230,12 @@ On next launch the database should update.
 
 ## Docker Support
 
-Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA environments.
+Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA environments. Use Docker if you prefer containerized deployment or need GPU acceleration.
 
 ### Quick Start with Docker
 
 1. Set up your configuration:
-   ```
+   ```bash
    cp config/config.yml.example config/config.yml
    # Edit config.yml with your settings
    ```
@@ -188,6 +248,18 @@ Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA envir
    ```
 
    This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
+
+### Docker vs Native
+
+- **Use Docker** (`./run_podly_docker.sh`) if you:
+  - Want containerized deployment
+  - Need GPU acceleration for Whisper
+  - Prefer isolated environments
+  
+- **Use Native** (`./run_podly.sh`) if you:
+  - Want faster development iteration
+  - Prefer direct access to logs and debugging
+  - Don't need GPU acceleration
 
 ### Docker Setup Troubleshooting
 
