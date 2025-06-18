@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useRef } from 'react';
 import type { Feed, Episode } from '../types';
 import { feedsApi } from '../services/api';
+import { useToast } from '../contexts/ToastContext';
+import { copyToClipboard } from '../utils/clipboard';
 import DownloadButton from './DownloadButton';
 import PlayButton from './PlayButton';
 import ProcessingStatsButton from './ProcessingStatsButton';
@@ -22,6 +24,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const queryClient = useQueryClient();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const feedHeaderRef = useRef<HTMLDivElement>(null);
+  const { addToast } = useToast();
 
   const { data: episodes, isLoading, error } = useQuery({
     queryKey: ['episodes', feed.id],
@@ -229,13 +232,22 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             <div className="flex items-center gap-3">
               {/* Podly RSS Subscribe Button */}
               <button 
-                onClick={() => window.open(`${window.location.origin}/feed/${feed.id}`, '_blank')}
+                onClick={async () => {
+                  const rssUrl = `${window.location.origin}/feed/${feed.id}`;
+                  const success = await copyToClipboard(rssUrl);
+                  
+                  if (success) {
+                    addToast('RSS feed URL copied to clipboard!', 'success');
+                  } else {
+                    addToast('Failed to copy RSS feed URL', 'error');
+                  }
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6.503 20.752c0 1.794-1.456 3.248-3.251 3.248S0 22.546 0 20.752s1.456-3.248 3.252-3.248 3.251 1.454 3.251 3.248zM1.677 6.082v4.15c6.988 0 12.65 5.662 12.65 12.65h4.15c0-9.271-7.529-16.8-16.8-16.8zM1.677.014v4.151C14.44 4.165 24.836 14.561 24.85 27.324H29c-.014-15.344-12.342-27.672-27.323-27.31z"/>
+                  <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
                 </svg>
-                Subscribe to Podly RSS
+                Copy Podly RSS URL
               </button>
 
               {/* Ellipsis Menu */}
@@ -292,16 +304,22 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                     </button>
 
                     <button
-                      onClick={() => {
-                        window.open(feed.rss_url, '_blank');
+                      onClick={async () => {
+                        const success = await copyToClipboard(feed.rss_url);
+                        
+                        if (success) {
+                          addToast('Original RSS feed URL copied to clipboard!', 'success');
+                        } else {
+                          addToast('Failed to copy original RSS feed URL', 'error');
+                        }
                         setShowMenu(false);
                       }}
                       className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                     >
                       <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M6.503 20.752c0 1.794-1.456 3.248-3.251 3.248S0 22.546 0 20.752s1.456-3.248 3.252-3.248 3.251 1.454 3.251 3.248zM1.677 6.082v4.15c6.988 0 12.65 5.662 12.65 12.65h4.15c0-9.271-7.529-16.8-16.8-16.8zM1.677.014v4.151C14.44 4.165 24.836 14.561 24.85 27.324H29c-.014-15.344-12.342-27.672-27.323-27.31z"/>
+                        <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
                       </svg>
-                      Original RSS feed
+                      Copy original RSS feed
                     </button>
 
                     <div className="border-t border-gray-100 my-1"></div>
