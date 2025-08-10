@@ -1,0 +1,20 @@
+services:
+  backend:
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    environment:
+      # Don't ask me why this is needed for ROCM. See
+      # https://github.com/openai/whisper/discussions/55#discussioncomment-3714528
+      - HSA_OVERRIDE_GFX_VERSION=10.3.0
+    security_opt:
+      - seccomp=unconfined
+# This would be ideal. Not currently supported, apparently. Or I just wasn't able to figure out the driver arg.
+# Tried: amdgpu, amd, rocm
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - capabilities: [gpu]
+#              driver: "amdgpu"
+#              count: 1

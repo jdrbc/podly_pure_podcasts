@@ -152,6 +152,8 @@ services:
         - BASE_IMAGE=${BASE_IMAGE:-python:3.11-slim}
         - CUDA_VERSION=${CUDA_VERSION:-12.1}
         - USE_GPU=${USE_GPU:-false}
+        - USE_GPU_NVIDIA=${USE_GPU_NVIDIA:-false}
+        - USE_GPU_RADEON=${USE_GPU_RADEON:-false}
     ports:
       - 5002:5002
     environment:
