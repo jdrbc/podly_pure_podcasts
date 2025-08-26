@@ -15,16 +15,26 @@ WORKDIR /app
 # Install dependencies based on base image
 RUN if [ -f /etc/debian_version ]; then \
         apt-get update && \
-        apt-get install ca-certificates && \
+        apt-get install -y ca-certificates && \
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ffmpeg \
-        build-essential \
-        gosu \
-        python3-pip \
-        python3 \
-        && if [ $(python3 --version | awk '{print $2}' | cut -d '.' -f2) -lt 11 ]; then apt-get install -y python3-tomli; fi \
+            ffmpeg \
+            build-essential \
+            gosu \
+            python3-pip \
+            python3 \
         && apt-get clean && \
         rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ; \
+    fi
+
+# Install python3-tomli if Python version is less than 3.11 (separate step for ARM compatibility)
+RUN if [ -f /etc/debian_version ]; then \
+        PYTHON_MINOR=$(python3 --version 2>&1 | grep -o 'Python 3\.[0-9]*' | cut -d '.' -f2) && \
+        if [ "$PYTHON_MINOR" -lt 11 ]; then \
+            apt-get update && \
+            apt-get install -y python3-tomli && \
+            apt-get clean && \
+            rm -rf /var/lib/apt/lists/* ; \
+        fi ; \
     fi
 
 # Set up Python environment

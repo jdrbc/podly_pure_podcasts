@@ -1,7 +1,7 @@
 services:
   backend:
     container_name: podly_backend
-    image: ghcr.io/${GITHUB_REPOSITORY:-podly/podly}-backend:${BACKEND_VARIANT:-latest}
+    image: ghcr.io/jdrbc/podly_pure_podcasts-backend:${BACKEND_VARIANT:-latest}
     volumes:
       - ./config:/app/config
       - ./in:/app/in
@@ -17,7 +17,7 @@ services:
 
   frontend:
     container_name: podly_frontend
-    image: ghcr.io/${GITHUB_REPOSITORY:-podly/podly}-frontend:latest
+    image: ghcr.io/jdrbc/podly_pure_podcasts-frontend:latest
     ports:
       - 5001:80
     depends_on:

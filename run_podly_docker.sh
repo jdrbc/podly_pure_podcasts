@@ -44,6 +44,7 @@ DETACHED=false
 DEV_MODE=false
 PRODUCTION_MODE=false
 DEV_REBUILD=false
+BRANCH_SUFFIX="latest"
 
 # Detect NVIDIA GPU
 NVIDIA_GPU_AVAILABLE=false
@@ -93,9 +94,13 @@ while [[ $# -gt 0 ]]; do
         --production)
             PRODUCTION_MODE=true
             ;;
+        --branch=*)
+            BRANCH_NAME="${1#*=}"
+            BRANCH_SUFFIX="${BRANCH_NAME}"
+            ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev] [--production]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev] [--production] [--branch=BRANCH_NAME]"
             exit 1
             ;;
     esac
@@ -154,15 +159,22 @@ export USE_GPU_AMD
 # Setup Docker Compose configuration
 if [ "$PRODUCTION_MODE" = true ]; then
     COMPOSE_FILES="-f compose.prod.yml"
-    # Set backend variant based on GPU detection
+    # Set backend variant based on GPU detection and branch
     if [ "$USE_GPU_NVIDIA" = true ]; then
-        export BACKEND_VARIANT="gpu-nvidia"
+        export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-nvidia"
     elif [ "$USE_GPU_AMD" = true ]; then
-        export BACKEND_VARIANT="gpu-amd"
+        export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-amd"
     else
-        export BACKEND_VARIANT="latest"
+        export BACKEND_VARIANT="${BRANCH_SUFFIX}"
     fi
-    echo -e "${YELLOW}Production mode - using published images (variant: ${BACKEND_VARIANT})${NC}"
+    # Set frontend variant (always uses the same branch suffix)
+    export FRONTEND_VARIANT="${BRANCH_SUFFIX}"
+    echo -e "${YELLOW}Production mode - using published images${NC}"
+    echo -e "${YELLOW}  Backend variant: ${BACKEND_VARIANT}${NC}"
+    echo -e "${YELLOW}  Frontend variant: ${FRONTEND_VARIANT}${NC}"
+    if [ "$BRANCH_SUFFIX" != "latest" ]; then
+        echo -e "${GREEN}Using branch: ${BRANCH_SUFFIX}${NC}"
+    fi
 else
     COMPOSE_FILES="-f compose.yml"
     if [ "$USE_GPU_NVIDIA" = true ]; then
