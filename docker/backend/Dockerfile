@@ -44,11 +44,22 @@ RUN if [ "${USE_GPU}" = "true" ] || [ "${USE_GPU_NVIDIA}" = "true" ]; then \
         pip install torch --index-url https://download.pytorch.org/whl/cpu; \
     fi
 
+# Copy application code
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY config/config.yml.example ./config/
+COPY config/system_prompt.txt ./config/
+COPY config/user_prompt.jinja ./config/
+
 # Create non-root user for running the application
 RUN groupadd -r appuser && \
     useradd --no-log-init -r -g appuser -d /home/appuser appuser && \
     mkdir -p /home/appuser && \
     chown -R appuser:appuser /home/appuser
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/in /app/srv /app/processing /app/src/instance && \
+    chown -R appuser:appuser /app
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
