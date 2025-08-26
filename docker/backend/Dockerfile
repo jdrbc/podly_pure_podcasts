@@ -24,7 +24,7 @@ RUN if [ -f /etc/debian_version ]; then \
         python3 \
         && if [ $(python3 --version | awk '{print $2}' | cut -d '.' -f2) -lt 11 ]; then apt-get install -y python3-tomli; fi \
         && apt-get clean && \
-        rm -rf /var/lib/apt/lists/* ; \
+        rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ; \
     fi
 
 # Set up Python environment
@@ -36,12 +36,12 @@ RUN pip3 install --no-cache-dir pipenv && \
 
 # Install PyTorch with CUDA support if using NVIDIA image
 RUN if [ "${USE_GPU}" = "true" ] || [ "${USE_GPU_NVIDIA}" = "true" ]; then \
-        pip install nvidia-cudnn-cu12; \
-        pip install torch; \
+        pip install --no-cache-dir nvidia-cudnn-cu12; \
+        pip install --no-cache-dir torch; \
     elif [ "${USE_GPU_AMD}" = "true" ]; then \
-        pip install torch --index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION}; \
+        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION}; \
     else \
-        pip install torch --index-url https://download.pytorch.org/whl/cpu; \
+        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
     fi
 
 # Copy application code
