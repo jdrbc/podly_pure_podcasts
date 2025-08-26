@@ -5,7 +5,10 @@ FROM ${BASE_IMAGE} AS base
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ARG CUDA_VERSION=12.4.1
+ARG ROCM_VERSION=6.4
 ARG USE_GPU=false
+ARG USE_GPU_NVIDIA=${USE_GPU}
+ARG USE_GPU_AMD=false
 
 WORKDIR /app
 
@@ -19,6 +22,7 @@ RUN if [ -f /etc/debian_version ]; then \
         gosu \
         python3-pip \
         python3 \
+        && if [ $(python3 --version | awk '{print $2}' | cut -d '.' -f2) -lt 11 ]; then apt-get install -y python3-tomli; fi \
         && apt-get clean && \
         rm -rf /var/lib/apt/lists/* ; \
     fi
@@ -31,9 +35,11 @@ RUN pip3 install --no-cache-dir pipenv && \
     pipenv install --deploy --system --dev
 
 # Install PyTorch with CUDA support if using NVIDIA image
-RUN if [ "${USE_GPU}" = "true" ]; then \
+RUN if [ "${USE_GPU}" = "true" ] || [ "${USE_GPU_NVIDIA}" = "true" ]; then \
         pip install nvidia-cudnn-cu12; \
         pip install torch; \
+    elif [ "${USE_GPU_AMD}" = "true" ]; then \
+        pip install torch --index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION}; \
     else \
         pip install torch --index-url https://download.pytorch.org/whl/cpu; \
     fi

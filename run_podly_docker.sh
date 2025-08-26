@@ -8,8 +8,10 @@ NC='\033[0m' # No Color
 
 # Central configuration defaults
 CUDA_VERSION="12.4.1"
+ROCM_VERSION="6.4.3"
 CPU_BASE_IMAGE="python:3.11-slim"
-GPU_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
+GPU_NVIDIA_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
+GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
 
 # Read server URL from config.yml if it exists
 SERVER_URL=""
@@ -47,6 +49,12 @@ if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
     NVIDIA_GPU_AVAILABLE=true
     echo -e "${GREEN}NVIDIA GPU detected.${NC}"
 fi
+# Detect ROCM GPU
+AMD_GPU_AVAILABLE=false
+if command -v rocm-smi &> /dev/null && rocm-smi &> /dev/null; then
+    AMD_GPU_AVAILABLE=true
+    echo -e "${GREEN}ROCM GPU detected.${NC}"
+fi
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -65,7 +73,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --cuda=*)
             CUDA_VERSION="${1#*=}"
-            GPU_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
+            GPU_NVIDIA_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
+            ;;
+        --rocm=*)
+            ROCM_VERSION="${1#*=}"
+            GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
             ;;
         -d|--detach)
             DETACHED=true
@@ -83,26 +95,34 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Determine if GPU should be used based on availability and flags
-USE_GPU=false
+USE_GPU_NVIDIA=false
+USE_GPU_AMD=false
 if [ "$FORCE_CPU" = true ]; then
     USE_GPU=false
     echo -e "${YELLOW}Forcing CPU mode${NC}"
 elif [ "$FORCE_GPU" = true ]; then
+    # Assume nvidia if this happens. Probably ought to make FORCE_GPU_TYPE variables somtime.
     if [ "$NVIDIA_GPU_AVAILABLE" = false ]; then
         echo -e "${RED}Warning: GPU requested but no NVIDIA GPU detected. Build may fail.${NC}"
     fi
-    USE_GPU=true
+    USE_GPU_NVIDIA=true
     echo -e "${YELLOW}Forcing GPU mode${NC}"
 elif [ "$NVIDIA_GPU_AVAILABLE" = true ]; then
-    USE_GPU=true
+    USE_GPU_NVIDIA=true
+    echo -e "${YELLOW}Using GPU mode (auto-detected)${NC}"
+elif [ "${AMD_GPU_AVAILABLE}" = true ]; then
+    USE_GPU_AMD=true
     echo -e "${YELLOW}Using GPU mode (auto-detected)${NC}"
 else
     echo -e "${YELLOW}Using CPU mode (no GPU detected)${NC}"
 fi
 
 # Set base image and CUDA environment
-if [ "$USE_GPU" = true ]; then
-    BASE_IMAGE="$GPU_BASE_IMAGE"
+if [ "$USE_GPU_NVIDIA" = true ]; then
+    BASE_IMAGE="$GPU_NVIDIA_BASE_IMAGE"
+    CUDA_VISIBLE_DEVICES=0
+elif [ "${USE_GPU_AMD}" = true ]; then
+    BASE_IMAGE="${GPU_ROCM_BASE_IMAGE}"
     CUDA_VISIBLE_DEVICES=0
 else
     BASE_IMAGE="$CPU_BASE_IMAGE"
@@ -117,13 +137,19 @@ export PUID=$(id -u)
 export PGID=$(id -g)
 export BASE_IMAGE
 export CUDA_VERSION
+export ROCM_VERSION
 export CUDA_VISIBLE_DEVICES
 export USE_GPU
+export USE_GPU_NVIDIA
+export USE_GPU_AMD
 
 # Setup Docker Compose configuration
 COMPOSE_FILES="-f compose.yml"
-if [ "$USE_GPU" = true ]; then
+if [ "$USE_GPU_NVIDIA" = true ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f compose.nvidia.yml"
+fi
+if [ "$USE_GPU_AMD" = true ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f compose.rocm.yml"
 fi
 if [ "$DEV_MODE" = true ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
