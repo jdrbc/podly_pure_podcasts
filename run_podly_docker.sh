@@ -165,7 +165,7 @@ if [ "$PRODUCTION_MODE" = true ]; then
     elif [ "$USE_GPU_AMD" = true ]; then
         export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-amd"
     else
-        export BACKEND_VARIANT="${BRANCH_SUFFIX}"
+        export BACKEND_VARIANT="${BRANCH_SUFFIX}-latest"
     fi
     # Set frontend variant (always uses the same branch suffix)
     export FRONTEND_VARIANT="${BRANCH_SUFFIX}"
