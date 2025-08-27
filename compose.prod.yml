@@ -1,0 +1,31 @@
+services:
+  backend:
+    container_name: podly_backend
+    image: ghcr.io/jdrbc/podly_pure_podcasts-backend:${BACKEND_VARIANT:-latest}
+    volumes:
+      - ./config:/app/config
+      - ./in:/app/in
+      - ./srv:/app/srv
+      - ./src/instance:/app/src/instance
+    ports:
+      - 5002:5002
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
+      - CORS_ORIGINS=*
+
+  frontend:
+    container_name: podly_frontend
+    image: ghcr.io/jdrbc/podly_pure_podcasts-frontend:latest
+    ports:
+      - 5001:80
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+       interval: 30s
+       timeout: 10s
+       retries: 3
+       start_period: 10s

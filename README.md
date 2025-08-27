@@ -274,6 +274,12 @@ If you experience Docker build issues, try the test build option to validate you
 You can use these command-line options with the run script:
 
 ```bash
+# Development mode - rebuild containers before starting (use after code changes)
+./run_podly_docker.sh --dev
+
+# Production mode - use published Docker images from GitHub Container Registry
+./run_podly_docker.sh --production
+
 # Force CPU mode even if GPU is available
 ./run_podly_docker.sh --cpu
 
@@ -285,6 +291,34 @@ You can use these command-line options with the run script:
 
 # Test if the Docker build works (helpful for troubleshooting)
 ./run_podly_docker.sh --test-build
+
+# Run in background/detached mode
+./run_podly_docker.sh -d
+```
+
+### Development vs Production Modes
+
+**Development Mode** (default):
+- Uses local Docker builds
+- Requires rebuilding after code changes: `./run_podly_docker.sh --dev`
+- Mounts only essential directories (config, input/output, database)
+- Good for: development, testing, customization
+
+**Production Mode**:
+- Uses pre-built images from GitHub Container Registry
+- No building required - images are pulled automatically
+- Same volume mounts as development
+- Good for: deployment, quick setup, consistent environments
+
+```bash
+# Start with existing local containers
+./run_podly_docker.sh
+
+# Rebuild and start after making code changes  
+./run_podly_docker.sh --dev
+
+# Use published images (no local building required)
+./run_podly_docker.sh --production
 ```
 
 ## FAQ

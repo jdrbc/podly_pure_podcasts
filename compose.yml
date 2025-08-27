@@ -6,8 +6,7 @@ services:
       - ./config:/app/config
       - ./in:/app/in
       - ./srv:/app/srv
-      - ./src:/app/src
-      - ./scripts:/app/scripts
+      - ./src/instance:/app/src/instance
     build:
       context: .
       dockerfile: docker/backend/Dockerfile

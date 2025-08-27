@@ -42,6 +42,9 @@ FORCE_CPU=false
 FORCE_GPU=false
 DETACHED=false
 DEV_MODE=false
+PRODUCTION_MODE=false
+DEV_REBUILD=false
+BRANCH_SUFFIX="latest"
 
 # Detect NVIDIA GPU
 NVIDIA_GPU_AVAILABLE=false
@@ -83,11 +86,21 @@ while [[ $# -gt 0 ]]; do
             DETACHED=true
             ;;
         --dev)
+            DEV_REBUILD=true
+            ;;
+        --dev-old)
             DEV_MODE=true
+            ;;
+        --production)
+            PRODUCTION_MODE=true
+            ;;
+        --branch=*)
+            BRANCH_NAME="${1#*=}"
+            BRANCH_SUFFIX="${BRANCH_NAME}"
             ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev] [--production] [--branch=BRANCH_NAME]"
             exit 1
             ;;
     esac
@@ -144,16 +157,39 @@ export USE_GPU_NVIDIA
 export USE_GPU_AMD
 
 # Setup Docker Compose configuration
-COMPOSE_FILES="-f compose.yml"
-if [ "$USE_GPU_NVIDIA" = true ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f compose.nvidia.yml"
-fi
-if [ "$USE_GPU_AMD" = true ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f compose.rocm.yml"
-fi
-if [ "$DEV_MODE" = true ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
-    echo -e "${YELLOW}Development mode enabled - frontend will run with hot reloading${NC}"
+if [ "$PRODUCTION_MODE" = true ]; then
+    COMPOSE_FILES="-f compose.prod.yml"
+    # Set backend variant based on GPU detection and branch
+    if [ "$USE_GPU_NVIDIA" = true ]; then
+        export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-nvidia"
+    elif [ "$USE_GPU_AMD" = true ]; then
+        export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-amd"
+    else
+        export BACKEND_VARIANT="${BRANCH_SUFFIX}"
+    fi
+    # Set frontend variant (always uses the same branch suffix)
+    export FRONTEND_VARIANT="${BRANCH_SUFFIX}"
+    echo -e "${YELLOW}Production mode - using published images${NC}"
+    echo -e "${YELLOW}  Backend variant: ${BACKEND_VARIANT}${NC}"
+    echo -e "${YELLOW}  Frontend variant: ${FRONTEND_VARIANT}${NC}"
+    if [ "$BRANCH_SUFFIX" != "latest" ]; then
+        echo -e "${GREEN}Using branch: ${BRANCH_SUFFIX}${NC}"
+    fi
+else
+    COMPOSE_FILES="-f compose.yml"
+    if [ "$USE_GPU_NVIDIA" = true ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f compose.nvidia.yml"
+    fi
+    if [ "$USE_GPU_AMD" = true ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f compose.rocm.yml"
+    fi
+    if [ "$DEV_MODE" = true ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
+        echo -e "${YELLOW}Development mode enabled - frontend will run with hot reloading${NC}"
+    fi
+    if [ "$DEV_REBUILD" = true ]; then
+        echo -e "${YELLOW}Development rebuild mode - will rebuild containers before starting${NC}"
+    fi
 fi
 
 # Execute appropriate Docker Compose command
@@ -166,6 +202,12 @@ elif [ "$TEST_BUILD" = true ]; then
     docker compose $COMPOSE_FILES build --no-cache
     echo -e "${GREEN}Test build completed successfully.${NC}"
 else
+    # Handle development rebuild
+    if [ "$DEV_REBUILD" = true ]; then
+        echo -e "${YELLOW}Rebuilding containers for development...${NC}"
+        docker compose $COMPOSE_FILES build
+    fi
+    
     if [ "$DETACHED" = true ]; then
         echo -e "${YELLOW}Starting Podly in detached mode...${NC}"
         docker compose $COMPOSE_FILES up -d
