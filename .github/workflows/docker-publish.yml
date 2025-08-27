@@ -74,8 +74,9 @@ jobs:
             USE_GPU=${{ matrix.variant.gpu }}
             USE_GPU_NVIDIA=${{ matrix.variant.gpu_nvidia }}
             USE_GPU_AMD=${{ matrix.variant.gpu_amd }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Temporarily disabled due to GitHub Actions Cache service outage
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
 
   build-frontend:
     runs-on: ubuntu-latest
@@ -129,5 +130,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VITE_API_URL=http://localhost:5002
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Temporarily disabled due to GitHub Actions Cache service outage
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
