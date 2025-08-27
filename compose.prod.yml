@@ -17,7 +17,7 @@ services:
 
   frontend:
     container_name: podly_frontend
-    image: ghcr.io/jdrbc/podly_pure_podcasts-frontend:latest
+    image: ghcr.io/jdrbc/podly_pure_podcasts-frontend:${FRONTEND_VARIANT:-latest}
     ports:
       - 5001:80
     depends_on:
