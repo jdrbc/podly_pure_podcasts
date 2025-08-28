@@ -24,7 +24,6 @@ Here's how it works:
 - Podly removes the ad segments
 - Podly delivers the ad-free version of the podcast to you
 
-
 ## How To Run
 
 For detailed setup instructions, see our [beginner's guide](docs/how_to_run_beginners.md).
@@ -32,17 +31,19 @@ For detailed setup instructions, see our [beginner's guide](docs/how_to_run_begi
 ### Quick Start - No Docker
 
 1. Install dependencies:
+
    ```shell
    # Install ffmpeg
    sudo apt install ffmpeg  # Ubuntu/Debian
    # or
    brew install ffmpeg      # macOS
-   
+
    # Install Python and Node.js dependencies
    pip install pipenv
    ```
 
 2. Set up configuration:
+
    ```shell
    # Copy example config and edit
    cp config/config.yml.example config/config.yml
@@ -50,18 +51,20 @@ For detailed setup instructions, see our [beginner's guide](docs/how_to_run_begi
    ```
 
 3. Run Podly:
+
    ```shell
    # Make script executable
    chmod +x run_podly.sh
-   
+
    # Start Podly (interactive mode)
    ./run_podly.sh
-   
+
    # Or start in background mode
    ./run_podly.sh -b
    ```
 
 The script will automatically:
+
 - Set up Python virtual environment
 - Install frontend dependencies
 - Configure environment variables from config.yml
@@ -70,12 +73,14 @@ The script will automatically:
 ### Quick Start - With Docker
 
 1. Set up your configuration:
+
    ```bash
    cp config/config.yml.example config/config.yml
    # Edit config.yml with your settings
    ```
 
 2. Run Podly with Docker:
+
    ```bash
    # Make the script executable first
    chmod +x run_podly_docker.sh
@@ -84,18 +89,19 @@ The script will automatically:
 
    This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
 
-
 ### Manual Setup
 
 If you prefer to run components separately:
 
 1. Install Python dependencies:
+
    ```shell
    pipenv --python 3.11
    pipenv install
    ```
 
 2. Install frontend dependencies:
+
    ```shell
    cd frontend
    npm install
@@ -103,12 +109,14 @@ If you prefer to run components separately:
    ```
 
 3. Set up environment variables:
+
    ```shell
    # Set API URL based on your config.yml
    export VITE_API_URL="http://localhost:5002"  # or your server URL
    ```
 
 4. Start backend:
+
    ```shell
    pipenv run python src/main.py
    ```
@@ -235,12 +243,14 @@ Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA envir
 ### Quick Start with Docker
 
 1. Set up your configuration:
+
    ```bash
    cp config/config.yml.example config/config.yml
    # Edit config.yml with your settings
    ```
 
 2. Run Podly with Docker:
+
    ```bash
    # Make the script executable first
    chmod +x run_podly_docker.sh
@@ -252,10 +262,11 @@ Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA envir
 ### Docker vs Native
 
 - **Use Docker** (`./run_podly_docker.sh`) if you:
+
   - Want containerized deployment
   - Need GPU acceleration for Whisper
   - Prefer isolated environments
-  
+
 - **Use Native** (`./run_podly.sh`) if you:
   - Want faster development iteration
   - Prefer direct access to logs and debugging
@@ -299,12 +310,14 @@ You can use these command-line options with the run script:
 ### Development vs Production Modes
 
 **Development Mode** (default):
+
 - Uses local Docker builds
 - Requires rebuilding after code changes: `./run_podly_docker.sh --dev`
 - Mounts only essential directories (config, input/output, database)
 - Good for: development, testing, customization
 
 **Production Mode**:
+
 - Uses pre-built images from GitHub Container Registry
 - No building required - images are pulled automatically
 - Same volume mounts as development
@@ -314,24 +327,48 @@ You can use these command-line options with the run script:
 # Start with existing local containers
 ./run_podly_docker.sh
 
-# Rebuild and start after making code changes  
+# Rebuild and start after making code changes
 ./run_podly_docker.sh --dev
 
 # Use published images (no local building required)
 ./run_podly_docker.sh --production
 ```
 
+### Docker Environment Configuration
+
+The Docker setup uses runtime environment variables that can be configured when starting the containers:
+
+**Frontend API URL Configuration**:
+
+- `VITE_API_URL`: Sets the backend API URL for the frontend (default: `http://localhost:5002`)
+- Can be customized at runtime without rebuilding the image
+
+```bash
+# Example: Run with custom API URL
+VITE_API_URL=http://your-server.com:5002 ./run_podly_docker.sh
+
+# Or set in Docker Compose environment:
+docker compose up -e VITE_API_URL=http://your-server.com:5002
+```
+
+**Other Environment Variables**:
+
+- `PUID`/`PGID`: User/group IDs for file permissions (automatically set by run script)
+- `CUDA_VISIBLE_DEVICES`: GPU device selection for CUDA acceleration
+- `CORS_ORIGINS`: Backend CORS configuration
+
 ## FAQ
 
 Q: What does "whitelisted" mean in the UI?
 
-A: It means an episode is eligible for download and ad removal. By default, new episodes are automatically whitelisted (```automatically_whitelist_new_episodes```), and only a limited number of old episodes are auto-whitelisted (```number_of_episodes_to_whitelist_from_archive_of_new_feed```). This helps control costs by limiting how many episodes are processed. You can adjust these settings in your config.yml for more manual control.
-  
+A: It means an episode is eligible for download and ad removal. By default, new episodes are automatically whitelisted (`automatically_whitelist_new_episodes`), and only a limited number of old episodes are auto-whitelisted (`number_of_episodes_to_whitelist_from_archive_of_new_feed`). This helps control costs by limiting how many episodes are processed. You can adjust these settings in your config.yml for more manual control.
+
 Q: How can I enable whisper GPU acceleration?
 
 A: There are two ways to enable GPU acceleration:
 
-1. **Using Docker**: 
+1. **Using Docker**:
+
    - Use the provided Docker setup with `run_podly_docker.sh` which automatically detects and uses NVIDIA GPUs if available
    - You can force GPU mode with `./run_podly_docker.sh --gpu` or force CPU mode with `./run_podly_docker.sh --cpu`
 

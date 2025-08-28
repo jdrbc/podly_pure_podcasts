@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { Feed, Episode } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '__VITE_API_URL_PLACEHOLDER__';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -76,7 +76,7 @@ export const feedsApi = {
     const response = await api.get(`/api/posts/${guid}/download`, {
       responseType: 'blob',
     });
-    
+
     const blob = new Blob([response.data], { type: 'audio/mpeg' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -93,7 +93,7 @@ export const feedsApi = {
     const response = await api.get(`/api/posts/${guid}/download/original`, {
       responseType: 'blob',
     });
-    
+
     const blob = new Blob([response.data], { type: 'audio/mpeg' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -280,4 +280,4 @@ export const feedsApi = {
   getEpisodeOriginalDownloadUrl: (guid: string): string => {
     return feedsApi.getPostOriginalDownloadUrl(guid);
   },
-}; 
+};

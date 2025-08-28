@@ -20,6 +20,8 @@ services:
     image: ghcr.io/jdrbc/podly_pure_podcasts-frontend:${FRONTEND_VARIANT:-latest}
     ports:
       - 5001:80
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:5002}
     depends_on:
       - backend
     restart: unless-stopped

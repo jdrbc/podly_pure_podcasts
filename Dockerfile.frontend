@@ -10,9 +10,6 @@ RUN npm ci
 # Copy source code
 COPY frontend/ ./
 
-# Build the application with environment variable
-ARG VITE_API_URL
-ENV VITE_API_URL=${VITE_API_URL:-http://localhost:5002}
 RUN npm run build
 
 # Production stage
@@ -27,5 +24,9 @@ COPY docker/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 # Expose port 80
 EXPOSE 80
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+# Copy the frontend startup script
+COPY docker-entrypoint-frontend.sh /docker-entrypoint-frontend.sh
+RUN chmod +x /docker-entrypoint-frontend.sh
+
+# Execute the startup script
+CMD ["/docker-entrypoint-frontend.sh"]
