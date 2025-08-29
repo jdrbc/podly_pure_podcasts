@@ -47,3 +47,4 @@ config/config.yml
 *.db
 *.sqlite
 .DS_Store
+src/instance/sqlite3.db-journal

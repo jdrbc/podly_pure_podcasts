@@ -43,7 +43,7 @@ FORCE_GPU=false
 DETACHED=false
 DEV_MODE=false
 PRODUCTION_MODE=true
-DEV_REBUILD=false
+REBUILD=false
 BRANCH_SUFFIX="main"
 
 # Detect NVIDIA GPU
@@ -86,13 +86,16 @@ while [[ $# -gt 0 ]]; do
             DETACHED=true
             ;;
         --dev)
-            DEV_REBUILD=true
-            ;;
-        --dev-old)
             DEV_MODE=true
+            REBUILD=true
+            PRODUCTION_MODE=false
+            ;;
+        --rebuild)
+            REBUILD=true
             ;;
         --production)
             PRODUCTION_MODE=true
+            DEV_MODE=false
             ;;
         --branch=*)
             BRANCH_NAME="${1#*=}"
@@ -100,7 +103,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev] [--production] [--branch=BRANCH_NAME]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME]"
             exit 1
             ;;
     esac
@@ -187,8 +190,8 @@ else
         COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
         echo -e "${YELLOW}Development mode enabled - frontend will run with hot reloading${NC}"
     fi
-    if [ "$DEV_REBUILD" = true ]; then
-        echo -e "${YELLOW}Development rebuild mode - will rebuild containers before starting${NC}"
+    if [ "$REBUILD" = true ]; then
+        echo -e "${YELLOW}Rebuild mode - will rebuild containers before starting${NC}"
     fi
 fi
 
@@ -203,8 +206,8 @@ elif [ "$TEST_BUILD" = true ]; then
     echo -e "${GREEN}Test build completed successfully.${NC}"
 else
     # Handle development rebuild
-    if [ "$DEV_REBUILD" = true ]; then
-        echo -e "${YELLOW}Rebuilding containers for development...${NC}"
+    if [ "$REBUILD" = true ]; then
+        echo -e "${YELLOW}Rebuilding containers...${NC}"
         docker compose $COMPOSE_FILES build
     fi
     
