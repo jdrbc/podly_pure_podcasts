@@ -128,8 +128,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VITE_API_URL=http://localhost:5002
           # Temporarily disabled due to GitHub Actions Cache service outage
           # cache-from: type=gha
           # cache-to: type=gha,mode=max
