@@ -1,7 +1,30 @@
 import axios from 'axios';
 import type { Feed, Episode } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '__VITE_API_URL_PLACEHOLDER__';
+// Type for runtime configuration
+interface AppConfig {
+  API_BASE_URL: string;
+}
+
+// Extend window interface to include our app config
+declare global {
+  interface Window {
+    __APP_CONFIG__?: AppConfig;
+  }
+}
+
+// Get API URL from runtime config or fall back to environment variable
+const getApiBaseUrl = (): string => {
+  // First try the runtime config (set by Docker entrypoint)
+  if (typeof window !== 'undefined' && window.__APP_CONFIG__) {
+    return window.__APP_CONFIG__.API_BASE_URL;
+  }
+
+  // Fall back to Vite environment variable (for development)
+  return import.meta.env.VITE_API_URL || 'http://localhost:5002';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
