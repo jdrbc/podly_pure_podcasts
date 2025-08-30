@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: podly
+  IMAGE_NAME: ${{ github.repository_owner }}/podly
 
 jobs:
   build:
