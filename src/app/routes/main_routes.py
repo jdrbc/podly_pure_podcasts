@@ -15,15 +15,15 @@ def index() -> flask.Response:
     static_folder = current_app.static_folder
     if static_folder and os.path.exists(os.path.join(static_folder, "index.html")):
         return send_from_directory(static_folder, "index.html")
-    else:
-        feeds = Feed.query.all()
-        return flask.make_response(
-            flask.render_template("index.html", feeds=feeds, config=config), 200
-        )
+
+    feeds = Feed.query.all()
+    return flask.make_response(
+        flask.render_template("index.html", feeds=feeds, config=config), 200
+    )
 
 
 @main_bp.route("/<path:path>")
-def catch_all(path):
+def catch_all(path: str) -> flask.Response:
     """Serve React app for all frontend routes, or serve static files."""
     # Don't handle API routes - let them be handled by API blueprint
     if path.startswith("api/"):
