@@ -52,17 +52,3 @@ export default tseslint.config({
   },
 });
 ```
-
-## Environment Configuration
-
-This frontend supports runtime configuration through environment variables:
-
-### Development Mode
-
-When running with `npm run dev`, the development server will start at `http://localhost:5001` and proxy API requests to the backend running at `http://localhost:5001`.
-
-### Production/Docker Mode
-
-In production, the frontend is built as static assets and served directly by the Flask backend application. No separate frontend container is needed.
-
-The combined application serves both the React frontend and API endpoints from the same port (5002).

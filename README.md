@@ -126,7 +126,7 @@ The development frontend server will start at http://localhost:5001 and proxy AP
 
 Once the server is running:
 
-1. Open http://localhost:5001 in your web browser (or http://localhost:5001 for development)
+1. Open http://localhost:5001 in your web browser
 2. Add podcast RSS feeds through the web interface
 3. Open your podcast app and subscribe to the Podly endpoint
    - For example, `http://localhost:5001/feed/1`
@@ -306,7 +306,7 @@ You can use these command-line options with the run script:
 
 - Uses local Docker builds
 - Requires rebuilding after code changes: `./run_podly_docker.sh --dev`
-- Mounts only essential directories (config, input/output, database)
+- Mounts essential directories (config, input/output, database) and live code for development
 - Good for: development, testing, customization
 
 **Production Mode**:
@@ -329,13 +329,13 @@ You can use these command-line options with the run script:
 
 ### Docker Environment Configuration
 
-The Docker setup uses runtime environment variables that can be configured when starting the containers:
+The Docker setup uses runtime environment variables that can be configured when starting the container:
 
 **Environment Variables**:
 
 - `PUID`/`PGID`: User/group IDs for file permissions (automatically set by run script)
 - `CUDA_VISIBLE_DEVICES`: GPU device selection for CUDA acceleration
-- `CORS_ORIGINS`: Backend CORS configuration
+- `CORS_ORIGINS`: Backend CORS configuration (defaults to accept requests from any origin)
 
 ## FAQ
 
