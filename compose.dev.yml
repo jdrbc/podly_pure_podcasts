@@ -13,18 +13,3 @@ services:
       - FLASK_ENV=development
       - CORS_ORIGINS=*
     restart: unless-stopped
-
-  frontend-dev:
-    container_name: podly_frontend_dev
-    image: node:18-alpine
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5001"
-    ports:
-      - 5001:5001
-    environment:
-      - NODE_ENV=development
-    depends_on:
-      - podly
