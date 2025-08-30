@@ -1,6 +1,6 @@
 services:
   podly:
-    container_name: podly_app
+    container_name: podly
     build: .
     volumes:
       - ./config:/app/config

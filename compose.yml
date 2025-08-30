@@ -1,7 +1,7 @@
 services:
   podly:
-    container_name: podly_app
-    image: podly-app
+    container_name: podly
+    image: podly
     volumes:
       - ./config:/app/config
       - ./in:/app/in

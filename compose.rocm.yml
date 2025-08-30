@@ -1,7 +1,7 @@
 services:
   podly:
     build: .
-    container_name: podly_app
+    container_name: podly
     ports:
       - "5001:5001"
     volumes:
