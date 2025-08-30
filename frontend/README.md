@@ -59,19 +59,10 @@ This frontend supports runtime configuration through environment variables:
 
 ### Development Mode
 
-When running with `npm run dev`, you can configure the API URL using:
-
-- `.env` file: `VITE_API_URL=http://localhost:5002`
-- Environment variable: `VITE_API_URL=http://localhost:5002 npm run dev`
+When running with `npm run dev`, the development server will start at `http://localhost:5001` and proxy API requests to the backend running at `http://localhost:5001`.
 
 ### Production/Docker Mode
 
-When running in Docker, the API URL is configured at container startup time through the `VITE_API_URL` environment variable. No rebuild is required to change the API URL.
+In production, the frontend is built as static assets and served directly by the Flask backend application. No separate frontend container is needed.
 
-Example:
-
-```bash
-docker run -e VITE_API_URL=http://production-server:5002 podly-frontend
-```
-
-The frontend will automatically use the correct API URL based on the environment configuration.
+The combined application serves both the React frontend and API endpoints from the same port (5002).

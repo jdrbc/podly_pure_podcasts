@@ -90,7 +90,7 @@ if [ -z "$SERVER_URL" ]; then
     SERVER_URL="http://localhost"
 fi
 if [ -z "$BACKEND_PORT" ]; then
-    BACKEND_PORT="5002"
+    BACKEND_PORT="5001"
 fi
 if [ -z "$FRONTEND_PORT" ]; then
     FRONTEND_PORT="5001"
@@ -215,7 +215,7 @@ while true; do
             echo -e "${YELLOW}Backend PID: $BACKEND_PID${NC}"
             echo -e "${YELLOW}Frontend PID: $FRONTEND_PID${NC}"
             echo -e "${YELLOW}To stop: kill $BACKEND_PID $FRONTEND_PID${NC}"
-            echo -e "${YELLOW}Alternate kill command: (lsof -i :5001; lsof -i :5002) | grep LISTEN | awk '{print \$2}' | xargs kill -9${NC}"
+            echo -e "${YELLOW}Alternate kill command: (lsof -i :5001; lsof -i :5001) | grep LISTEN | awk '{print \$2}' | xargs kill -9${NC}"
             exit 0
             ;;
         *)

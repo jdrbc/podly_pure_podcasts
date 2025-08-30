@@ -1,7 +1,7 @@
 services:
-  backend:
-    container_name: podly_backend
-    image: podly-backend
+  podly:
+    container_name: podly_app
+    image: podly-app
     volumes:
       - ./config:/app/config
       - ./in:/app/in
@@ -9,7 +9,7 @@ services:
       - ./src/instance:/app/src/instance
     build:
       context: .
-      dockerfile: docker/backend/Dockerfile
+      dockerfile: Dockerfile
       args:
         - BASE_IMAGE=${BASE_IMAGE:-python:3.11-slim}
         - CUDA_VERSION=${CUDA_VERSION:-12.1}
@@ -17,25 +17,12 @@ services:
         - USE_GPU_NVIDIA=${USE_GPU_NVIDIA:-false}
         - USE_GPU_AMD=${USE_GPU_AMD:-false}
     ports:
-      - 5002:5002
+      - 5001:5001
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
       - CORS_ORIGINS=*
-
-  frontend:
-    container_name: podly_frontend
-    image: podly-frontend
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    ports:
-      - 5001:80
-    environment:
-      - VITE_API_URL=${VITE_API_URL:-http://localhost:5002}
-    depends_on:
-      - backend
     restart: unless-stopped
     healthcheck:
       test:

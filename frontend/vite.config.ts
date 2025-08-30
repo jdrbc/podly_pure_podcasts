@@ -10,19 +10,19 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:5002',
+        target: 'http://localhost:5001',
         changeOrigin: true,
         secure: false
       },
       // Proxy feed endpoints for backwards compatibility
       '/feed': {
-        target: 'http://localhost:5002',
+        target: 'http://localhost:5001',
         changeOrigin: true,
         secure: false
       },
       // Proxy legacy post endpoints for backwards compatibility
       '/post': {
-        target: 'http://localhost:5002',
+        target: 'http://localhost:5001',
         changeOrigin: true,
         secure: false
       }

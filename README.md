@@ -108,32 +108,25 @@ If you prefer to run components separately:
    cd ..
    ```
 
-3. Set up environment variables:
-
-   ```shell
-   # Set API URL based on your config.yml
-   export VITE_API_URL="http://localhost:5002"  # or your server URL
-   ```
-
-4. Start backend:
+3. Start backend:
 
    ```shell
    pipenv run python src/main.py
    ```
 
-5. Start frontend (in another terminal):
+4. Start frontend (in another terminal):
    ```shell
    cd frontend
    npm run dev
    ```
 
-The servers will start at http://localhost:5001 (frontend) and http://localhost:5002 (backend) by default.
+The development frontend server will start at http://localhost:5001 and proxy API requests to the backend at http://localhost:5001.
 
 ## Usage
 
 Once the server is running:
 
-1. Open http://localhost:5001 in your web browser
+1. Open http://localhost:5001 in your web browser (or http://localhost:5001 for development)
 2. Add podcast RSS feeds through the web interface
 3. Open your podcast app and subscribe to the Podly endpoint
    - For example, `http://localhost:5001/feed/1`
@@ -174,7 +167,7 @@ Podly supports basic authentication. See below for example setup for `httpd.conf
 LoadModule proxy_module modules/mod_proxy.so
 LoadModule proxy_http_module modules/mod_proxy_http.so
 
-ProxyPass / http://127.0.0.1:5002/
+ProxyPass / http://127.0.0.1:5001/
 RequestHeader set X-Forwarded-Proto http
 RequestHeader set X-Forwarded-Prefix /
 
@@ -338,20 +331,7 @@ You can use these command-line options with the run script:
 
 The Docker setup uses runtime environment variables that can be configured when starting the containers:
 
-**Frontend API URL Configuration**:
-
-- `VITE_API_URL`: Sets the backend API URL for the frontend (default: `http://localhost:5002`)
-- Can be customized at runtime without rebuilding the image
-
-```bash
-# Example: Run with custom API URL
-VITE_API_URL=http://your-server.com:5002 ./run_podly_docker.sh
-
-# Or set in Docker Compose environment:
-docker compose up -e VITE_API_URL=http://your-server.com:5002
-```
-
-**Other Environment Variables**:
+**Environment Variables**:
 
 - `PUID`/`PGID`: User/group IDs for file permissions (automatically set by run script)
 - `CUDA_VISIBLE_DEVICES`: GPU device selection for CUDA acceleration

@@ -19,7 +19,7 @@ if [ -f "config/config.yml" ]; then
     SERVER_URL=$(grep "^server:" config/config.yml | cut -d' ' -f2- | tr -d ' ')
     if [ -n "$SERVER_URL" ]; then
         echo -e "${GREEN}Using server URL from config.yml: ${SERVER_URL}${NC}"
-        export VITE_API_URL="${SERVER_URL}:5002"
+        export VITE_API_URL="${SERVER_URL}:5001"
     fi
 fi
 
@@ -210,18 +210,16 @@ else
         echo -e "${YELLOW}Rebuilding containers...${NC}"
         docker compose $COMPOSE_FILES build
     fi
-    
+
     if [ "$DETACHED" = true ]; then
         echo -e "${YELLOW}Starting Podly in detached mode...${NC}"
         docker compose $COMPOSE_FILES up -d
         echo -e "${GREEN}Podly is running in the background.${NC}"
-        echo -e "${GREEN}Frontend: http://localhost:5001${NC}"
-        echo -e "${GREEN}Backend API: http://localhost:5002${NC}"
+        echo -e "${GREEN}Application: http://localhost:5001${NC}"
     else
         echo -e "${YELLOW}Starting Podly...${NC}"
-        echo -e "${GREEN}Frontend will be available at: http://localhost:5001${NC}"
-        echo -e "${GREEN}Backend API will be available at: http://localhost:5002${NC}"
+        echo -e "${GREEN}Application will be available at: http://localhost:5001${NC}"
         docker compose $COMPOSE_FILES up
     fi
-fi 
+fi
 

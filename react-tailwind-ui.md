@@ -155,12 +155,12 @@ services:
         - USE_GPU_NVIDIA=${USE_GPU_NVIDIA:-false}
         - USE_GPU_RADEON=${USE_GPU_RADEON:-false}
     ports:
-      - 5002:5002
+      - 5001:5001
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
-      - CORS_ORIGINS=http://localhost:5002,http://localhost:80
+      - CORS_ORIGINS=http://localhost:5001,http://localhost:80
 
   frontend:
     container_name: podly_frontend
@@ -169,7 +169,7 @@ services:
       context: .
       dockerfile: docker/frontend/Dockerfile
     ports:
-      - 5002:80
+      - 5001:80
     depends_on:
       - backend
 ```
@@ -193,7 +193,7 @@ services:
     ports:
       - 5001:5001
     environment:
-      - VITE_API_URL=http://localhost:5002
+      - VITE_API_URL=http://localhost:5001
       - VITE_BASE_URL=/
       - NODE_ENV=development
     depends_on:

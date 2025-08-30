@@ -1,8 +1,18 @@
 services:
-  backend:
+  podly:
+    build: .
+    container_name: podly_app
+    ports:
+      - 5001:5001
+    volumes:
+      - .:/app
+      - ./in:/app/in
+      - ./srv:/app/srv
+      - ./processing:/app/processing
     environment:
       - FLASK_ENV=development
       - CORS_ORIGINS=*
+    restart: unless-stopped
 
   frontend-dev:
     container_name: podly_frontend_dev
@@ -15,7 +25,6 @@ services:
     ports:
       - 5001:5001
     environment:
-      - VITE_API_URL=http://localhost:5002
       - NODE_ENV=development
     depends_on:
-      - backend 
+      - podly

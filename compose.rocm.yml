@@ -1,5 +1,14 @@
 services:
-  backend:
+  podly:
+    build: .
+    container_name: podly_app
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./in:/app/in
+      - ./srv:/app/srv
+      - ./config:/app/config
+      - ./processing:/app/processing
     devices:
       - /dev/kfd
       - /dev/dri

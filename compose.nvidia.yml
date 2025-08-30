@@ -1,5 +1,14 @@
 services:
-  backend:
+  podly:
+    build: .
+    container_name: podly_app
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./in:/app/in
+      - ./srv:/app/srv
+      - ./config:/app/config
+      - ./processing:/app/processing
     environment:
       - CUDA_VISIBLE_DEVICES=0
     deploy:
@@ -8,4 +17,4 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu] 
+              capabilities: [gpu]
