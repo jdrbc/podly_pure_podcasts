@@ -18,3 +18,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+networks:
+  default:
+    name: podly_network

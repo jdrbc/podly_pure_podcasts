@@ -13,3 +13,7 @@ services:
       - FLASK_ENV=development
       - CORS_ORIGINS=*
     restart: unless-stopped
+
+networks:
+  default:
+    name: podly_network

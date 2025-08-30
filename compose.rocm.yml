@@ -18,6 +18,10 @@ services:
       - HSA_OVERRIDE_GFX_VERSION=10.3.0
     security_opt:
       - seccomp=unconfined
+
+networks:
+  default:
+    name: podly_network
 # This would be ideal. Not currently supported, apparently. Or I just wasn't able to figure out the driver arg.
 # Tried: amdgpu, amd, rocm
 #    deploy:
