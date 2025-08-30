@@ -64,7 +64,8 @@ def add_background_job() -> None:
 
 
 def create_app() -> Flask:
-    app = Flask(__name__, static_folder="static")
+    static_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
+    app = Flask(__name__, static_folder=static_folder)
 
     # Configure CORS
     default_origins = [f"http://localhost:{config.frontend_server_port}"]
