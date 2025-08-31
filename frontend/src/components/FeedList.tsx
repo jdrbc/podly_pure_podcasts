@@ -21,7 +21,10 @@ export default function FeedList({ feeds, onFeedDeleted, onFeedSelected, selecte
     }
   };
 
-  if (feeds.length === 0) {
+  // Ensure feeds is an array
+  const feedsArray = Array.isArray(feeds) ? feeds : [];
+
+  if (feedsArray.length === 0) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500 text-lg">No podcast feeds added yet.</p>
@@ -32,7 +35,7 @@ export default function FeedList({ feeds, onFeedDeleted, onFeedSelected, selecte
 
   return (
     <div className="space-y-2 overflow-y-auto">
-      {feeds.map((feed) => (
+      {feedsArray.map((feed) => (
         <div 
           key={feed.id} 
           className={`bg-white rounded-lg shadow border cursor-pointer transition-all hover:shadow-md ${

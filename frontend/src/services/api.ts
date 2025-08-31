@@ -15,12 +15,15 @@ declare global {
 
 // Get API URL from runtime config or fall back to environment variable
 const getApiBaseUrl = (): string => {
-  // First try the runtime config (set by Docker entrypoint)
-  if (typeof window !== 'undefined' && window.__APP_CONFIG__) {
+  // Check if runtime config exists and has been properly replaced (not a placeholder)
+  if (typeof window !== 'undefined' && 
+      window.__APP_CONFIG__ && 
+      window.__APP_CONFIG__.API_BASE_URL && 
+      !window.__APP_CONFIG__.API_BASE_URL.includes('PLACEHOLDER')) {
     return window.__APP_CONFIG__.API_BASE_URL;
   }
 
-  // Fall back to Vite environment variable (for development)
+  // Fall back to Vite environment variable (development or when runtime config is placeholder)
   return import.meta.env.VITE_API_URL || 'http://localhost:5002';
 };
 
