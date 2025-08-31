@@ -55,7 +55,7 @@ RUN if [ -f /etc/debian_version ]; then \
 COPY Pipfile Pipfile.lock ./
 
 # Install pipenv and dependencies
-RUN pip3 install --no-cache-dir pipenv && \
+RUN pip install --no-cache-dir pipenv && \
     pipenv install --deploy --system --dev
 
 # Install PyTorch with CUDA support if using NVIDIA image
