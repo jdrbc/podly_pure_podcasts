@@ -89,33 +89,6 @@ The script will automatically:
 
    This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
 
-### Manual Setup
-
-If you prefer to run components separately:
-
-1. Install Python dependencies:
-
-   ```shell
-   pipenv --python 3.11
-   pipenv install
-   ```
-
-2. Install frontend dependencies:
-
-   ```shell
-   cd frontend
-   npm install
-   cd ..
-   ```
-
-3. Start the application:
-
-   ```shell
-   pipenv run python src/main.py
-   ```
-
-The application will start at <http://localhost:5001> with both frontend and backend served from the same process.
-
 ## Usage
 
 Once the server is running:
