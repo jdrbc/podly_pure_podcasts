@@ -1,6 +1,6 @@
 services:
   podly:
-    container_name: podly
+    container_name: podly-pure-podcasts
     ports:
       - 5001:5001
     build: .
@@ -30,4 +30,4 @@ services:
 
 networks:
   default:
-    name: podly_network
+    name: podly-pure-podcasts-network

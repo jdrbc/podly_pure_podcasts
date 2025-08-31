@@ -1,7 +1,7 @@
 services:
   podly:
-    container_name: podly
-    image: podly
+    container_name: podly-pure-podcasts
+    image: podly-pure-podcasts
     volumes:
       - ./config:/app/config
       - ./in:/app/in
@@ -39,4 +39,4 @@ services:
 
 networks:
   default:
-    name: podly_network
+    name: podly-pure-podcasts-network

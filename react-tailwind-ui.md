@@ -212,8 +212,8 @@ CMD ["python3", "-u", "src/main.py"]
 ```yaml
 services:
   podly:
-    container_name: podly
-    image: podly
+    container_name: podly-pure-podcasts
+    image: podly-pure-podcasts
     volumes:
       - ./config:/app/config
       - ./in:/app/in
