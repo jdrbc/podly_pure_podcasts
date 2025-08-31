@@ -129,92 +129,125 @@ Create services to interact with the Flask backend:
 
 ### 5. Docker Configuration
 
-#### Frontend Dockerfile
+The application now uses a single Docker container that includes both the React frontend and Flask backend.
+
+#### Dockerfile
 
 ```dockerfile
-# Build stage
-FROM node:18-alpine AS build
+# Multi-stage build for combined frontend and backend
+ARG BASE_IMAGE=python:3.11-slim
+FROM node:18-alpine AS frontend-build
+
 WORKDIR /app
+
+# Copy frontend package files
 COPY frontend/package*.json ./
 RUN npm ci
+
+# Copy frontend source code
 COPY frontend/ ./
+
+# Build frontend assets
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY frontend/nginx/nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+# Backend stage
+FROM ${BASE_IMAGE} AS backend
+
+# Environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y ca-certificates && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ffmpeg \
+    build-essential \
+    gosu \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Set up Python environment
+COPY Pipfile Pipfile.lock ./
+
+# Install pipenv and dependencies
+RUN pip install --no-cache-dir pipenv && \
+    pipenv install --deploy --system --dev
+
+# Copy application code
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY config/config.yml.example ./config/
+COPY config/system_prompt.txt ./config/
+COPY config/user_prompt.jinja ./config/
+
+# Copy built frontend assets to Flask static folder
+COPY --from=frontend-build /app/dist ./src/app/static
+
+# Create non-root user and set permissions
+RUN groupadd -r appuser && \
+    useradd --no-log-init -r -g appuser -d /home/appuser appuser && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/in /app/srv /app/processing /app/src/instance && \
+    chown -R appuser:appuser /app
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod 755 /docker-entrypoint.sh
+
+EXPOSE 5001
+
+# Run the application through the entrypoint script
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["python3", "-u", "src/main.py"]
 ```
 
-#### Updated docker-compose.yml
+#### docker-compose.yml
 
 ```yaml
 services:
-  backend:
-    container_name: podly_backend
-    image: podly-backend
+  podly:
+    container_name: podly
+    image: podly
     volumes:
       - ./config:/app/config
       - ./in:/app/in
       - ./srv:/app/srv
-      - ./src:/app/src
-      - ./scripts:/app/scripts
+      - ./src/instance:/app/src/instance
     build:
       context: .
-      dockerfile: docker/backend/Dockerfile
+      dockerfile: Dockerfile
       args:
         - BASE_IMAGE=${BASE_IMAGE:-python:3.11-slim}
         - CUDA_VERSION=${CUDA_VERSION:-12.1}
         - USE_GPU=${USE_GPU:-false}
         - USE_GPU_NVIDIA=${USE_GPU_NVIDIA:-false}
-        - USE_GPU_RADEON=${USE_GPU_RADEON:-false}
+        - USE_GPU_AMD=${USE_GPU_AMD:-false}
     ports:
       - 5001:5001
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
-      - CORS_ORIGINS=http://localhost:5001,http://localhost:80
-
-  frontend:
-    container_name: podly_frontend
-    image: podly-frontend
-    build:
-      context: .
-      dockerfile: docker/frontend/Dockerfile
-    ports:
-      - 5001:80
-    depends_on:
-      - backend
-```
-
-#### Development docker-compose.yml
-
-```yaml
-services:
-  backend:
-    # Same as production backend
-    environment:
-      - CORS_ORIGINS=http://localhost:5001
-      - FLASK_ENV=development
-
-  frontend-dev:
-    container_name: podly_frontend_dev
-    image: node:18-alpine
-    volumes:
-      - ./frontend:/app
-    working_dir: /app
-    command: sh -c "npm install && npm run dev"
-    ports:
-      - 5001:5001
-    environment:
-      - VITE_API_URL=http://localhost:5001
-      - VITE_BASE_URL=/
-      - NODE_ENV=development
-    depends_on:
-      - backend
+      - CORS_ORIGINS=*
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5001/')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 ```
 
 ### 6. Non-Docker Development Setup
@@ -303,12 +336,9 @@ podly_pure_podcasts/
 │   ├── vite.config.ts     # Vite configuration
 │   ├── tailwind.config.js # Tailwind configuration
 │   └── package.json       # Frontend dependencies
-├── docker/                # Docker configuration files
-│   ├── frontend/          # Frontend Docker files
-│   ├── backend/           # Backend Docker files
-│   └── nginx/             # Nginx configuration for production
-├── docker-compose.yml     # Production docker-compose
-├── docker-compose.dev.yml # Development docker-compose
+├── Dockerfile             # Docker configuration
+├── compose.yml            # Docker compose configuration
+├── compose.dev.yml        # Development docker compose
 └── scripts/               # Helper scripts
     ├── setup_frontend.sh  # Frontend setup script
     └── run_frontend.sh    # Frontend development script

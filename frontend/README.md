@@ -1,54 +1,45 @@
-# React + TypeScript + Vite
+# Podly Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the React + TypeScript + Vite frontend for Podly. The frontend is built and served as part of the main Podly application.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+The frontend is integrated into the main Podly application. When running the application with Docker or the run scripts, the frontend is automatically built and served by the Flask backend.
 
-## Expanding the ESLint configuration
+For frontend development:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. **Using Docker**: The frontend is automatically built during the Docker build process
+2. **Using run scripts**: The frontend is built and served by the Flask application
+3. **Direct development**: You can run the frontend development server separately:
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-});
-```
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+   This will start the Vite development server with hot reloading.
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
+## Build Process
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    "react-x": reactX,
-    "react-dom": reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs["recommended-typescript"].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-});
-```
+The frontend build process:
+
+1. **Development**: Vite dev server serves files directly
+2. **Production**: Frontend is built using `npm run build` and static files are served by Flask
+3. **Docker**: Multi-stage build compiles frontend assets and copies them to the Flask static directory
+
+## Technology Stack
+
+- **React 18+** with TypeScript
+- **Vite** for build tooling and development server
+- **Tailwind CSS** for styling
+- **React Router** for client-side routing
+- **Tanstack Query** for data fetching
+
+## Configuration
+
+The frontend configuration is handled through:
+
+- **Environment Variables**: Set via Vite's environment variable system
+- **Vite Config**: `vite.config.ts` for build and development settings
+- **Tailwind Config**: `tailwind.config.js` for styling configuration

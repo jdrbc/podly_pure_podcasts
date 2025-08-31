@@ -68,7 +68,7 @@ The script will automatically:
 - Set up Python virtual environment
 - Install frontend dependencies
 - Configure environment variables from config.yml
-- Start both backend and frontend servers
+- Start the application server
 
 ### Quick Start - With Docker
 
@@ -108,25 +108,19 @@ If you prefer to run components separately:
    cd ..
    ```
 
-3. Start backend:
+3. Start the application:
 
    ```shell
    pipenv run python src/main.py
    ```
 
-4. Start frontend (in another terminal):
-   ```shell
-   cd frontend
-   npm run dev
-   ```
-
-The development frontend server will start at http://localhost:5001 and proxy API requests to the backend at http://localhost:5001.
+The application will start at <http://localhost:5001> with both frontend and backend served from the same process.
 
 ## Usage
 
 Once the server is running:
 
-1. Open http://localhost:5001 in your web browser
+1. Open <http://localhost:5001> in your web browser
 2. Add podcast RSS feeds through the web interface
 3. Open your podcast app and subscribe to the Podly endpoint
    - For example, `http://localhost:5001/feed/1`
@@ -317,7 +311,7 @@ You can use these command-line options with the run script:
 - Good for: deployment, quick setup, consistent environments
 
 ```bash
-# Start with existing local containers
+# Start with existing local container
 ./run_podly_docker.sh
 
 # Rebuild and start after making code changes
