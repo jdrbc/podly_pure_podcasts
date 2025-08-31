@@ -53,6 +53,7 @@ def test_process_podcast_integration(
         post = Post(
             id=1,
             title="Test Podcast",
+            guid="test-guid-123",
             unprocessed_audio_path="/path/to/audio.mp3",
             whitelisted=True,
         )
@@ -121,6 +122,7 @@ def test_process_podcast_handles_transcription_error(
         post = Post(
             id=1,
             title="Test Podcast",
+            guid="test-guid-456",
             unprocessed_audio_path="/path/to/audio.mp3",
             whitelisted=True,
         )
@@ -188,6 +190,7 @@ def test_process_podcast_handles_classification_error(
         post = Post(
             id=1,
             title="Test Podcast",
+            guid="test-guid-789",
             unprocessed_audio_path="/path/to/audio.mp3",
             whitelisted=True,
         )
@@ -254,6 +257,7 @@ def test_process_podcast_handles_audio_processing_error(
         post = Post(
             id=1,
             title="Test Podcast",
+            guid="test-guid-101112",
             unprocessed_audio_path="/path/to/audio.mp3",
             whitelisted=True,
         )

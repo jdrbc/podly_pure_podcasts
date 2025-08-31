@@ -43,7 +43,7 @@ class PodcastProcessor:
     """
 
     lock_lock = threading.Lock()
-    locks: Dict[str, threading.Lock] = {}
+    locks: Dict[str, threading.Lock] = {}  # Now keyed by post GUID instead of file path
 
     def __init__(
         self,
@@ -180,7 +180,8 @@ class PodcastProcessor:
                 self.logger.info(f"Processing podcast: {post} complete")
                 return processed_audio_path
             finally:
-                PodcastProcessor.locks[processed_audio_path].release()
+                # Release lock using post GUID as key
+                PodcastProcessor.locks[post.guid].release()
 
         except ProcessorException as e:
             error_msg = str(e)
@@ -206,6 +207,7 @@ class PodcastProcessor:
     def _acquire_processing_lock(self, post: Post, job: ProcessingJob) -> str:
         """
         Acquire processing lock for the post and return the processed audio path.
+        Lock is now based on post GUID for better granularity and reliability.
 
         Args:
             post: The Post object to process
@@ -223,16 +225,19 @@ class PodcastProcessor:
             raise ProcessorException("Processed audio path not found")
 
         processed_audio_path = str(working_paths.post_processed_audio_path)
+        
+        # Use post GUID as lock key instead of file path for better granularity
+        lock_key = post.guid
 
         # Acquire lock (this is where we cancel existing jobs if we can get the lock)
         locked = False
         with PodcastProcessor.lock_lock:
-            if processed_audio_path not in PodcastProcessor.locks:
-                PodcastProcessor.locks[processed_audio_path] = threading.Lock()
-                PodcastProcessor.locks[processed_audio_path].acquire(blocking=False)
+            if lock_key not in PodcastProcessor.locks:
+                PodcastProcessor.locks[lock_key] = threading.Lock()
+                PodcastProcessor.locks[lock_key].acquire(blocking=False)
                 locked = True
 
-        if not locked and not PodcastProcessor.locks[processed_audio_path].acquire(
+        if not locked and not PodcastProcessor.locks[lock_key].acquire(
             blocking=False
         ):
             raise ProcessorException("Processing job in progress")
