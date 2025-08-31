@@ -10,6 +10,35 @@ from app.models import Feed, Post
 from podcast_processor.podcast_downloader import find_audio_link
 
 
+def _get_base_url() -> str:
+    """
+    Get the base URL for generating links.
+    Handles reverse proxy configuration when enabled.
+    """
+    if config.server is not None:
+        # Use the configured server
+        server_url = config.server
+        if not server_url.startswith(("http://", "https://")):
+            server_url = f"http://{server_url}"
+
+        # Check if reverse proxy is enabled
+        if config.reverse_proxy_enabled:
+            # Use reverse proxy settings
+            scheme = config.reverse_proxy_scheme
+            port_part = ""
+            if config.reverse_proxy_port is not None:
+                port_part = f":{config.reverse_proxy_port}"
+            # Extract just the hostname from server_url
+            hostname = server_url.split("://")[-1].split(":")[0]
+            return f"{scheme}://{hostname}{port_part}"
+
+        # Use frontend port as before
+        return f"{server_url}:{config.frontend_server_port}"
+
+    # Use localhost with frontend port
+    return f"http://localhost:{config.frontend_server_port}"
+
+
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
     logger.info(f"Fetching feed from URL: {url}")
     feed_data = feedparser.parse(url)
@@ -117,15 +146,7 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
 
     # For backwards compatibility, generate URLs that point to the frontend port
     # The frontend will proxy these requests to the backend
-    if config.server is not None:
-        # Use the configured server with frontend port
-        server_url = config.server
-        if not server_url.startswith(("http://", "https://")):
-            server_url = f"http://{server_url}"
-        base_url = f"{server_url}:{config.frontend_server_port}"
-    else:
-        # Use localhost with frontend port
-        base_url = f"http://localhost:{config.frontend_server_port}"
+    base_url = _get_base_url()
 
     # Generate URLs that will be proxied by the frontend to the backend
     audio_url = f"{base_url}/api/posts/{post.guid}/download"
@@ -159,15 +180,8 @@ def generate_feed_xml(feed: Feed) -> Any:
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
 
     # For backwards compatibility, generate feed link that points to the frontend port
-    if config.server is not None:
-        # Use the configured server with frontend port
-        server_url = config.server
-        if not server_url.startswith(("http://", "https://")):
-            server_url = f"http://{server_url}"
-        link = f"{server_url}:{config.frontend_server_port}/feed/{feed.id}"
-    else:
-        # Use localhost with frontend port
-        link = f"http://localhost:{config.frontend_server_port}/feed/{feed.id}"
+    base_url = _get_base_url()
+    link = f"{base_url}/feed/{feed.id}"
 
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,

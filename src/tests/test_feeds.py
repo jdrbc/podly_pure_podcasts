@@ -8,6 +8,7 @@ import pytest
 
 from app import logger
 from app.feeds import (
+    _get_base_url,
     add_feed,
     db,
     feed_item,
@@ -242,6 +243,9 @@ def test_feed_item(mock_post):
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = "http://podly.com"
         mock_config.frontend_server_port = 5001
+        mock_config.reverse_proxy_enabled = False
+        mock_config.reverse_proxy_scheme = "https"
+        mock_config.reverse_proxy_port = None
 
         result = feed_item(mock_post)
 
@@ -256,6 +260,99 @@ def test_feed_item(mock_post):
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
+def test_feed_item_with_reverse_proxy(mock_post):
+    # Mock config with reverse proxy enabled
+    with mock.patch("app.feeds.config") as mock_config:
+        mock_config.server = "podly.com"
+        mock_config.frontend_server_port = 5001
+        mock_config.reverse_proxy_enabled = True
+        mock_config.reverse_proxy_scheme = "https"
+        mock_config.reverse_proxy_port = None
+
+        result = feed_item(mock_post)
+
+    # Verify the result
+    assert isinstance(result, PyRSS2Gen.RSSItem)
+    assert result.title == mock_post.title
+    assert result.guid == mock_post.guid
+
+    # Check enclosure - should use HTTPS without port
+    assert result.enclosure.url == "https://podly.com/api/posts/test-guid/download"
+    assert result.enclosure.type == "audio/mpeg"
+    assert result.enclosure.length == mock_post._audio_len_bytes
+
+
+def test_feed_item_with_reverse_proxy_custom_port(mock_post):
+    # Mock config with reverse proxy enabled and custom port
+    with mock.patch("app.feeds.config") as mock_config:
+        mock_config.server = "podly.com"
+        mock_config.frontend_server_port = 5001
+        mock_config.reverse_proxy_enabled = True
+        mock_config.reverse_proxy_scheme = "https"
+        mock_config.reverse_proxy_port = 8443
+
+        result = feed_item(mock_post)
+
+    # Verify the result
+    assert isinstance(result, PyRSS2Gen.RSSItem)
+    assert result.title == mock_post.title
+    assert result.guid == mock_post.guid
+
+    # Check enclosure - should use HTTPS with custom port
+    assert result.enclosure.url == "https://podly.com:8443/api/posts/test-guid/download"
+    assert result.enclosure.type == "audio/mpeg"
+    assert result.enclosure.length == mock_post._audio_len_bytes
+
+
+def test_get_base_url_without_reverse_proxy():
+    # Test _get_base_url without reverse proxy
+    with mock.patch("app.feeds.config") as mock_config:
+        mock_config.server = "podly.com"
+        mock_config.frontend_server_port = 5001
+        mock_config.reverse_proxy_enabled = False
+
+        result = _get_base_url()
+
+    assert result == "http://podly.com:5001"
+
+
+def test_get_base_url_with_reverse_proxy_default_port():
+    # Test _get_base_url with reverse proxy and default port
+    with mock.patch("app.feeds.config") as mock_config:
+        mock_config.server = "podly.com"
+        mock_config.reverse_proxy_enabled = True
+        mock_config.reverse_proxy_scheme = "https"
+        mock_config.reverse_proxy_port = None
+
+        result = _get_base_url()
+
+    assert result == "https://podly.com"
+
+
+def test_get_base_url_with_reverse_proxy_custom_port():
+    # Test _get_base_url with reverse proxy and custom port
+    with mock.patch("app.feeds.config") as mock_config:
+        mock_config.server = "podly.com"
+        mock_config.reverse_proxy_enabled = True
+        mock_config.reverse_proxy_scheme = "https"
+        mock_config.reverse_proxy_port = 8443
+
+        result = _get_base_url()
+
+    assert result == "https://podly.com:8443"
+
+
+def test_get_base_url_localhost():
+    # Test _get_base_url with localhost
+    with mock.patch("app.feeds.config") as mock_config:
+        mock_config.server = None
+        mock_config.frontend_server_port = 5001
+
+        result = _get_base_url()
+
+    assert result == "http://localhost:5001"
+
+
 @mock.patch("app.feeds.feed_item")
 def test_generate_feed_xml(mock_feed_item, mock_feed, mock_post):
     # Set up mocks
@@ -265,8 +362,9 @@ def test_generate_feed_xml(mock_feed_item, mock_feed, mock_post):
     mock_feed_item.return_value = mock_rss_item
 
     # Mock PyRSS2Gen.RSS2
-    with mock.patch("app.feeds.PyRSS2Gen.RSS2") as mock_rss_2, mock.patch(
-        "app.feeds.PyRSS2Gen.Image"
+    with (
+        mock.patch("app.feeds.PyRSS2Gen.RSS2") as mock_rss_2,
+        mock.patch("app.feeds.PyRSS2Gen.Image"),
     ):
         mock_rss = mock_rss_2.return_value
         mock_rss.to_xml.return_value = "<rss></rss>"
@@ -306,10 +404,11 @@ def test_make_post(mock_post_class, mock_feed):
     mock_post_class.return_value = mock_post
 
     # Mock find_audio_link
-    with mock.patch("app.feeds.find_audio_link") as mock_find_audio_link, mock.patch(
-        "app.feeds.get_guid"
-    ) as mock_get_guid, mock.patch("app.feeds.get_duration") as mock_get_duration:
-
+    with (
+        mock.patch("app.feeds.find_audio_link") as mock_find_audio_link,
+        mock.patch("app.feeds.get_guid") as mock_get_guid,
+        mock.patch("app.feeds.get_duration") as mock_get_duration,
+    ):
         mock_find_audio_link.return_value = "https://example.com/audio.mp3"
         mock_get_guid.return_value = "test-guid"
         mock_get_duration.return_value = 3600

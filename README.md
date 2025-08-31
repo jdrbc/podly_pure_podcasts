@@ -128,6 +128,76 @@ Podly works out of the box when running locally (see [Usage](#usage)). To run it
 SERVER=http://my.domain.com
 ```
 
+### Reverse Proxy Setup
+
+If you're running Podly behind a reverse proxy (like nginx, traefik, Cloudflare, etc.), you need to configure the reverse proxy settings so that generated RSS feed URLs use the correct external scheme and port instead of the internal container port.
+
+#### Configuration
+
+Add these settings to your `config/config.yml`:
+
+```yaml
+server: your-domain.com
+reverse_proxy_enabled: true
+reverse_proxy_scheme: https # or http
+# reverse_proxy_port: 443  # Optional: only needed for non-standard ports
+```
+
+#### Why This Is Needed
+
+Without reverse proxy configuration, Podly generates URLs like:
+
+- `https://your-domain.com:5001/feed/1` (includes internal port)
+- `https://your-domain.com:5001/api/posts/abc123/download` (includes internal port)
+
+With reverse proxy configuration enabled, Podly generates clean URLs like:
+
+- `https://your-domain.com/feed/1` (no port for standard HTTPS)
+- `https://your-domain.com/api/posts/abc123/download` (no port for standard HTTPS)
+
+#### Common Reverse Proxy Examples
+
+**Nginx:**
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+**Traefik (docker-compose.yml):**
+
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.podly.rule=Host(`your-domain.com`)"
+  - "traefik.http.routers.podly.tls.certresolver=letsencrypt"
+  - "traefik.http.services.podly.loadbalancer.server.port=5001"
+```
+
+**Custom Port Example:**
+If your reverse proxy serves on a non-standard port (e.g., 8443), configure it like this:
+
+```yaml
+server: your-domain.com
+reverse_proxy_enabled: true
+reverse_proxy_scheme: https
+reverse_proxy_port: 8443
+```
+
+This will generate URLs like `https://your-domain.com:8443/feed/1`.
+
+### Basic Authentication
+
 Podly supports basic authentication. See below for example setup for `httpd.conf`.
 
 ```
