@@ -109,17 +109,17 @@ class Config(BaseModel):
 
         # if we have old style, change to the equivalent new style
         if self.remote_whisper:
-            assert self.llm_api_key is not None, (
-                "must supply api key to use remote whisper"
-            )
+            assert (
+                self.llm_api_key is not None
+            ), "must supply api key to use remote whisper"
             self.whisper = RemoteWhisperConfig(
                 api_key=self.llm_api_key,
                 base_url=self.openai_base_url or "https://api.openai.com/v1",
             )
         else:
-            assert self.whisper_model is not None, (
-                "must supply whisper model to use local whisper"
-            )
+            assert (
+                self.whisper_model is not None
+            ), "must supply whisper model to use local whisper"
             self.whisper = LocalWhisperConfig(model=self.whisper_model)
 
         self.whisper_model = None
