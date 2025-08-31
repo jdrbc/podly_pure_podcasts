@@ -79,11 +79,21 @@
       <h1>Welcome to Podly</h1>
       <p>We've moved to a new and improved interface!</p>
       <p>You will be automatically redirected to our new UI in <span id="countdown">5</span> seconds.</p>
-      
-      <a href="http://{{ request.host.split(':')[0] }}:5001" class="redirect-link">
+
+      {% if config.reverse_proxy_enabled %}
+        {% if config.reverse_proxy_port %}
+          {% set redirect_url = config.reverse_proxy_scheme + "://" + config.server + ":" + config.reverse_proxy_port|string %}
+        {% else %}
+          {% set redirect_url = config.reverse_proxy_scheme + "://" + config.server %}
+        {% endif %}
+      {% else %}
+        {% set redirect_url = "http://" + request.host.split(':')[0] + ":5001" %}
+      {% endif %}
+
+      <a href="{{ redirect_url }}" class="redirect-link">
         Go to New UI Now
       </a>
-      
+
       <div class="countdown">
         <p>If you are not redirected automatically, click the button above.</p>
       </div>
@@ -93,16 +103,25 @@
       // Auto-redirect after 5 seconds
       let countdown = 5;
       const countdownElement = document.getElementById('countdown');
-      
+
+      {% if config.reverse_proxy_enabled %}
+        {% if config.reverse_proxy_port %}
+          const redirectUrl = "{{ config.reverse_proxy_scheme }}://{{ config.server }}:{{ config.reverse_proxy_port }}";
+        {% else %}
+          const redirectUrl = "{{ config.reverse_proxy_scheme }}://{{ config.server }}";
+        {% endif %}
+      {% else %}
+        const currentHost = window.location.hostname;
+        const redirectUrl = `http://${currentHost}:5001`;
+      {% endif %}
+
       const timer = setInterval(() => {
         countdown--;
         countdownElement.textContent = countdown;
-        
+
         if (countdown <= 0) {
           clearInterval(timer);
-          // Redirect to new UI on port 5001
-          const currentHost = window.location.hostname;
-          window.location.href = `http://${currentHost}:5001`;
+          window.location.href = redirectUrl;
         }
       }, 1000);
     </script>
