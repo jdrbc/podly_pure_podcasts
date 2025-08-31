@@ -36,6 +36,8 @@ RUN if [ -f /etc/debian_version ]; then \
     ffmpeg \
     build-essential \
     gosu \
+    python3 \
+    python3-pip \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ; \
     fi
@@ -55,17 +57,40 @@ RUN if [ -f /etc/debian_version ]; then \
 COPY Pipfile Pipfile.lock ./
 
 # Install pipenv and dependencies
-RUN pip install --no-cache-dir pipenv && \
+RUN if command -v pip >/dev/null 2>&1; then \
+    pip install --no-cache-dir pipenv; \
+    elif command -v pip3 >/dev/null 2>&1; then \
+    pip3 install --no-cache-dir pipenv; \
+    else \
+    python3 -m pip install --no-cache-dir pipenv; \
+    fi && \
     pipenv install --deploy --system --dev
 
 # Install PyTorch with CUDA support if using NVIDIA image
 RUN if [ "${USE_GPU}" = "true" ] || [ "${USE_GPU_NVIDIA}" = "true" ]; then \
-    pip install --no-cache-dir nvidia-cudnn-cu12; \
-    pip install --no-cache-dir torch; \
-    elif [ "${USE_GPU_AMD}" = "true" ]; then \
-    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION}; \
+    if command -v pip >/dev/null 2>&1; then \
+    pip install --no-cache-dir nvidia-cudnn-cu12 torch; \
+    elif command -v pip3 >/dev/null 2>&1; then \
+    pip3 install --no-cache-dir nvidia-cudnn-cu12 torch; \
     else \
+    python3 -m pip install --no-cache-dir nvidia-cudnn-cu12 torch; \
+    fi; \
+    elif [ "${USE_GPU_AMD}" = "true" ]; then \
+    if command -v pip >/dev/null 2>&1; then \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION}; \
+    elif command -v pip3 >/dev/null 2>&1; then \
+    pip3 install --no-cache-dir torch --index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION}; \
+    else \
+    python3 -m pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION}; \
+    fi; \
+    else \
+    if command -v pip >/dev/null 2>&1; then \
     pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
+    elif command -v pip3 >/dev/null 2>&1; then \
+    pip3 install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
+    else \
+    python3 -m pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
+    fi; \
     fi
 
 # Copy application code
