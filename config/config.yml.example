@@ -13,13 +13,6 @@ llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # backend_server_port: 5002
 # threads: 5
 
-# Reverse proxy configuration
-# Enable this when running behind a reverse proxy (like nginx, traefik, etc.)
-# This ensures that generated URLs in RSS feeds use the correct external scheme and port
-# reverse_proxy_enabled: true
-# reverse_proxy_scheme: https  # http or https (scheme used by your reverse proxy)
-# reverse_proxy_port: 443  # Optional: specify if using non-standard port (80 for http, 443 for https)
-
 #setting a value here enables automatic scheduler to auto-refresh the feed lists and download new episodes
 #background_update_interval_minute: 10
 #job_timeout: 10800 #background jobs can get stuck on broken episodes, this will free up threads which exceed this time limit

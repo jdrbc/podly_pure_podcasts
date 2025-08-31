@@ -260,14 +260,10 @@ def test_feed_item(mock_post):
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
-def test_feed_item_with_reverse_proxy(mock_post):
-    # Mock config with reverse proxy enabled
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.frontend_server_port = 5001
-        mock_config.reverse_proxy_enabled = True
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = None
+def test_feed_item_with_request_context_https(mock_post):
+    # Test feed_item with HTTPS request context
+    with mock.patch("app.feeds.flask") as mock_flask:
+        mock_flask.request.url_root = "https://podly.com/"
 
         result = feed_item(mock_post)
 
@@ -276,20 +272,16 @@ def test_feed_item_with_reverse_proxy(mock_post):
     assert result.title == mock_post.title
     assert result.guid == mock_post.guid
 
-    # Check enclosure - should use HTTPS without port
+    # Check enclosure - should use HTTPS
     assert result.enclosure.url == "https://podly.com/api/posts/test-guid/download"
     assert result.enclosure.type == "audio/mpeg"
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
-def test_feed_item_with_reverse_proxy_custom_port(mock_post):
-    # Mock config with reverse proxy enabled and custom port
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.frontend_server_port = 5001
-        mock_config.reverse_proxy_enabled = True
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = 8443
+def test_feed_item_with_request_context_custom_port(mock_post):
+    # Test feed_item with custom port in request context
+    with mock.patch("app.feeds.flask") as mock_flask:
+        mock_flask.request.url_root = "http://192.168.1.100:8080/"
 
         result = feed_item(mock_post)
 
@@ -298,57 +290,65 @@ def test_feed_item_with_reverse_proxy_custom_port(mock_post):
     assert result.title == mock_post.title
     assert result.guid == mock_post.guid
 
-    # Check enclosure - should use HTTPS with custom port
-    assert result.enclosure.url == "https://podly.com:8443/api/posts/test-guid/download"
+    # Check enclosure - should use HTTP with custom port
+    assert (
+        result.enclosure.url == "http://192.168.1.100:8080/api/posts/test-guid/download"
+    )
     assert result.enclosure.type == "audio/mpeg"
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
-def test_get_base_url_without_reverse_proxy():
-    # Test _get_base_url without reverse proxy
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.frontend_server_port = 5001
-        mock_config.reverse_proxy_enabled = False
+def test_get_base_url_without_request_context():
+    # Test _get_base_url without request context (fallback behavior)
+    # Mock the entire flask module to avoid request context issues
+    with mock.patch("app.feeds.flask") as mock_flask:
+        # Make the property access itself raise RuntimeError
+        type(mock_flask.request).url_root = mock.PropertyMock(
+            side_effect=RuntimeError("No request context")
+        )
 
-        result = _get_base_url()
+        with mock.patch("app.feeds.config") as mock_config:
+            mock_config.server = "podly.com"
+            mock_config.frontend_server_port = 5001
+
+            result = _get_base_url()
 
     assert result == "http://podly.com:5001"
 
 
-def test_get_base_url_with_reverse_proxy_default_port():
-    # Test _get_base_url with reverse proxy and default port
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.reverse_proxy_enabled = True
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = None
+def test_get_base_url_with_request_context():
+    # Test _get_base_url with request context (normal behavior)
+    with mock.patch("app.feeds.flask") as mock_flask:
+        mock_flask.request.url_root = "https://podly.com/"
 
         result = _get_base_url()
 
     assert result == "https://podly.com"
 
 
-def test_get_base_url_with_reverse_proxy_custom_port():
-    # Test _get_base_url with reverse proxy and custom port
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.reverse_proxy_enabled = True
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = 8443
+def test_get_base_url_with_request_context_custom_port():
+    # Test _get_base_url with request context and custom port
+    with mock.patch("app.feeds.flask") as mock_flask:
+        mock_flask.request.url_root = "https://podly.com:8443/"
 
         result = _get_base_url()
 
     assert result == "https://podly.com:8443"
 
 
-def test_get_base_url_localhost():
-    # Test _get_base_url with localhost
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = None
-        mock_config.frontend_server_port = 5001
+def test_get_base_url_localhost_fallback():
+    # Test _get_base_url with localhost fallback
+    with mock.patch("app.feeds.flask") as mock_flask:
+        # Make the property access itself raise RuntimeError to simulate no request context
+        type(mock_flask.request).url_root = mock.PropertyMock(
+            side_effect=RuntimeError("No request context")
+        )
 
-        result = _get_base_url()
+        with mock.patch("app.feeds.config") as mock_config:
+            mock_config.server = None
+            mock_config.frontend_server_port = 5001
+
+            result = _get_base_url()
 
     assert result == "http://localhost:5001"
 

@@ -13,33 +13,21 @@ CPU_BASE_IMAGE="python:3.11-slim"
 GPU_NVIDIA_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
 GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
 
-# Read server URL and reverse proxy settings from config.yml if it exists
+# Read server URL from config if available (for fallback in case of no request context)
 SERVER_URL=""
-REVERSE_PROXY_ENABLED=""
-REVERSE_PROXY_SCHEME=""
-REVERSE_PROXY_PORT=""
 
 if [ -f "config/config.yml" ]; then
     SERVER_URL=$(grep "^server:" config/config.yml | cut -d' ' -f2- | tr -d ' ')
-    REVERSE_PROXY_ENABLED=$(grep "^reverse_proxy_enabled:" config/config.yml | cut -d' ' -f2- | tr -d ' ')
-    REVERSE_PROXY_SCHEME=$(grep "^reverse_proxy_scheme:" config/config.yml | cut -d' ' -f2 | cut -d'#' -f1 | tr -d ' ')
-    REVERSE_PROXY_PORT=$(grep "^reverse_proxy_port:" config/config.yml | cut -d' ' -f2- | cut -d'#' -f1 | tr -d ' ')
 
     if [ -n "$SERVER_URL" ]; then
-        if [ "$REVERSE_PROXY_ENABLED" = "true" ]; then
-            # Use reverse proxy configuration
-            if [ -n "$REVERSE_PROXY_PORT" ]; then
-                export VITE_API_URL="${REVERSE_PROXY_SCHEME}://${SERVER_URL}:${REVERSE_PROXY_PORT}"
-            else
-                export VITE_API_URL="${REVERSE_PROXY_SCHEME}://${SERVER_URL}"
-            fi
-            echo -e "${GREEN}Using reverse proxy URL from config.yml: ${VITE_API_URL}${NC}"
-        else
-            # Use direct server URL with port 5001
-            export VITE_API_URL="${SERVER_URL}:5001"
-            echo -e "${GREEN}Using server URL from config.yml: ${VITE_API_URL}${NC}"
-        fi
+        # Use server URL for fallback scenarios
+        export VITE_API_URL="${SERVER_URL}:5001"
+        echo -e "${GREEN}Using server URL from config.yml as fallback: ${VITE_API_URL}${NC}"
+    else
+        echo -e "${YELLOW}No server URL configured. Frontend will use relative paths.${NC}"
     fi
+else
+    echo -e "${YELLOW}No config.yml found. Frontend will use relative paths.${NC}"
 fi
 
 # Check dependencies
