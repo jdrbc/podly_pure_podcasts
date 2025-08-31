@@ -1,14 +1,14 @@
 services:
   podly:
-    build: .
     container_name: podly
     ports:
       - 5001:5001
+    build: .
     volumes:
-      - .:/app
+      - ./config:/app/config
       - ./in:/app/in
       - ./srv:/app/srv
-      - ./processing:/app/processing
+      - ./src/instance:/app/src/instance
     environment:
       - FLASK_ENV=development
       - CORS_ORIGINS=*

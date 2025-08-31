@@ -1,9 +1,9 @@
 services:
   podly:
-    build: .
     container_name: podly
     ports:
       - "5001:5001"
+    build: .
     volumes:
       - ./in:/app/in
       - ./srv:/app/srv

@@ -1,14 +1,14 @@
 services:
   podly:
     container_name: podly
+    ports:
+      - 5001:5001
     build: .
     volumes:
       - ./config:/app/config
       - ./in:/app/in
       - ./srv:/app/srv
       - ./src/instance:/app/src/instance
-    ports:
-      - 5001:5001
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
