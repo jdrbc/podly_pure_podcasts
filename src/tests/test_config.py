@@ -48,8 +48,11 @@ def test_example_config() -> None:
         number_of_episodes_to_whitelist_from_archive_of_new_feed=1,
         server=None,
         threads=1,
-        backend_server_port=5001,
-        frontend_server_port=5001,
+        server_port=5001,
+        reverse_proxy_enabled=False,
+        reverse_proxy_port=None,
+        backend_server_port=None,
+        frontend_server_port=None,
     )
 
     assert get_config("config/config.yml.example") == expected_config
@@ -84,8 +87,11 @@ def test_remote_whisper_example_config() -> None:
         number_of_episodes_to_whitelist_from_archive_of_new_feed=1,
         server=None,
         threads=1,
-        backend_server_port=5001,
-        frontend_server_port=5001,
+        server_port=5001,
+        reverse_proxy_enabled=False,
+        reverse_proxy_port=None,
+        backend_server_port=None,
+        frontend_server_port=None,
     )
 
     assert get_config("config/config_remote_whisper.yml.example") == expected_config
@@ -111,8 +117,11 @@ def test_anthropic_example_config() -> None:
             num_segments_to_input_to_prompt=30,
         ),
         server=None,
-        backend_server_port=5001,
-        frontend_server_port=5001,
+        server_port=5001,
+        reverse_proxy_enabled=False,
+        reverse_proxy_port=None,
+        backend_server_port=None,
+        frontend_server_port=None,
         background_update_interval_minute=None,
         threads=1,
         whisper=RemoteWhisperConfig(
@@ -147,8 +156,11 @@ def test_groq_whisper_example_config() -> None:
             num_segments_to_input_to_prompt=30,
         ),
         server=None,
-        backend_server_port=5001,
-        frontend_server_port=5001,
+        server_port=5001,
+        reverse_proxy_enabled=False,
+        reverse_proxy_port=None,
+        backend_server_port=None,
+        frontend_server_port=None,
         background_update_interval_minute=None,
         threads=1,
         whisper=GroqWhisperConfig(

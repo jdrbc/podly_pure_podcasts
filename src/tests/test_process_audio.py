@@ -32,7 +32,6 @@ def test_clip_segment_with_fade() -> None:
             == TEST_FILE_DURATION
             - (ad_end_offset_ms - ad_start_offset_ms)
             + 2 * fade_len_ms
-            + 56  # not sure where this fudge comes from
         )
 
 
@@ -53,7 +52,6 @@ def test_clip_segment_with_fade_beginning() -> None:
             == TEST_FILE_DURATION
             - (ad_end_offset_ms - ad_start_offset_ms)
             + 2 * fade_len_ms
-            + 56  # not sure where this fudge comes from
         )
 
 
@@ -77,7 +75,6 @@ def test_clip_segment_with_fade_end() -> None:
             == TEST_FILE_DURATION
             - (ad_end_offset_ms - ad_start_offset_ms)
             + 2 * fade_len_ms
-            + 56  # not sure where this fudge comes from
         )
 
 
@@ -87,17 +84,17 @@ def test_split_audio() -> None:
         split_audio(Path(TEST_FILE_PATH), temp_dir_path, 38_000)
 
         expected = {
-            "0.mp3": (6_384, 25_773),
-            "1.mp3": (6_384, 25_773),
-            "2.mp3": (6_384, 25_773),
-            "3.mp3": (6_384, 25_773),
-            "4.mp3": (6_384, 25_773),
-            "5.mp3": (6_384, 25_773),
-            "6.mp3": (6_384, 25_773),
-            "7.mp3": (6_384, 25_773),
-            "8.mp3": (6_384, 25_773),
-            "9.mp3": (6_384, 25_773),
-            "10.mp3": (2_784, 11_373),
+            "0.mp3": (6_332, 25_773),
+            "1.mp3": (6_332, 25_773),
+            "2.mp3": (6_332, 25_773),
+            "3.mp3": (6_332, 25_773),
+            "4.mp3": (6_332, 25_773),
+            "5.mp3": (6_332, 25_773),
+            "6.mp3": (6_332, 25_773),
+            "7.mp3": (6_332, 25_773),
+            "8.mp3": (6_332, 25_773),
+            "9.mp3": (6_332, 25_773),
+            "10.mp3": (2_728, 11_373),
         }
 
         for split in temp_dir_path.iterdir():

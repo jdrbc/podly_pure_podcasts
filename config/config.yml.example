@@ -10,8 +10,15 @@ llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # openai_max_tokens: 4096
 
 # server: http://my.domain.com
-# backend_server_port: 5002
 # threads: 5
+
+# Port configuration
+# server_port: 5001  # Port this application runs on (default: 5001)
+# backend_server_port: 5002 # Deprecated setting (for backwards compatibility)
+
+# Reverse proxy configuration
+# reverse_proxy_enabled: false  # Set to true if behind reverse proxy (default: false)
+# reverse_proxy_port: 443       # Port users access through reverse proxy (optional)
 
 #setting a value here enables automatic scheduler to auto-refresh the feed lists and download new episodes
 #background_update_interval_minute: 10

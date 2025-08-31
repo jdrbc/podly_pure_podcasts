@@ -61,8 +61,12 @@ class Config(BaseModel):
     output: OutputConfig
     processing: ProcessingConfig
     server: Optional[str] = None
-    backend_server_port: int = 5001
-    frontend_server_port: int = 5001
+    server_port: int = 5001
+    reverse_proxy_enabled: bool = False
+    reverse_proxy_port: Optional[int] = None
+    # Deprecated - kept for backwards compatibility
+    backend_server_port: Optional[int] = Field(default=None, deprecated=True)
+    frontend_server_port: Optional[int] = Field(default=None, deprecated=True)
     background_update_interval_minute: Optional[int] = None
     job_timeout: int = 10800  # Default to 3 hours if not set
     threads: int = 1
@@ -92,6 +96,21 @@ class Config(BaseModel):
             },
             deep=True,
         )
+
+    @model_validator(mode="after")
+    def validate_port_compatibility(self) -> "Config":
+        """Handle backwards compatibility for old port settings."""
+        # If old settings are provided but new ones aren't, use old values
+        if self.backend_server_port is not None and self.server_port == 5001:
+            self.server_port = self.backend_server_port
+        if self.frontend_server_port is not None and self.server_port == 5001:
+            self.server_port = self.frontend_server_port
+
+        # Clear deprecated fields after migration
+        self.backend_server_port = None
+        self.frontend_server_port = None
+
+        return self
 
     @model_validator(mode="after")
     def validate_whisper_config(self) -> "Config":

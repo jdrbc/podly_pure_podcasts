@@ -12,7 +12,7 @@ def main() -> None:
         app,
         host="0.0.0.0",
         threads=config.threads,
-        port=config.backend_server_port,
+        port=config.server_port,
     )
 
 
