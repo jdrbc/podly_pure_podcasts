@@ -7,11 +7,13 @@ This document outlines the plan for implementing a modern React frontend with Ta
 ## Project Architecture
 
 ### Backend (Existing Flask API)
+
 - Maintain the current Flask backend as an API server
 - Update routes to return JSON responses instead of rendering templates
 - Add CORS support for cross-origin requests during development
 
 ### Frontend (New React Application)
+
 - Create a standalone React application with Tailwind CSS
 - Implement responsive UI for all existing features
 - Communicate with Flask backend via RESTful API calls
@@ -19,6 +21,7 @@ This document outlines the plan for implementing a modern React frontend with Ta
 ## Tech Stack
 
 - **Frontend**:
+
   - React 18+ (with TypeScript)
   - Vite (build tool)
   - Tailwind CSS (styling)
@@ -36,6 +39,7 @@ This document outlines the plan for implementing a modern React frontend with Ta
 ### 1. Frontend Setup
 
 1. **Initialize React Project**:
+
    ```bash
    mkdir -p frontend
    cd frontend
@@ -44,12 +48,14 @@ This document outlines the plan for implementing a modern React frontend with Ta
    ```
 
 2. **Install and Configure Tailwind CSS**:
+
    ```bash
    npm install -D tailwindcss postcss autoprefixer
    npx tailwindcss init -p
    ```
 
 3. **Install Additional Dependencies**:
+
    ```bash
    npm install react-router-dom @tanstack/react-query axios clsx tailwind-merge
    ```
@@ -57,18 +63,21 @@ This document outlines the plan for implementing a modern React frontend with Ta
 ### 2. Core Components Development
 
 #### Layout Components
+
 - **AppLayout**: Main layout with navigation and content area
 - **Navbar**: Application header with logo and navigation links
 - **Footer**: Application footer with links and information
 - **Container**: Reusable container with responsive padding
 
 #### Feed Management
+
 - **FeedList**: Display all podcast feeds with expandable details
 - **AddFeedForm**: Form to add new podcast feeds
 - **FeedDetails**: Expanded view showing podcast episodes
 - **DeleteFeedModal**: Confirmation modal for feed deletion
 
 #### Podcast Management
+
 - **PodcastList**: Display episodes within a feed
 - **PodcastItem**: Individual podcast episode with controls
 - **WhitelistToggle**: Toggle to whitelist/blacklist episodes
@@ -76,12 +85,14 @@ This document outlines the plan for implementing a modern React frontend with Ta
 - **BulkActions**: Component for batch operations
 
 #### Podcast Player
+
 - **AudioPlayer**: Custom audio player for processed podcasts
 - **PlayerControls**: Play/pause/skip controls
 - **ProgressBar**: Visual progress indicator
 - **VolumeControl**: Audio volume adjustment
 
 #### Podcast Details
+
 - **PodcastDetails**: Detailed view of an individual podcast
 - **TranscriptViewer**: Display podcast transcript
 - **AdSegmentHighlighter**: Highlight detected ad segments
@@ -91,13 +102,16 @@ This document outlines the plan for implementing a modern React frontend with Ta
 Create services to interact with the Flask backend:
 
 #### API Services
-- **FeedService**: 
+
+- **FeedService**:
+
   - `getFeedsApi()`: Get all feeds
   - `addFeedApi(url)`: Add a new feed
   - `deleteFeedApi(id)`: Delete a feed
   - `refreshFeedApi(id)`: Refresh a feed
 
 - **PodcastService**:
+
   - `getPodcastsApi(feedId)`: Get podcasts for a feed
   - `getPodcastDetailsApi(guid)`: Get podcast details
   - `downloadPodcastApi(guid)`: Download a processed podcast
@@ -116,6 +130,7 @@ Create services to interact with the Flask backend:
 ### 5. Docker Configuration
 
 #### Frontend Dockerfile
+
 ```dockerfile
 # Build stage
 FROM node:18-alpine AS build
@@ -134,6 +149,7 @@ CMD ["nginx", "-g", "daemon off;"]
 ```
 
 #### Updated docker-compose.yml
+
 ```yaml
 services:
   backend:
@@ -175,6 +191,7 @@ services:
 ```
 
 #### Development docker-compose.yml
+
 ```yaml
 services:
   backend:
@@ -205,6 +222,7 @@ services:
 #### Setup Scripts
 
 1. **setup_frontend.sh**:
+
 ```bash
 #!/bin/bash
 cd frontend
@@ -213,6 +231,7 @@ echo "Frontend dependencies installed successfully!"
 ```
 
 2. **run_frontend.sh**:
+
 ```bash
 #!/bin/bash
 cd frontend
@@ -222,6 +241,7 @@ npm run dev
 #### Local Development
 
 For non-Docker development:
+
 1. Run the backend: `pipenv run python src/main.py`
 2. Run the frontend: `cd frontend && npm run dev`
 
@@ -229,12 +249,14 @@ For non-Docker development:
 
 Maintain flask routes returning html - we want to keep the old UI running for now.
 When new endpoints are needed for the frontend, then:
-- Endpoint should be under /api/ 
+
+- Endpoint should be under /api/
 - return JSON data
 - Add CORS support
 - Implement new endpoints as needed
 
 Example modifications:
+
 ```python
 # Add to app/__init__.py
 from flask_cors import CORS
@@ -242,11 +264,11 @@ from flask_cors import CORS
 def create_app(test_config=None):
     app = Flask(__name__)
     # ...
-    
+
     # Configure CORS
     cors_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:5001').split(',')
     CORS(app, resources={r"/*": {"origins": cors_origins}})
-    
+
     # ...
     return app
 
@@ -264,7 +286,7 @@ def get_feeds_api():
 
 ## Project Structure
 
-```
+```text
 podly_pure_podcasts/
 ├── src/                   # Existing Flask backend
 ├── frontend/              # New React frontend
@@ -295,30 +317,35 @@ podly_pure_podcasts/
 ## Implementation Steps
 
 ### Phase 1: Setup and Basic Structure (1-2 days)
+
 - Set up React project with Tailwind CSS
 - Create the core layout components
 - Implement basic routing
 - Configure development environment
 
 ### Phase 2: Feed Management (2-3 days)
+
 - Implement feed listing UI
 - Create add/delete feed functionality
 - Implement basic podcast listing
 - Connect to backend API endpoints
 
 ### Phase 3: Podcast Management (3-4 days)
+
 - Implement podcast listing and details
 - Create whitelist toggle functionality
 - Add download controls
 - Implement bulk actions
 
 ### Phase 4: Audio Player and Details (2-3 days)
+
 - Build custom audio player
 - Implement transcript viewer
 - Add ad segment highlighting
 - Create podcast details page
 
 ### Phase 5: Docker and Deployment (1-2 days)
+
 - Configure Docker for development and production
 - Update documentation
 - Setup CI/CD pipeline
