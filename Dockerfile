@@ -36,8 +36,6 @@ RUN if [ -f /etc/debian_version ]; then \
     ffmpeg \
     build-essential \
     gosu \
-    python3-pip \
-    python3 \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ; \
     fi
