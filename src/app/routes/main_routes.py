@@ -44,33 +44,6 @@ def catch_all(path: str) -> flask.Response:
     flask.abort(404)
 
 
-@main_bp.route("/debug/headers")
-def debug_headers() -> flask.Response:
-    """Debug endpoint to check request headers for reverse proxy troubleshooting."""
-    from flask import request
-
-    headers_info = {
-        "all_headers": dict(request.headers),
-        "remote_addr": request.remote_addr,
-        "host": request.host,
-        "url": request.url,
-        "base_url": request.base_url,
-        "url_root": request.url_root,
-        "is_secure": request.is_secure,
-        "scheme": request.scheme,
-        "forwarded_headers": {
-            "X-Forwarded-Host": request.headers.get("X-Forwarded-Host"),
-            "X-Forwarded-Proto": request.headers.get("X-Forwarded-Proto"),
-            "X-Forwarded-Port": request.headers.get("X-Forwarded-Port"),
-            "X-Forwarded-For": request.headers.get("X-Forwarded-For"),
-            "X-Real-IP": request.headers.get("X-Real-IP"),
-            "Host": request.headers.get("Host"),
-        },
-    }
-
-    return flask.jsonify(headers_info)
-
-
 @main_bp.route("/feed/<int:f_id>/toggle-whitelist-all/<val>", methods=["POST"])
 def whitelist_all(f_id: str, val: str) -> flask.Response:
     feed = Feed.query.get_or_404(f_id)

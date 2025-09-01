@@ -23,15 +23,6 @@ def _get_base_url() -> str:
         forwarded_proto = request.headers.get("X-Forwarded-Proto")
         forwarded_port = request.headers.get("X-Forwarded-Port")
 
-        # Debug logging
-        logger.debug(
-            f"Request headers - Host: {request.headers.get('Host')}, "
-            f"X-Forwarded-Host: {forwarded_host}, "
-            f"X-Forwarded-Proto: {forwarded_proto}, "
-            f"X-Forwarded-Port: {forwarded_port}, "
-            f"is_secure: {request.is_secure}"
-        )
-
         if forwarded_host:
             # Use forwarded headers from reverse proxy
             proto = forwarded_proto or "http"
@@ -44,10 +35,7 @@ def _get_base_url() -> str:
             elif proto == "http" and forwarded_port != "80":
                 # Don't add port for standard HTTP
                 pass
-
-            result = f"{proto}://{forwarded_host}{port_part}"
-            logger.debug(f"Using forwarded headers, result: {result}")
-            return result
+            return f"{proto}://{forwarded_host}{port_part}"
 
         # Fall back to Host header with protocol detection
         host = request.headers.get("Host")
@@ -57,10 +45,7 @@ def _get_base_url() -> str:
                 scheme = forwarded_proto
             else:
                 scheme = "https" if request.is_secure else "http"
-
-            result = f"{scheme}://{host}"
-            logger.debug(f"Using Host header, result: {result}")
-            return result
+            return f"{scheme}://{host}"
 
     # Fall back to configuration-based URL generation
     if config.server is not None:
@@ -70,14 +55,10 @@ def _get_base_url() -> str:
             server_url = f"http://{server_url}"
 
         # Use main app port
-        result = f"{server_url}:{config.port}"
-        logger.debug(f"Using config.server, result: {result}")
-        return result
+        return f"{server_url}:{config.port}"
 
     # Use localhost with main app port
-    result = f"http://localhost:{config.port}"
-    logger.debug(f"Using localhost fallback, result: {result}")
-    return result
+    return f"http://localhost:{config.port}"
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
