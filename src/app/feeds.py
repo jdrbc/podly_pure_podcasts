@@ -20,27 +20,31 @@ def _get_base_url() -> str:
     if has_request_context():
         # Check for reverse proxy headers first
         forwarded_host = request.headers.get("X-Forwarded-Host")
-        forwarded_proto = request.headers.get("X-Forwarded-Proto", "http")
+        forwarded_proto = request.headers.get("X-Forwarded-Proto")
         forwarded_port = request.headers.get("X-Forwarded-Port")
 
         if forwarded_host:
             # Use forwarded headers from reverse proxy
+            proto = forwarded_proto or "http"
             port_part = ""
             if forwarded_port and forwarded_port not in ["80", "443"]:
                 port_part = f":{forwarded_port}"
-            elif forwarded_proto == "https" and forwarded_port != "443":
+            elif proto == "https" and forwarded_port != "443":
                 # Don't add port for standard HTTPS
                 pass
-            elif forwarded_proto == "http" and forwarded_port != "80":
+            elif proto == "http" and forwarded_port != "80":
                 # Don't add port for standard HTTP
                 pass
-            return f"{forwarded_proto}://{forwarded_host}{port_part}"
+            return f"{proto}://{forwarded_host}{port_part}"
 
-        # Fall back to Host header
+        # Fall back to Host header with protocol detection
         host = request.headers.get("Host")
         if host:
-            # Use request host header
-            scheme = "https" if request.is_secure else "http"
+            # Use forwarded protocol if available, otherwise detect from request
+            if forwarded_proto:
+                scheme = forwarded_proto
+            else:
+                scheme = "https" if request.is_secure else "http"
             return f"{scheme}://{host}"
 
     # Fall back to configuration-based URL generation
