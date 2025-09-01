@@ -80,8 +80,9 @@ fi
 # Set up environment variables from config.yml
 echo -e "${YELLOW}Setting up environment from config.yml...${NC}"
 
-# Read server URL from config.yml
+# Read configuration from config.yml
 SERVER_URL=$(grep "^server:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
+APP_PORT=$(grep "^port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
 BACKEND_PORT=$(grep "^backend_server_port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
 FRONTEND_PORT=$(grep "^frontend_server_port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
 
@@ -89,7 +90,10 @@ FRONTEND_PORT=$(grep "^frontend_server_port:" "$CONFIG_FILE" | cut -d' ' -f2- | 
 if [ -z "$SERVER_URL" ]; then
     SERVER_URL="http://localhost"
 fi
-if [ -z "$BACKEND_PORT" ]; then
+# Use new port setting if available, otherwise fall back to backend_server_port, then default
+if [ -n "$APP_PORT" ]; then
+    BACKEND_PORT="$APP_PORT"
+elif [ -z "$BACKEND_PORT" ]; then
     BACKEND_PORT="5001"
 fi
 if [ -z "$FRONTEND_PORT" ]; then
@@ -189,10 +193,10 @@ clear
 cat << 'EOF'
  ____   ___  ____  _  __   __
 |  _ \ / _ \|  _ \| | \ \ / /
-| |_) | | | | | | | |  \ V / 
-|  __/| |_| | |_| | |___| |  
-|_|    \___/|____/|_____|_|  
-                             
+| |_) | | | | | | | |  \ V /
+|  __/| |_| | |_| | |___| |
+|_|    \___/|____/|_____|_|
+
 EOF
 
 echo -e "${BOLD}${GREEN}🎉 PODLY RUNNING${NC}"
@@ -231,4 +235,4 @@ while true; do
             echo -e "${BLUE}Press [b] for background mode, [Ctrl+C] to quit, or any key to refresh logs...${NC}"
             ;;
     esac
-done 
+done

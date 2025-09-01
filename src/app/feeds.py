@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
+from flask import has_request_context, request
 
 from app import config, db, logger
 from app.models import Feed, Post
@@ -13,30 +14,47 @@ from podcast_processor.podcast_downloader import find_audio_link
 def _get_base_url() -> str:
     """
     Get the base URL for generating links.
-    Handles reverse proxy configuration when enabled.
+    Handles reverse proxy configuration and uses request headers when available.
     """
+    # Try to use request headers when available (for reverse proxy support)
+    if has_request_context():
+        # Check for reverse proxy headers first
+        forwarded_host = request.headers.get("X-Forwarded-Host")
+        forwarded_proto = request.headers.get("X-Forwarded-Proto", "http")
+        forwarded_port = request.headers.get("X-Forwarded-Port")
+
+        if forwarded_host:
+            # Use forwarded headers from reverse proxy
+            port_part = ""
+            if forwarded_port and forwarded_port not in ["80", "443"]:
+                port_part = f":{forwarded_port}"
+            elif forwarded_proto == "https" and forwarded_port != "443":
+                # Don't add port for standard HTTPS
+                pass
+            elif forwarded_proto == "http" and forwarded_port != "80":
+                # Don't add port for standard HTTP
+                pass
+            return f"{forwarded_proto}://{forwarded_host}{port_part}"
+
+        # Fall back to Host header
+        host = request.headers.get("Host")
+        if host:
+            # Use request host header
+            scheme = "https" if request.is_secure else "http"
+            return f"{scheme}://{host}"
+
+    # Fall back to configuration-based URL generation
     if config.server is not None:
         # Use the configured server
         server_url = config.server
         if not server_url.startswith(("http://", "https://")):
             server_url = f"http://{server_url}"
 
-        # Check if reverse proxy is enabled
-        if config.reverse_proxy_enabled:
-            # Use reverse proxy settings
-            scheme = config.reverse_proxy_scheme
-            port_part = ""
-            if config.reverse_proxy_port is not None:
-                port_part = f":{config.reverse_proxy_port}"
-            # Extract just the hostname from server_url
-            hostname = server_url.split("://")[-1].split(":")[0]
-            return f"{scheme}://{hostname}{port_part}"
+        # Use main app port
+        return f"{server_url}:{config.port}"
 
-        # Use frontend port as before
-        return f"{server_url}:{config.frontend_server_port}"
-
-    # Use localhost with frontend port
-    return f"http://localhost:{config.frontend_server_port}"
+    # Use localhost with main app port
+    return f"http://localhost:{config.port}"
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:

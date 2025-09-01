@@ -239,13 +239,11 @@ def test_add_feed(mock_post_class, mock_feed_data, mock_db_session):
 
 
 def test_feed_item(mock_post):
-    # Mock config.server and config.frontend_server_port
+    # Mock config.server and config.port
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = "http://podly.com"
+        mock_config.port = 5001
         mock_config.frontend_server_port = 5001
-        mock_config.reverse_proxy_enabled = False
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = None
 
         result = feed_item(mock_post)
 
@@ -261,13 +259,10 @@ def test_feed_item(mock_post):
 
 
 def test_feed_item_with_reverse_proxy(mock_post):
-    # Mock config with reverse proxy enabled
+    # Test config with server setting (reverse proxy now handled via request headers)
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = "podly.com"
-        mock_config.frontend_server_port = 5001
-        mock_config.reverse_proxy_enabled = True
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = None
+        mock_config.port = 5001
 
         result = feed_item(mock_post)
 
@@ -276,20 +271,17 @@ def test_feed_item_with_reverse_proxy(mock_post):
     assert result.title == mock_post.title
     assert result.guid == mock_post.guid
 
-    # Check enclosure - should use HTTPS without port
-    assert result.enclosure.url == "https://podly.com/api/posts/test-guid/download"
+    # Check enclosure - should use config server with frontend port
+    assert result.enclosure.url == "http://podly.com:5001/api/posts/test-guid/download"
     assert result.enclosure.type == "audio/mpeg"
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
 def test_feed_item_with_reverse_proxy_custom_port(mock_post):
-    # Mock config with reverse proxy enabled and custom port
+    # Test config with server setting (reverse proxy now handled via request headers)
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = "podly.com"
-        mock_config.frontend_server_port = 5001
-        mock_config.reverse_proxy_enabled = True
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = 8443
+        mock_config.port = 5001
 
         result = feed_item(mock_post)
 
@@ -298,8 +290,8 @@ def test_feed_item_with_reverse_proxy_custom_port(mock_post):
     assert result.title == mock_post.title
     assert result.guid == mock_post.guid
 
-    # Check enclosure - should use HTTPS with custom port
-    assert result.enclosure.url == "https://podly.com:8443/api/posts/test-guid/download"
+    # Check enclosure - should use config server with frontend port
+    assert result.enclosure.url == "http://podly.com:5001/api/posts/test-guid/download"
     assert result.enclosure.type == "audio/mpeg"
     assert result.enclosure.length == mock_post._audio_len_bytes
 
@@ -308,8 +300,7 @@ def test_get_base_url_without_reverse_proxy():
     # Test _get_base_url without reverse proxy
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = "podly.com"
-        mock_config.frontend_server_port = 5001
-        mock_config.reverse_proxy_enabled = False
+        mock_config.port = 5001
 
         result = _get_base_url()
 
@@ -317,36 +308,32 @@ def test_get_base_url_without_reverse_proxy():
 
 
 def test_get_base_url_with_reverse_proxy_default_port():
-    # Test _get_base_url with reverse proxy and default port
+    # Test _get_base_url with server config (reverse proxy deprecated)
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = "podly.com"
-        mock_config.reverse_proxy_enabled = True
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = None
+        mock_config.port = 5001
 
         result = _get_base_url()
 
-    assert result == "https://podly.com"
+    assert result == "http://podly.com:5001"
 
 
 def test_get_base_url_with_reverse_proxy_custom_port():
-    # Test _get_base_url with reverse proxy and custom port
+    # Test _get_base_url with server config (reverse proxy deprecated)
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = "podly.com"
-        mock_config.reverse_proxy_enabled = True
-        mock_config.reverse_proxy_scheme = "https"
-        mock_config.reverse_proxy_port = 8443
+        mock_config.port = 5001
 
         result = _get_base_url()
 
-    assert result == "https://podly.com:8443"
+    assert result == "http://podly.com:5001"
 
 
 def test_get_base_url_localhost():
     # Test _get_base_url with localhost
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = None
-        mock_config.frontend_server_port = 5001
+        mock_config.port = 5001
 
         result = _get_base_url()
 
@@ -490,3 +477,15 @@ def test_get_duration_with_missing_duration():
     result = get_duration(entry)
 
     assert result is None
+
+
+def test_get_base_url_no_request_context_fallback():
+    """Test _get_base_url falls back to config when no request context."""
+    with mock.patch("app.feeds.has_request_context", return_value=False):
+        with mock.patch("app.feeds.config") as mock_config:
+            mock_config.server = "localhost"
+            mock_config.port = 5001
+
+            result = _get_base_url()
+
+    assert result == "http://localhost:5001"

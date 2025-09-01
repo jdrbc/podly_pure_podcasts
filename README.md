@@ -122,40 +122,44 @@ To use Groq for transcription, you'll need a Groq API key. Copy the `config/conf
 
 ## Remote Setup
 
-Podly works out of the box when running locally (see [Usage](#usage)). To run it on a remote server add SERVER to config/config.yml
+Podly works out of the box when running locally (see [Usage](#usage)). For remote deployment, the application automatically detects the requesting domain and generates appropriate URLs through request headers.
 
+### Configuration Options
+
+Podly provides flexible configuration options for different deployment scenarios:
+
+#### Application Settings
+
+```yaml
+# Application server settings (recommended)
+host: 0.0.0.0 # Interface to listen on (default: 0.0.0.0, accepts all requests)
+port: 5001 # Port to listen on (default: 5001)
+
+# Legacy settings (deprecated, still supported for backwards compatibility)
+# server: http://my.domain.com
+# backend_server_port: 5002
 ```
-SERVER=http://my.domain.com
-```
+
+The new `host` and `port` settings provide clearer control over how the application listens for connections, while the legacy `server` setting is no longer needed thanks to automatic request-aware URL generation.
 
 ### Reverse Proxy Setup
 
-If you're running Podly behind a reverse proxy (like nginx, traefik, Cloudflare, etc.), you need to configure the reverse proxy settings so that generated RSS feed URLs use the correct external scheme and port instead of the internal container port.
+Podly automatically detects when it's running behind a reverse proxy and generates feed URLs using the requesting domain. This works seamlessly with most reverse proxy setups without any configuration.
 
-#### Configuration
+#### How It Works
 
-Add these settings to your `config/config.yml`:
+Podly uses request headers to determine the correct domain and protocol:
 
-```yaml
-server: your-domain.com
-reverse_proxy_enabled: true
-reverse_proxy_scheme: https # or http
-# reverse_proxy_port: 443  # Optional: only needed for non-standard ports
-```
+1. **X-Forwarded headers** (highest priority): `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Forwarded-Port`
+2. **Host header** (fallback): Uses the `Host` header from the request
+3. **Configuration** (last resort): Falls back to config when no request context
 
-#### Why This Is Needed
+#### Example Results
 
-Without reverse proxy configuration, Podly generates URLs like:
+- Request to `https://my.domain.com/feed/1` → generates URLs like `https://my.domain.com/api/posts/abc123/download`
+- Request to `http://localhost:5001/feed/1` → generates URLs like `http://localhost:5001/api/posts/abc123/download`
 
-- `https://your-domain.com:5001/feed/1` (includes internal port)
-- `https://your-domain.com:5001/api/posts/abc123/download` (includes internal port)
-
-With reverse proxy configuration enabled, Podly generates clean URLs like:
-
-- `https://your-domain.com/feed/1` (no port for standard HTTPS)
-- `https://your-domain.com/api/posts/abc123/download` (no port for standard HTTPS)
-
-#### Common Reverse Proxy Examples
+#### Reverse Proxy Examples
 
 **Nginx:**
 
@@ -170,6 +174,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
     }
 }
 ```
@@ -184,17 +189,7 @@ labels:
   - "traefik.http.services.podly.loadbalancer.server.port=5001"
 ```
 
-**Custom Port Example:**
-If your reverse proxy serves on a non-standard port (e.g., 8443), configure it like this:
-
-```yaml
-server: your-domain.com
-reverse_proxy_enabled: true
-reverse_proxy_scheme: https
-reverse_proxy_port: 8443
-```
-
-This will generate URLs like `https://your-domain.com:8443/feed/1`.
+> **Note**: Most modern reverse proxies automatically set the required headers. No manual configuration is needed in most cases.
 
 ### Basic Authentication
 
