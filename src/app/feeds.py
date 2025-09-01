@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
-from flask import has_request_context, request
+from flask import request
 
 from app import config, db, logger
 from app.models import Feed, Post
@@ -12,31 +12,55 @@ from podcast_processor.podcast_downloader import find_audio_link
 
 
 def _get_base_url() -> str:
-    """
-    Get the base URL for generating links.
-    Handles reverse proxy configuration and uses request headers when available.
-    """
-    # Try to use request headers when available (for reverse proxy support)
-    if has_request_context():
-        http2_scheme = request.headers.get(":scheme")
-        http2_authority = request.headers.get(":authority")
+    try:
+        logger.debug(f"Headers: {dict(request.headers)}")
+        logger.debug(f"Request is_secure: {request.is_secure}")
+
+        # Check various ways HTTP/2 pseudo-headers might be available
+        http2_scheme = (
+            request.headers.get(":scheme")
+            or request.headers.get("scheme")
+            or request.environ.get("HTTP2_SCHEME")
+        )
+        http2_authority = (
+            request.headers.get(":authority")
+            or request.headers.get("authority")
+            or request.environ.get("HTTP2_AUTHORITY")
+        )
         host = request.headers.get("Host")
 
+        logger.debug(
+            f"Detected - http2_scheme: {http2_scheme}, http2_authority: {http2_authority}, host: {host}"
+        )
+
         if http2_scheme and http2_authority:
-            return f"{http2_scheme}://{http2_authority}"
+            result = f"{http2_scheme}://{http2_authority}"
+            logger.debug(f"Using HTTP/2 pseudo-headers: {result}")
+            return result
 
         # Fall back to Host header with scheme detection
         if host:
-            # Check multiple indicators for HTTPS
+            # Check multiple indicators for HTTPS (following audiobookshelf pattern)
             is_https = (
                 request.is_secure
+                or request.headers.get("X-Forwarded-Proto") == "https"
                 or request.headers.get("Strict-Transport-Security") is not None
+                or request.headers.get("X-Forwarded-Ssl") == "on"
+                or request.environ.get("HTTPS") == "on"
+                or request.scheme == "https"
             )
             scheme = "https" if is_https else "http"
-            return f"{scheme}://{host}"
+            result = f"{scheme}://{host}"
+            logger.debug(f"Using Host header with detected scheme: {result}")
+            return result
+    except RuntimeError:
+        # Working outside of request context
+        pass
 
     # Use localhost with main app port
-    return f"http://localhost:{config.port}"
+    result = f"http://localhost:{config.port}"
+    logger.debug(f"Using fallback localhost: {result}")
+    return result
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:

@@ -245,13 +245,16 @@ def test_feed_item(mock_post):
     mock_headers = mock.MagicMock()
     mock_headers.get.side_effect = headers_dict.get
 
+    mock_environ = mock.MagicMock()
+    mock_environ.get.return_value = None  # No HTTP/2 pseudo-headers in environ
+
     mock_request = mock.MagicMock()
     mock_request.headers = mock_headers
+    mock_request.environ = mock_environ
     mock_request.is_secure = False
 
-    with mock.patch("app.feeds.has_request_context", return_value=True):
-        with mock.patch("app.feeds.request", mock_request):
-            result = feed_item(mock_post)
+    with mock.patch("app.feeds.request", mock_request):
+        result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
@@ -275,12 +278,15 @@ def test_feed_item_with_reverse_proxy(mock_post):
     mock_headers = mock.MagicMock()
     mock_headers.get.side_effect = headers_dict.get
 
+    mock_environ = mock.MagicMock()
+    mock_environ.get.return_value = None
+
     mock_request = mock.MagicMock()
     mock_request.headers = mock_headers
+    mock_request.environ = mock_environ
 
-    with mock.patch("app.feeds.has_request_context", return_value=True):
-        with mock.patch("app.feeds.request", mock_request):
-            result = feed_item(mock_post)
+    with mock.patch("app.feeds.request", mock_request):
+        result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
@@ -304,12 +310,15 @@ def test_feed_item_with_reverse_proxy_custom_port(mock_post):
     mock_headers = mock.MagicMock()
     mock_headers.get.side_effect = headers_dict.get
 
+    mock_environ = mock.MagicMock()
+    mock_environ.get.return_value = None
+
     mock_request = mock.MagicMock()
     mock_request.headers = mock_headers
+    mock_request.environ = mock_environ
 
-    with mock.patch("app.feeds.has_request_context", return_value=True):
-        with mock.patch("app.feeds.request", mock_request):
-            result = feed_item(mock_post)
+    with mock.patch("app.feeds.request", mock_request):
+        result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
@@ -324,10 +333,9 @@ def test_feed_item_with_reverse_proxy_custom_port(mock_post):
 
 def test_get_base_url_without_reverse_proxy():
     # Test _get_base_url without request context (should use localhost fallback)
-    with mock.patch("app.feeds.has_request_context", return_value=False):
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.port = 5001
-            result = _get_base_url()
+    with mock.patch("app.feeds.config") as mock_config:
+        mock_config.port = 5001
+        result = _get_base_url()
 
     assert result == "http://localhost:5001"
 
@@ -339,13 +347,17 @@ def test_get_base_url_with_reverse_proxy_default_port():
     mock_headers = mock.MagicMock()
     mock_headers.get.side_effect = headers_dict.get
 
+    mock_environ = mock.MagicMock()
+    mock_environ.get.return_value = None
+
     mock_request = mock.MagicMock()
     mock_request.headers = mock_headers
+    mock_request.environ = mock_environ
     mock_request.is_secure = False
+    mock_request.scheme = "http"
 
-    with mock.patch("app.feeds.has_request_context", return_value=True):
-        with mock.patch("app.feeds.request", mock_request):
-            result = _get_base_url()
+    with mock.patch("app.feeds.request", mock_request):
+        result = _get_base_url()
 
     assert result == "http://podly.com"
 
@@ -360,13 +372,17 @@ def test_get_base_url_with_reverse_proxy_custom_port():
     mock_headers = mock.MagicMock()
     mock_headers.get.side_effect = headers_dict.get
 
+    mock_environ = mock.MagicMock()
+    mock_environ.get.return_value = None
+
     mock_request = mock.MagicMock()
     mock_request.headers = mock_headers
+    mock_request.environ = mock_environ
     mock_request.is_secure = False  # STS header should override this
+    mock_request.scheme = "http"
 
-    with mock.patch("app.feeds.has_request_context", return_value=True):
-        with mock.patch("app.feeds.request", mock_request):
-            result = _get_base_url()
+    with mock.patch("app.feeds.request", mock_request):
+        result = _get_base_url()
 
     assert result == "https://podly.com:8443"
 
@@ -523,12 +539,10 @@ def test_get_duration_with_missing_duration():
 
 def test_get_base_url_no_request_context_fallback():
     """Test _get_base_url falls back to config when no request context."""
-    with mock.patch("app.feeds.has_request_context", return_value=False):
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = "localhost"
-            mock_config.port = 5001
+    with mock.patch("app.feeds.config") as mock_config:
+        mock_config.port = 5001
 
-            result = _get_base_url()
+        result = _get_base_url()
 
     assert result == "http://localhost:5001"
 
@@ -544,12 +558,15 @@ def test_get_base_url_with_http2_pseudo_headers():
     mock_headers = mock.MagicMock()
     mock_headers.get.side_effect = headers_dict.get
 
+    mock_environ = mock.MagicMock()
+    mock_environ.get.return_value = None
+
     mock_request = mock.MagicMock()
     mock_request.headers = mock_headers
+    mock_request.environ = mock_environ
 
-    with mock.patch("app.feeds.has_request_context", return_value=True):
-        with mock.patch("app.feeds.request", mock_request):
-            result = _get_base_url()
+    with mock.patch("app.feeds.request", mock_request):
+        result = _get_base_url()
 
     # Should use HTTP/2 pseudo-headers
     assert result == "https://podly.com"
@@ -565,13 +582,17 @@ def test_get_base_url_with_strict_transport_security():
     mock_headers = mock.MagicMock()
     mock_headers.get.side_effect = headers_dict.get
 
+    mock_environ = mock.MagicMock()
+    mock_environ.get.return_value = None
+
     mock_request = mock.MagicMock()
     mock_request.headers = mock_headers
+    mock_request.environ = mock_environ
     mock_request.is_secure = False  # Even if Flask thinks it's HTTP
+    mock_request.scheme = "http"
 
-    with mock.patch("app.feeds.has_request_context", return_value=True):
-        with mock.patch("app.feeds.request", mock_request):
-            result = _get_base_url()
+    with mock.patch("app.feeds.request", mock_request):
+        result = _get_base_url()
 
     # Should use HTTPS because of Strict-Transport-Security header
     assert result == "https://secure.example.com"
@@ -586,13 +607,17 @@ def test_get_base_url_fallback_http_without_sts():
     mock_headers = mock.MagicMock()
     mock_headers.get.side_effect = headers_dict.get
 
+    mock_environ = mock.MagicMock()
+    mock_environ.get.return_value = None
+
     mock_request = mock.MagicMock()
     mock_request.headers = mock_headers
+    mock_request.environ = mock_environ
     mock_request.is_secure = False
+    mock_request.scheme = "http"
 
-    with mock.patch("app.feeds.has_request_context", return_value=True):
-        with mock.patch("app.feeds.request", mock_request):
-            result = _get_base_url()
+    with mock.patch("app.feeds.request", mock_request):
+        result = _get_base_url()
 
     # Should use HTTP when no HTTPS indicators present
     assert result == "http://insecure.example.com"
