@@ -18,14 +18,14 @@ For frontend development:
    npm run dev
    ```
 
-   This will start the Vite development server with hot reloading.
+   This will start the Vite development server on port 5173 with hot reloading. The dev server automatically proxies API calls to the backend on port 5001.
 
 ## Build Process
 
 The frontend build process:
 
-1. **Development**: Vite dev server serves files directly
-2. **Production**: Frontend is built using `npm run build` and static files are served by Flask
+1. **Development**: Vite dev server (port 5173) serves files with hot reloading and proxies API calls to the backend (port 5001)
+2. **Production**: Frontend is built using `npm run build` and static files are served by Flask from port 5001
 3. **Docker**: Multi-stage build compiles frontend assets and copies them to the Flask static directory
 
 ## Technology Stack
@@ -42,4 +42,6 @@ The frontend configuration is handled through:
 
 - **Environment Variables**: Set via Vite's environment variable system
 - **Vite Config**: `vite.config.ts` for build and development settings
+  - Development server runs on port 5173
+  - Proxies API calls to backend on port 5001 (configurable via `BACKEND_TARGET`)
 - **Tailwind Config**: `tailwind.config.js` for styling configuration

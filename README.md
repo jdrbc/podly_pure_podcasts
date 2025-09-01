@@ -406,6 +406,16 @@ We welcome contributions to Podly! Here's how you can help:
    git checkout -b feature/your-feature-name
    ```
 
+#### Development Ports
+
+When developing locally:
+
+- **Backend (Flask)**: Runs on port 5001 (configurable via `config.yml`)
+- **Frontend Development Server**: Runs on port 5173 (when using `npm run dev`)
+  - Automatically proxies API calls to the backend on port 5001
+  - Only needed for frontend development with hot reloading
+- **Production**: Everything served from port 5001 (frontend built as static files)
+
 ### Running Tests
 
 Before submitting a pull request, you can run the same tests that run in CI:
