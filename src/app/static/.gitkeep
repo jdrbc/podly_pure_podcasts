@@ -1,0 +1,2 @@
+This file ensures the static directory exists in the repository.
+Frontend build assets are generated here but not committed to git.

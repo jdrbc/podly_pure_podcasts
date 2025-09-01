@@ -61,14 +61,19 @@ For detailed setup instructions, see our [beginner's guide](docs/how_to_run_begi
 
    # Or start in background mode
    ./run_podly.sh -b
+   # Alternative: ./run_podly.sh -d
+
+   # For frontend development with hot reloading
+   ./run_podly.sh --dev
    ```
 
 The script will automatically:
 
 - Set up Python virtual environment
-- Install frontend dependencies
+- Install and build frontend dependencies
+- Copy frontend assets to backend static folder
 - Configure environment variables from config.yml
-- Start the application server
+- Start the unified application server on port 5001
 
 ### Quick Start - With Docker
 
@@ -84,7 +89,16 @@ The script will automatically:
    ```bash
    # Make the script executable first
    chmod +x run_podly_docker.sh
+
+   # Start Podly (interactive mode)
    ./run_podly_docker.sh
+
+   # Or start in background mode
+   ./run_podly_docker.sh -d
+   # Alternative: ./run_podly_docker.sh -b
+
+   # For development with container rebuilding
+   ./run_podly_docker.sh --dev
    ```
 
    This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
@@ -400,15 +414,47 @@ We welcome contributions to Podly! Here's how you can help:
    git checkout -b feature/your-feature-name
    ```
 
-#### Development Ports
+#### Application Ports
 
-When developing locally:
+Both local and Docker deployments provide a consistent experience:
 
-- **Backend (Flask)**: Runs on port 5001 (configurable via `config.yml`)
-- **Frontend Development Server**: Runs on port 5173 (when using `npm run dev`)
-  - Automatically proxies API calls to the backend on port 5001
-  - Only needed for frontend development with hot reloading
-- **Production**: Everything served from port 5001 (frontend built as static files)
+- **Application**: Runs on port 5001 (configurable via `config.yml`)
+  - Serves both the web interface and API endpoints
+  - Frontend is built as static assets and served by the backend
+- **Development**: Both `run_podly.sh` and `run_podly_docker.sh` serve everything on port 5001
+  - Local script builds frontend to static assets (like Docker)
+  - Use `./run_podly.sh --dev` for frontend development with automatic asset rebuilding
+
+#### Development Modes
+
+Both scripts provide equivalent core functionality with some unique features:
+
+**Common Options (work in both scripts)**:
+
+- `-b/--background` or `-d/--detach`: Run in background mode
+- `--dev`: Development mode with enhanced features
+- `-h/--help`: Show help information
+
+**Local Development** (`./run_podly.sh`):
+
+- **Standard mode**: `./run_podly.sh` - builds frontend once, good for backend development
+- **Frontend development mode**: `./run_podly.sh --dev` - automatically rebuilds frontend assets when files change
+  - Requires `fswatch` (macOS: `brew install fswatch`) or `inotify-tools` (Ubuntu: `sudo apt-get install inotify-tools`)
+  - Watches `frontend/src/`, `package.json`, and `package-lock.json` for changes
+
+**Docker Development** (`./run_podly_docker.sh`):
+
+- **Development mode**: `./run_podly_docker.sh --dev` - rebuilds containers with code changes
+- **Production mode**: `./run_podly_docker.sh --production` - uses pre-built images
+- **Docker-specific options**: `--build`, `--test-build`, `--gpu`, `--cpu`, `--cuda=VERSION`, `--rocm=VERSION`, `--branch=BRANCH`
+
+**Functional Equivalence**:
+Both scripts provide the same core user experience:
+
+- Application runs on port 5001 (configurable)
+- Frontend served as static assets by Flask backend
+- Same web interface and API endpoints
+- Compatible background/detached modes
 
 ### Running Tests
 

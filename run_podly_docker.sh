@@ -86,7 +86,7 @@ while [[ $# -gt 0 ]]; do
             ROCM_VERSION="${1#*=}"
             GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
             ;;
-        -d|--detach)
+        -d|--detach|-b|--background)
             DETACHED=true
             ;;
         --dev)
@@ -105,9 +105,28 @@ while [[ $# -gt 0 ]]; do
             BRANCH_NAME="${1#*=}"
             BRANCH_SUFFIX="${BRANCH_NAME}"
             ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --build             Build containers only (don't start)"
+            echo "  --test-build        Test build with no cache"
+            echo "  --gpu               Force GPU mode"
+            echo "  --cpu               Force CPU mode"
+            echo "  --cuda=VERSION      Specify CUDA version"
+            echo "  --rocm=VERSION      Specify ROCM version"
+            echo "  -d, --detach        Run in detached/background mode"
+            echo "  -b, --background    Alias for --detach"
+            echo "  --dev               Development mode (rebuild containers)"
+            echo "  --rebuild           Rebuild containers before starting"
+            echo "  --production        Use published images (default)"
+            echo "  --branch=BRANCH     Use specific branch images"
+            echo "  -h, --help          Show this help message"
+            exit 0
+            ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [--rocm=VERSION] [-d|--detach] [-b|--background] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME] [-h|--help]"
             exit 1
             ;;
     esac
@@ -192,7 +211,7 @@ else
     fi
     if [ "$DEV_MODE" = true ]; then
         COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
-        echo -e "${YELLOW}Development mode enabled - frontend will run with hot reloading${NC}"
+        echo -e "${YELLOW}Development mode enabled - rebuilding containers with code changes${NC}"
     fi
     if [ "$REBUILD" = true ]; then
         echo -e "${YELLOW}Rebuild mode - will rebuild containers before starting${NC}"
