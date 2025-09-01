@@ -239,10 +239,10 @@ def test_add_feed(mock_post_class, mock_feed_data, mock_db_session):
 
 
 def test_feed_item(mock_post):
-    # Mock config.server and config.server_port
+    # Mock config.server and config.frontend_server_port
     with mock.patch("app.feeds.config") as mock_config:
         mock_config.server = "http://podly.com"
-        mock_config.server_port = 5001
+        mock_config.frontend_server_port = 5001
         mock_config.reverse_proxy_enabled = False
         mock_config.reverse_proxy_scheme = "https"
         mock_config.reverse_proxy_port = None
@@ -309,9 +309,7 @@ def test_get_base_url_without_request_context():
 
         with mock.patch("app.feeds.config") as mock_config:
             mock_config.server = "podly.com"
-            mock_config.server_port = 5001
-            mock_config.reverse_proxy_enabled = False
-            mock_config.reverse_proxy_port = None
+            mock_config.frontend_server_port = 5001
 
             result = _get_base_url()
 
@@ -319,51 +317,23 @@ def test_get_base_url_without_request_context():
 
 
 def test_get_base_url_with_request_context():
-    # Test _get_base_url with request context (when no server is configured)
+    # Test _get_base_url with request context (normal behavior)
     with mock.patch("app.feeds.flask") as mock_flask:
         mock_flask.request.url_root = "https://podly.com/"
 
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = (
-                None  # No server configured, should use request context
-            )
-            mock_config.server_port = 5001
-
-            result = _get_base_url()
+        result = _get_base_url()
 
     assert result == "https://podly.com"
 
 
 def test_get_base_url_with_request_context_custom_port():
-    # Test _get_base_url with request context and custom port (when no server is configured)
+    # Test _get_base_url with request context and custom port
     with mock.patch("app.feeds.flask") as mock_flask:
         mock_flask.request.url_root = "https://podly.com:8443/"
 
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = (
-                None  # No server configured, should use request context
-            )
-            mock_config.server_port = 5001
-
-            result = _get_base_url()
+        result = _get_base_url()
 
     assert result == "https://podly.com:8443"
-
-
-def test_get_base_url_server_overrides_request_context():
-    # Test that configured server takes precedence over request context
-    with mock.patch("app.feeds.flask") as mock_flask:
-        mock_flask.request.url_root = "https://localhost:5001/"
-
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = "podly.com"
-            mock_config.server_port = 5001
-            mock_config.reverse_proxy_enabled = False
-            mock_config.reverse_proxy_port = None
-
-            result = _get_base_url()
-
-    assert result == "http://podly.com:5001"
 
 
 def test_get_base_url_localhost_fallback():
@@ -376,119 +346,11 @@ def test_get_base_url_localhost_fallback():
 
         with mock.patch("app.feeds.config") as mock_config:
             mock_config.server = None
-            mock_config.server_port = 5001
+            mock_config.frontend_server_port = 5001
 
             result = _get_base_url()
 
     assert result == "http://localhost:5001"
-
-
-def test_get_base_url_example_1_defaults():
-    # Example 1: All defaults - should generate http://localhost:5001
-    with mock.patch("app.feeds.flask") as mock_flask:
-        type(mock_flask.request).url_root = mock.PropertyMock(
-            side_effect=RuntimeError("No request context")
-        )
-
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = None
-            mock_config.server_port = 5001
-            mock_config.reverse_proxy_enabled = False
-            mock_config.reverse_proxy_port = None
-
-            result = _get_base_url()
-
-    assert result == "http://localhost:5001"
-
-
-def test_get_base_url_example_2_server_only():
-    # Example 2: server: podly.com - should generate http://podly.com:5001
-    with mock.patch("app.feeds.flask") as mock_flask:
-        type(mock_flask.request).url_root = mock.PropertyMock(
-            side_effect=RuntimeError("No request context")
-        )
-
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = "podly.com"
-            mock_config.server_port = 5001
-            mock_config.reverse_proxy_enabled = False
-            mock_config.reverse_proxy_port = None
-
-            result = _get_base_url()
-
-    assert result == "http://podly.com:5001"
-
-
-def test_get_base_url_example_3_https_server():
-    # Example 3: server: https://podly.com - should generate https://podly.com:5001
-    with mock.patch("app.feeds.flask") as mock_flask:
-        type(mock_flask.request).url_root = mock.PropertyMock(
-            side_effect=RuntimeError("No request context")
-        )
-
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = "https://podly.com"
-            mock_config.server_port = 5001
-            mock_config.reverse_proxy_enabled = False
-            mock_config.reverse_proxy_port = None
-
-            result = _get_base_url()
-
-    assert result == "https://podly.com:5001"
-
-
-def test_get_base_url_example_4_custom_port():
-    # Example 4: server: https://podly.com, server_port: 8080 - should generate https://podly.com:8080
-    with mock.patch("app.feeds.flask") as mock_flask:
-        type(mock_flask.request).url_root = mock.PropertyMock(
-            side_effect=RuntimeError("No request context")
-        )
-
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = "https://podly.com"
-            mock_config.server_port = 8080
-            mock_config.reverse_proxy_enabled = False
-            mock_config.reverse_proxy_port = None
-
-            result = _get_base_url()
-
-    assert result == "https://podly.com:8080"
-
-
-def test_get_base_url_example_5_reverse_proxy_no_port():
-    # Example 5: reverse_proxy_enabled: true - should generate https://podly.com (no port)
-    with mock.patch("app.feeds.flask") as mock_flask:
-        type(mock_flask.request).url_root = mock.PropertyMock(
-            side_effect=RuntimeError("No request context")
-        )
-
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = "https://podly.com"
-            mock_config.server_port = 8080
-            mock_config.reverse_proxy_enabled = True
-            mock_config.reverse_proxy_port = None
-
-            result = _get_base_url()
-
-    assert result == "https://podly.com"
-
-
-def test_get_base_url_example_6_reverse_proxy_with_port():
-    # Example 6: reverse_proxy_enabled: true, reverse_proxy_port: 8181 - should generate https://podly.com:8181
-    with mock.patch("app.feeds.flask") as mock_flask:
-        type(mock_flask.request).url_root = mock.PropertyMock(
-            side_effect=RuntimeError("No request context")
-        )
-
-        with mock.patch("app.feeds.config") as mock_config:
-            mock_config.server = "https://podly.com"
-            mock_config.server_port = 8080
-            mock_config.reverse_proxy_enabled = True
-            mock_config.reverse_proxy_port = 8181
-
-            result = _get_base_url()
-
-    assert result == "https://podly.com:8181"
 
 
 @mock.patch("app.feeds.feed_item")

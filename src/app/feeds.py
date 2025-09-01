@@ -14,63 +14,24 @@ from podcast_processor.podcast_downloader import find_audio_link
 def _get_base_url() -> str:
     """
     Get the base URL for generating links.
-    Prioritizes configured server setting, falls back to request URL root if no server is configured.
+    Uses the current request's URL root to automatically handle any domain/port/scheme.
+    Falls back to configured server or localhost if no request context is available.
     """
-    # If server is configured, always use it (don't use request URL)
-    if config.server is not None:
-        # Use the configured server
-        server_url = config.server
-
-        # Add scheme if not present
-        if not server_url.startswith(("http://", "https://")):
-            server_url = f"http://{server_url}"
-
-        # Handle reverse proxy logic
-        if config.reverse_proxy_enabled:
-            # When behind reverse proxy, use reverse proxy port or no port
-            if config.reverse_proxy_port is not None:
-                # Extract scheme and hostname, add reverse proxy port
-                if "://" in server_url:
-                    scheme, rest = server_url.split("://", 1)
-                    hostname = rest.split(":")[0]  # Remove any existing port
-                    result = f"{scheme}://{hostname}:{config.reverse_proxy_port}"
-                else:
-                    result = f"{server_url}:{config.reverse_proxy_port}"
-            else:
-                # No port when behind reverse proxy (unless explicitly set)
-                if "://" in server_url:
-                    scheme, rest = server_url.split("://", 1)
-                    hostname = rest.split(":")[0]  # Remove any existing port
-                    result = f"{scheme}://{hostname}"
-                else:
-                    result = server_url
-            logger.debug(f"Using configured server with reverse proxy: {result}")
-            return result
-        # Not behind reverse proxy, use server_port
-        if "://" in server_url:
-            scheme, rest = server_url.split("://", 1)
-            hostname = rest.split(":")[0]  # Remove any existing port
-            result = f"{scheme}://{hostname}:{config.server_port}"
-        else:
-            result = f"{server_url}:{config.server_port}"
-        logger.debug(f"Using configured server with server port: {result}")
-        return result
-
-    # No server configured, try to use request context
     try:
         # Use Flask's request.url_root which gives us scheme://host:port/
         # This automatically handles whatever URL the user accessed the app with
-        result = flask.request.url_root.rstrip("/")
-        logger.debug(f"Using request URL root: {result}")
-        return result
+        return flask.request.url_root.rstrip("/")
     except RuntimeError:
         # No request context available (e.g., during testing or background tasks)
-        logger.debug("No request context available, using localhost fallback")
+        if config.server is not None:
+            # Use the configured server
+            server_url = config.server
+            if not server_url.startswith(("http://", "https://")):
+                server_url = f"http://{server_url}"
+            return f"{server_url}:{config.frontend_server_port}"
 
         # Fallback to localhost
-        result = f"http://localhost:{config.server_port}"
-        logger.debug(f"Using localhost fallback: {result}")
-        return result
+        return f"http://localhost:{config.frontend_server_port}"
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
