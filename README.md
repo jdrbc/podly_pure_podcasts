@@ -131,16 +131,10 @@ Podly provides flexible configuration options for different deployment scenarios
 #### Application Settings
 
 ```yaml
-# Application server settings (recommended)
+# Application server settings (optional)
 host: 0.0.0.0 # Interface to listen on (default: 0.0.0.0, accepts all requests)
 port: 5001 # Port to listen on (default: 5001)
-
-# Legacy settings (deprecated, still supported for backwards compatibility)
-# server: http://my.domain.com
-# backend_server_port: 5002
 ```
-
-The new `host` and `port` settings provide clearer control over how the application listens for connections, while the legacy `server` setting is no longer needed thanks to automatic request-aware URL generation.
 
 ### Reverse Proxy Setup
 
