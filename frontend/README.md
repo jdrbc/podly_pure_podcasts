@@ -1,77 +1,84 @@
-# React + TypeScript + Vite
+# Podly Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the React + TypeScript + Vite frontend for Podly. The frontend is built and served as part of the main Podly application.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+The frontend is integrated into the main Podly application and served as static assets by the Flask backend on port 5001.
 
-## Expanding the ESLint configuration
+### Development Workflows
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. **Backend Development**: Use `./run_podly.sh` (from project root)
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-});
-```
+   - Builds frontend once at startup
+   - Good for backend development when frontend changes are infrequent
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+2. **Frontend Development**: Use `./run_podly.sh --dev` (from project root)
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
+   - Automatically rebuilds frontend assets when files change
+   - Watches `frontend/src/`, `package.json`, and `package-lock.json`
+   - Requires `fswatch` (macOS) or `inotify-tools` (Linux) for file watching
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    "react-x": reactX,
-    "react-dom": reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs["recommended-typescript"].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-});
-```
+3. **Direct Frontend Development**: You can still run the frontend development server separately for advanced frontend work:
 
-## Environment Configuration
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
 
-This frontend supports runtime configuration through environment variables:
+   This starts the Vite development server on port 5173 with hot reloading and proxies API calls to the backend on port 5001.
 
-### Development Mode
+### File Watcher Setup
 
-When running with `npm run dev`, you can configure the API URL using:
+For `./run_podly.sh --dev` to work optimally, install a file watcher:
 
-- `.env` file: `VITE_API_URL=http://localhost:5002`
-- Environment variable: `VITE_API_URL=http://localhost:5002 npm run dev`
-
-### Production/Docker Mode
-
-When running in Docker, the API URL is configured at container startup time through the `VITE_API_URL` environment variable. No rebuild is required to change the API URL.
-
-Example:
+**macOS**:
 
 ```bash
-docker run -e VITE_API_URL=http://production-server:5002 podly-frontend
+brew install fswatch
 ```
 
-The frontend will automatically use the correct API URL based on the environment configuration.
+**Ubuntu/Debian**:
+
+```bash
+sudo apt-get install inotify-tools
+```
+
+Without a file watcher, you'll need to restart the application manually to see frontend changes.
+
+## Build Process
+
+The frontend build process depends on how you're running the application:
+
+1. **Standard Mode** (`./run_podly.sh`): Frontend is built once using `npm run build` and static files are served by Flask from port 5001
+2. **Development Mode** (`./run_podly.sh --dev`): Frontend is initially built, then automatically rebuilt when source files change
+3. **Direct Development** (`npm run dev`): Vite dev server serves files with hot reloading on port 5173 and proxies API calls to backend on port 5001
+4. **Docker**: Multi-stage build compiles frontend assets during image creation and copies them to the Flask static directory
+
+### Development Asset Rebuilding
+
+When using `./run_podly.sh --dev`, the system:
+
+- Monitors `frontend/src/`, `frontend/package.json`, and `frontend/package-lock.json` for changes
+- Automatically runs `npm run build` when changes are detected
+- Copies the built assets to `src/app/static/` for Flask to serve
+- Logs build output to `frontend-build.log`
+
+## Technology Stack
+
+- **React 18+** with TypeScript
+- **Vite** for build tooling and development server
+- **Tailwind CSS** for styling
+- **React Router** for client-side routing
+- **Tanstack Query** for data fetching
+
+## Configuration
+
+The frontend configuration is handled through:
+
+- **Environment Variables**: Set via Vite's environment variable system
+- **Vite Config**: `vite.config.ts` for build and development settings
+  - Development server runs on port 5173
+  - Proxies API calls to backend on port 5001 (configurable via `BACKEND_TARGET`)
+- **Tailwind Config**: `tailwind.config.js` for styling configuration

@@ -10,9 +10,9 @@ def main() -> None:
     # Start the application server
     serve(
         app,
-        host="0.0.0.0",
+        host=config.host,
         threads=config.threads,
-        port=config.backend_server_port,
+        port=config.port,
     )
 
 

@@ -15,11 +15,15 @@ GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
 
 # Read server URL from config.yml if it exists
 SERVER_URL=""
+
 if [ -f "config/config.yml" ]; then
     SERVER_URL=$(grep "^server:" config/config.yml | cut -d' ' -f2- | tr -d ' ')
+
     if [ -n "$SERVER_URL" ]; then
-        echo -e "${GREEN}Using server URL from config.yml: ${SERVER_URL}${NC}"
-        export VITE_API_URL="${SERVER_URL}:5002"
+        # Remove http:// or https:// prefix to get just the hostname
+        CLEAN_URL=$(echo "$SERVER_URL" | sed 's|^https\?://||')
+        export VITE_API_URL="http://${CLEAN_URL}:5001"
+        echo -e "${GREEN}Using server URL from config.yml: ${VITE_API_URL}${NC}"
     fi
 fi
 
@@ -82,7 +86,7 @@ while [[ $# -gt 0 ]]; do
             ROCM_VERSION="${1#*=}"
             GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
             ;;
-        -d|--detach)
+        -d|--detach|-b|--background)
             DETACHED=true
             ;;
         --dev)
@@ -101,9 +105,28 @@ while [[ $# -gt 0 ]]; do
             BRANCH_NAME="${1#*=}"
             BRANCH_SUFFIX="${BRANCH_NAME}"
             ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --build             Build containers only (don't start)"
+            echo "  --test-build        Test build with no cache"
+            echo "  --gpu               Force GPU mode"
+            echo "  --cpu               Force CPU mode"
+            echo "  --cuda=VERSION      Specify CUDA version"
+            echo "  --rocm=VERSION      Specify ROCM version"
+            echo "  -d, --detach        Run in detached/background mode"
+            echo "  -b, --background    Alias for --detach"
+            echo "  --dev               Development mode (rebuild containers)"
+            echo "  --rebuild           Rebuild containers before starting"
+            echo "  --production        Use published images (default)"
+            echo "  --branch=BRANCH     Use specific branch images"
+            echo "  -h, --help          Show this help message"
+            exit 0
+            ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [--rocm=VERSION] [-d|--detach] [-b|--background] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME] [-h|--help]"
             exit 1
             ;;
     esac
@@ -188,7 +211,7 @@ else
     fi
     if [ "$DEV_MODE" = true ]; then
         COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
-        echo -e "${YELLOW}Development mode enabled - frontend will run with hot reloading${NC}"
+        echo -e "${YELLOW}Development mode enabled - rebuilding containers with code changes${NC}"
     fi
     if [ "$REBUILD" = true ]; then
         echo -e "${YELLOW}Rebuild mode - will rebuild containers before starting${NC}"
@@ -210,18 +233,16 @@ else
         echo -e "${YELLOW}Rebuilding containers...${NC}"
         docker compose $COMPOSE_FILES build
     fi
-    
+
     if [ "$DETACHED" = true ]; then
         echo -e "${YELLOW}Starting Podly in detached mode...${NC}"
         docker compose $COMPOSE_FILES up -d
         echo -e "${GREEN}Podly is running in the background.${NC}"
-        echo -e "${GREEN}Frontend: http://localhost:5001${NC}"
-        echo -e "${GREEN}Backend API: http://localhost:5002${NC}"
+        echo -e "${GREEN}Application: http://localhost:5001${NC}"
     else
         echo -e "${YELLOW}Starting Podly...${NC}"
-        echo -e "${GREEN}Frontend will be available at: http://localhost:5001${NC}"
-        echo -e "${GREEN}Backend API will be available at: http://localhost:5002${NC}"
+        echo -e "${GREEN}Application will be available at: http://localhost:5001${NC}"
         docker compose $COMPOSE_FILES up
     fi
-fi 
+fi
 

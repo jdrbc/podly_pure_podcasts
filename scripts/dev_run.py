@@ -47,7 +47,7 @@ class ProcessManager:
         if os.path.exists(frontend_dir):
             # Set up environment for frontend
             env = os.environ.copy()
-            env["VITE_API_URL"] = "http://localhost:5002"
+            env["VITE_API_URL"] = "http://localhost:5001"
 
             self.processes["frontend"] = subprocess.Popen(
                 "npm run dev -- --host 0.0.0.0 --port 5001",
@@ -110,7 +110,7 @@ def main():
         print("\n" + "=" * 60)
         print("🚀 Development servers started!")
         print("📱 Frontend (React): http://localhost:5001")
-        print("🔧 Backend (Flask): http://localhost:5002")
+        print("🔧 Backend (Flask): http://localhost:5001")
         print("📁 Watching for file changes...")
         print("Press Ctrl+C to stop all servers")
         print("=" * 60 + "\n")

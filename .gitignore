@@ -48,3 +48,11 @@ config/config.yml
 *.sqlite
 .DS_Store
 src/instance/sqlite3.db-journal
+
+# Generated static assets from frontend build (preserve existing committed files)
+src/app/static/index.html
+src/app/static/assets/
+src/app/static/vite.svg
+
+# Frontend build logs
+frontend-build.log
