@@ -16,27 +16,20 @@ def _get_base_url() -> str:
     Get the base URL for generating links.
     Handles reverse proxy configuration and uses request headers when available.
     """
-    logger.debug("_get_base_url called")
-
     # Try to use request headers when available (for reverse proxy support)
     if has_request_context():
-        logger.debug("Request context available")
-
         # Check for reverse proxy headers first
         forwarded_host = request.headers.get("X-Forwarded-Host")
         forwarded_proto = request.headers.get("X-Forwarded-Proto")
         forwarded_port = request.headers.get("X-Forwarded-Port")
-        host_header = request.headers.get("Host")
 
         # Debug logging
         logger.debug(
-            f"Request headers - Host: {host_header}, "
+            f"Request headers - Host: {request.headers.get('Host')}, "
             f"X-Forwarded-Host: {forwarded_host}, "
             f"X-Forwarded-Proto: {forwarded_proto}, "
             f"X-Forwarded-Port: {forwarded_port}, "
-            f"is_secure: {request.is_secure}, "
-            f"request.url: {request.url}, "
-            f"request.base_url: {request.base_url}"
+            f"is_secure: {request.is_secure}"
         )
 
         if forwarded_host:
@@ -58,7 +51,6 @@ def _get_base_url() -> str:
 
         # Fall back to Host header with protocol detection
         host = request.headers.get("Host")
-        logger.debug(f"Host header value: {host}")
         if host:
             # Use forwarded protocol if available, otherwise detect from request
             if forwarded_proto:
@@ -69,10 +61,6 @@ def _get_base_url() -> str:
             result = f"{scheme}://{host}"
             logger.debug(f"Using Host header, result: {result}")
             return result
-
-        logger.debug("No Host header found, falling back to config")
-
-    logger.debug("No request context available, falling back to config")
 
     # Fall back to configuration-based URL generation
     if config.server is not None:
