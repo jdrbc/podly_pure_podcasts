@@ -25,20 +25,15 @@ def _get_base_url() -> str:
         if http2_scheme and http2_authority:
             return f"{http2_scheme}://{http2_authority}"
 
-        # Fall back to Host header with request.is_secure detection
+        # Fall back to Host header with scheme detection
         if host:
-            scheme = "https" if request.is_secure else "http"
+            # Check multiple indicators for HTTPS
+            is_https = (
+                request.is_secure
+                or request.headers.get("Strict-Transport-Security") is not None
+            )
+            scheme = "https" if is_https else "http"
             return f"{scheme}://{host}"
-
-    # Fall back to configuration-based URL generation
-    if config.server is not None:
-        # Use the configured server
-        server_url = config.server
-        if not server_url.startswith(("http://", "https://")):
-            server_url = f"http://{server_url}"
-
-        # Use main app port
-        return f"{server_url}:{config.port}"
 
     # Use localhost with main app port
     return f"http://localhost:{config.port}"

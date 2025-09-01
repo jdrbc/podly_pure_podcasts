@@ -239,13 +239,19 @@ def test_add_feed(mock_post_class, mock_feed_data, mock_db_session):
 
 
 def test_feed_item(mock_post):
-    # Mock config.server and config.port
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "http://podly.com"
-        mock_config.port = 5001
-        mock_config.frontend_server_port = 5001
+    # Mock request context with Host header
+    headers_dict = {"Host": "podly.com:5001"}
 
-        result = feed_item(mock_post)
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = headers_dict.get
+
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+    mock_request.is_secure = False
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
@@ -259,74 +265,110 @@ def test_feed_item(mock_post):
 
 
 def test_feed_item_with_reverse_proxy(mock_post):
-    # Test config with server setting (reverse proxy now handled via request headers)
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.port = 5001
+    # Test with HTTP/2 pseudo-headers (modern reverse proxy)
+    headers_dict = {
+        ":scheme": "http",
+        ":authority": "podly.com:5001",
+        "Host": "podly.com:5001",
+    }
 
-        result = feed_item(mock_post)
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = headers_dict.get
+
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
     assert result.title == mock_post.title
     assert result.guid == mock_post.guid
 
-    # Check enclosure - should use config server with frontend port
+    # Check enclosure - should use HTTP/2 pseudo-headers
     assert result.enclosure.url == "http://podly.com:5001/api/posts/test-guid/download"
     assert result.enclosure.type == "audio/mpeg"
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
 def test_feed_item_with_reverse_proxy_custom_port(mock_post):
-    # Test config with server setting (reverse proxy now handled via request headers)
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.port = 5001
+    # Test with HTTPS and custom port via request headers
+    headers_dict = {
+        ":scheme": "https",
+        ":authority": "podly.com:8443",
+        "Host": "podly.com:8443",
+    }
 
-        result = feed_item(mock_post)
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = headers_dict.get
+
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
     assert result.title == mock_post.title
     assert result.guid == mock_post.guid
 
-    # Check enclosure - should use config server with frontend port
-    assert result.enclosure.url == "http://podly.com:5001/api/posts/test-guid/download"
+    # Check enclosure - should use HTTPS with custom port
+    assert result.enclosure.url == "https://podly.com:8443/api/posts/test-guid/download"
     assert result.enclosure.type == "audio/mpeg"
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
 def test_get_base_url_without_reverse_proxy():
-    # Test _get_base_url without reverse proxy
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.port = 5001
+    # Test _get_base_url without request context (should use localhost fallback)
+    with mock.patch("app.feeds.has_request_context", return_value=False):
+        with mock.patch("app.feeds.config") as mock_config:
+            mock_config.port = 5001
+            result = _get_base_url()
 
-        result = _get_base_url()
-
-    assert result == "http://podly.com:5001"
+    assert result == "http://localhost:5001"
 
 
 def test_get_base_url_with_reverse_proxy_default_port():
-    # Test _get_base_url with server config (reverse proxy deprecated)
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.port = 5001
+    # Test _get_base_url with Host header (modern approach)
+    headers_dict = {"Host": "podly.com"}
 
-        result = _get_base_url()
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = headers_dict.get
 
-    assert result == "http://podly.com:5001"
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+    mock_request.is_secure = False
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = _get_base_url()
+
+    assert result == "http://podly.com"
 
 
 def test_get_base_url_with_reverse_proxy_custom_port():
-    # Test _get_base_url with server config (reverse proxy deprecated)
-    with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = "podly.com"
-        mock_config.port = 5001
+    # Test _get_base_url with HTTPS and Strict-Transport-Security header
+    headers_dict = {
+        "Host": "podly.com:8443",
+        "Strict-Transport-Security": "max-age=31536000",
+    }
 
-        result = _get_base_url()
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = headers_dict.get
 
-    assert result == "http://podly.com:5001"
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+    mock_request.is_secure = False  # STS header should override this
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = _get_base_url()
+
+    assert result == "https://podly.com:8443"
 
 
 def test_get_base_url_localhost():
@@ -511,3 +553,46 @@ def test_get_base_url_with_http2_pseudo_headers():
 
     # Should use HTTP/2 pseudo-headers
     assert result == "https://podly.com"
+
+
+def test_get_base_url_with_strict_transport_security():
+    """Test _get_base_url uses Strict-Transport-Security header to detect HTTPS."""
+    headers_dict = {
+        "Host": "secure.example.com",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    }
+
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = headers_dict.get
+
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+    mock_request.is_secure = False  # Even if Flask thinks it's HTTP
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = _get_base_url()
+
+    # Should use HTTPS because of Strict-Transport-Security header
+    assert result == "https://secure.example.com"
+
+
+def test_get_base_url_fallback_http_without_sts():
+    """Test _get_base_url falls back to HTTP when no HTTPS indicators present."""
+    headers_dict = {
+        "Host": "insecure.example.com",
+    }
+
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = headers_dict.get
+
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+    mock_request.is_secure = False
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = _get_base_url()
+
+    # Should use HTTP when no HTTPS indicators present
+    assert result == "http://insecure.example.com"
