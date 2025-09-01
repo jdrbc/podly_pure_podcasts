@@ -23,6 +23,24 @@ def _get_base_url() -> str:
         forwarded_proto = request.headers.get("X-Forwarded-Proto")
         forwarded_port = request.headers.get("X-Forwarded-Port")
 
+        # Try alternative headers that nginx is actually sending
+        original_url = request.headers.get("X-Original-URL")
+        forwarded_ssl = request.headers.get("X-Forwarded-Ssl")
+        host = request.headers.get("Host")
+
+        # Debug logging
+        logger.debug(
+            f"Request headers - Host: {host}, "
+            f"X-Forwarded-Host: {forwarded_host}, "
+            f"X-Forwarded-Proto: {forwarded_proto}, "
+            f"X-Forwarded-Port: {forwarded_port}, "
+            f"X-Original-URL: {original_url}, "
+            f"X-Forwarded-Ssl: {forwarded_ssl}, "
+            f"is_secure: {request.is_secure}, "
+            f"request.url: {request.url}, "
+            f"request.base_url: {request.base_url}"
+        )
+
         if forwarded_host:
             # Use forwarded headers from reverse proxy
             proto = forwarded_proto or "http"
@@ -37,11 +55,22 @@ def _get_base_url() -> str:
                 pass
             return f"{proto}://{forwarded_host}{port_part}"
 
+        # Use X-Original-URL if available (contains full original URL)
+        if original_url:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(original_url)
+            if parsed.netloc:
+                # Extract the base URL (scheme + netloc)
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
+                return base_url
+
         # Fall back to Host header with protocol detection
-        host = request.headers.get("Host")
         if host:
-            # Use forwarded protocol if available, otherwise detect from request
-            if forwarded_proto:
+            # Use X-Forwarded-Ssl header to detect HTTPS
+            if forwarded_ssl and forwarded_ssl.lower() == "on":
+                scheme = "https"
+            elif forwarded_proto:
                 scheme = forwarded_proto
             else:
                 scheme = "https" if request.is_secure else "http"

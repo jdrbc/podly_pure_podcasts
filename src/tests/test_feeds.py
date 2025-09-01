@@ -489,3 +489,46 @@ def test_get_base_url_no_request_context_fallback():
             result = _get_base_url()
 
     assert result == "http://localhost:5001"
+
+
+def test_get_base_url_with_x_original_url():
+    """Test _get_base_url uses X-Original-URL header when standard headers are missing."""
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = lambda key: {
+        "Host": "podly.com",
+        "X-Original-URL": "https://podly.com/feed/1",
+        "X-Forwarded-Ssl": "on",
+        "X-Forwarded-Host": None,
+        "X-Forwarded-Proto": None,
+        "X-Forwarded-Port": None,
+    }.get(key)
+
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = _get_base_url()
+
+    assert result == "https://podly.com"
+
+
+def test_get_base_url_with_x_forwarded_ssl():
+    """Test _get_base_url uses X-Forwarded-Ssl header to detect HTTPS."""
+    mock_headers = mock.MagicMock()
+    mock_headers.get.side_effect = lambda key: {
+        "Host": "podly.com",
+        "X-Forwarded-Ssl": "on",
+        "X-Forwarded-Host": None,
+        "X-Forwarded-Proto": None,
+        "X-Original-URL": None,
+    }.get(key)
+
+    mock_request = mock.MagicMock()
+    mock_request.headers = mock_headers
+
+    with mock.patch("app.feeds.has_request_context", return_value=True):
+        with mock.patch("app.feeds.request", mock_request):
+            result = _get_base_url()
+
+    assert result == "https://podly.com"
