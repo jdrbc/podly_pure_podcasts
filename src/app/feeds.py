@@ -155,8 +155,6 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
     """
 
-    # For backwards compatibility, generate URLs that point to the frontend port
-    # The frontend will proxy these requests to the backend
     base_url = _get_base_url()
 
     # Generate URLs that will be proxied by the frontend to the backend
@@ -190,7 +188,6 @@ def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
 
-    # For backwards compatibility, generate feed link that points to the frontend port
     base_url = _get_base_url()
     link = f"{base_url}/feed/{feed.id}"
 

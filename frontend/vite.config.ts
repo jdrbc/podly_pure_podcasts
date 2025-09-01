@@ -10,7 +10,7 @@ const BACKEND_TARGET = 'http://localhost:5001'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173, // Frontend dev server port (different from backend)
+    port: 5173,
     host: true,
     allowedHosts: true,
     proxy: {
