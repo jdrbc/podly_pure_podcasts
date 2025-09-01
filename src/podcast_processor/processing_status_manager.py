@@ -88,3 +88,21 @@ class ProcessingStatusManager:
             job.completed_at = datetime.utcnow()
 
         self.db_session.commit()
+
+    def mark_cancelled(self, job_id: str, error_message: Optional[str] = None) -> None:
+        # Use a fresh query to ensure we get the latest state
+        job = self.db_session.query(ProcessingJob).filter_by(id=job_id).first()
+        if not job:
+            return
+
+        job.status = "cancelled"
+        job.error_message = error_message
+        job.completed_at = datetime.utcnow()
+
+        try:
+            self.db_session.commit()
+            self.logger.info(f"Successfully cancelled job {job_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to cancel job {job_id}: {e}")
+            self.db_session.rollback()
+            raise

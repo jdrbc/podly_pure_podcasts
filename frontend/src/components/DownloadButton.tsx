@@ -46,6 +46,36 @@ export default function DownloadButton({
     }
   }, [hasProcessedAudio, episodeGuid]);
 
+  // Check for existing processing jobs on component mount
+  useEffect(() => {
+    const checkInitialStatus = async () => {
+      // Only check if not already processed and is whitelisted
+      if (!hasProcessedAudio && isWhitelisted) {
+        try {
+          const statusResponse = await feedsApi.getPostStatus(episodeGuid);
+          
+          // If there's an active job, set the processing state
+          if (statusResponse.status === 'pending' || statusResponse.status === 'running') {
+            setIsProcessing(true);
+            setStatus(statusResponse);
+          } else if (statusResponse.status === 'failed' || statusResponse.status === 'cancelled') {
+            // Show any error from a failed job
+            setStatus(statusResponse);
+            if (statusResponse.error) {
+              setError(statusResponse.error);
+            }
+          }
+          // If status is 'not_started', leave the button in its default state
+        } catch (err) {
+          console.error('Error checking initial processing status:', err);
+          // Don't set error state for API failures during initialization
+        }
+      }
+    };
+
+    checkInitialStatus();
+  }, [episodeGuid, hasProcessedAudio, isWhitelisted]);
+
   // Poll for status updates when processing
   useEffect(() => {
     let interval: number;

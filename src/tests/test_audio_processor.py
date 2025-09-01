@@ -147,7 +147,12 @@ def test_process_audio(app: Flask, test_processor_with_mocks: AudioProcessor) ->
     """Test the process_audio method"""
     with app.app_context():
         # Create actual Post instance
-        post = Post(id=1, title="Test Post", guid="test-audio-guid", unprocessed_audio_path="path/to/audio.mp3")
+        post = Post(
+            id=1,
+            title="Test Post",
+            guid="test-audio-guid",
+            unprocessed_audio_path="path/to/audio.mp3",
+        )
         output_path = "path/to/output.mp3"
 
         # Set up mocks for get_ad_segments and get_audio_duration_ms

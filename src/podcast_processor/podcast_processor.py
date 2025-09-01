@@ -2,7 +2,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import litellm
 from jinja2 import Template
@@ -89,56 +89,27 @@ class PodcastProcessor:
         else:
             self.audio_processor = audio_processor
 
-    def process_by_guid(self, p_guid: str) -> Optional[str]:
-        """
-        Process a podcast episode by GUID, handling post lookup and validation.
-        This is a convenience method that wraps the main process method.
-
-        Args:
-            p_guid: The GUID of the post to process
-
-        Returns:
-            Path to the processed audio file, or None if processing failed
-
-        Raises:
-            ProcessorException: If the post is not found, not whitelisted, or processing fails
-        """
-        post = Post.query.filter_by(guid=p_guid).first()
-        if post is None:
-            self.logger.warning(f"Post with GUID: {p_guid} not found")
-            raise ProcessorException(f"Post with GUID: {p_guid} not found")
-
-        if not post.whitelisted:
-            self.logger.warning(f"Post: {post.title} is not whitelisted")
-            raise ProcessorException(f"Post with GUID: {p_guid} not whitelisted")
-
-        self.logger.info(f"Processing post '{post.title}' (GUID: {p_guid})")
-
-        # Use the existing process method which handles all the download and processing logic
-        output_path = self.process(post)
-
-        # Update the post's processed_audio_path in the database
-        post.processed_audio_path = output_path
-        self.db_session.commit()
-
-        return output_path
-
-    def process(self, post: Post, job_id: Optional[str] = None) -> str:
+    def process(
+        self,
+        post: Post,
+        job_id: str,
+        cancel_callback: Optional[Callable[[], bool]] = None,
+    ) -> str:
         """
         Process a podcast by downloading, transcribing, identifying ads, and removing ad segments.
-        Creates a job record for tracking progress and handles all steps internally.
+        Updates the existing job record for tracking progress.
 
         Args:
             post: The Post object containing the podcast to process
-            job_id: Optional job ID to use, if not provided one will be generated
+            job_id: Job ID of the existing job to update (required)
+            cancel_callback: Optional callback to check for cancellation
 
         Returns:
             Path to the processed audio file
         """
-        # Create job for tracking - generate ID if not provided
-        if job_id is None:
-            job_id = self.status_manager.generate_job_id()
-        job = self.status_manager.create_job(post.guid, job_id)
+        job = ProcessingJob.query.get(job_id)
+        if not job:
+            raise ProcessorException(f"Job with ID {job_id} not found")
 
         try:
             # Update job to running status
@@ -159,6 +130,11 @@ class PodcastProcessor:
 
             # Step 1: Download (if needed)
             self._handle_download_step(post, job)
+            if cancel_callback and cancel_callback():
+                self.status_manager.update_job_status(
+                    job, "cancelled", job.current_step, "Cancellation requested"
+                )
+                raise ProcessorException("Cancelled")
 
             # Get processing paths and acquire lock
             processed_audio_path = self._acquire_processing_lock(post, job)
@@ -175,7 +151,9 @@ class PodcastProcessor:
                     return processed_audio_path
 
                 # Perform the main processing steps
-                self._perform_processing_steps(post, job, processed_audio_path)
+                self._perform_processing_steps(
+                    post, job, processed_audio_path, cancel_callback
+                )
 
                 self.logger.info(f"Processing podcast: {post} complete")
                 return processed_audio_path
@@ -225,7 +203,7 @@ class PodcastProcessor:
             raise ProcessorException("Processed audio path not found")
 
         processed_audio_path = str(working_paths.post_processed_audio_path)
-        
+
         # Use post GUID as lock key instead of file path for better granularity
         lock_key = post.guid
 
@@ -237,9 +215,7 @@ class PodcastProcessor:
                 PodcastProcessor.locks[lock_key].acquire(blocking=False)
                 locked = True
 
-        if not locked and not PodcastProcessor.locks[lock_key].acquire(
-            blocking=False
-        ):
+        if not locked and not PodcastProcessor.locks[lock_key].acquire(blocking=False):
             raise ProcessorException("Processing job in progress")
 
         # Cancel existing jobs since we got the lock
@@ -249,7 +225,11 @@ class PodcastProcessor:
         return processed_audio_path
 
     def _perform_processing_steps(
-        self, post: Post, job: ProcessingJob, processed_audio_path: str
+        self,
+        post: Post,
+        job: ProcessingJob,
+        processed_audio_path: str,
+        cancel_callback: Optional[Callable[[], bool]] = None,
     ) -> None:
         """
         Perform the main processing steps: transcription, ad classification, and audio processing.
@@ -264,9 +244,19 @@ class PodcastProcessor:
             job, "running", 2, "Transcribing audio", 50.0
         )
         transcript_segments = self.transcription_manager.transcribe(post)
+        if cancel_callback and cancel_callback():
+            self.status_manager.update_job_status(
+                job, "cancelled", job.current_step, "Cancellation requested"
+            )
+            raise ProcessorException("Cancelled")
 
         # Step 3: Classify ad segments
         self._classify_ad_segments(post, job, transcript_segments)
+        if cancel_callback and cancel_callback():
+            self.status_manager.update_job_status(
+                job, "cancelled", job.current_step, "Cancellation requested"
+            )
+            raise ProcessorException("Cancelled")
 
         # Step 4: Process audio (remove ad segments)
         self.status_manager.update_job_status(
