@@ -18,62 +18,16 @@ def _get_base_url() -> str:
     """
     # Try to use request headers when available (for reverse proxy support)
     if has_request_context():
-        # Check for reverse proxy headers first
-        forwarded_host = request.headers.get("X-Forwarded-Host")
-        forwarded_proto = request.headers.get("X-Forwarded-Proto")
-        forwarded_port = request.headers.get("X-Forwarded-Port")
-
-        # Try alternative headers that nginx is actually sending
-        original_url = request.headers.get("X-Original-URL")
-        forwarded_ssl = request.headers.get("X-Forwarded-Ssl")
+        http2_scheme = request.headers.get(":scheme")
+        http2_authority = request.headers.get(":authority")
         host = request.headers.get("Host")
 
-        # Debug logging
-        logger.debug(
-            f"Request headers - Host: {host}, "
-            f"X-Forwarded-Host: {forwarded_host}, "
-            f"X-Forwarded-Proto: {forwarded_proto}, "
-            f"X-Forwarded-Port: {forwarded_port}, "
-            f"X-Original-URL: {original_url}, "
-            f"X-Forwarded-Ssl: {forwarded_ssl}, "
-            f"is_secure: {request.is_secure}, "
-            f"request.url: {request.url}, "
-            f"request.base_url: {request.base_url}"
-        )
+        if http2_scheme and http2_authority:
+            return f"{http2_scheme}://{http2_authority}"
 
-        if forwarded_host:
-            # Use forwarded headers from reverse proxy
-            proto = forwarded_proto or "http"
-            port_part = ""
-            if forwarded_port and forwarded_port not in ["80", "443"]:
-                port_part = f":{forwarded_port}"
-            elif proto == "https" and forwarded_port != "443":
-                # Don't add port for standard HTTPS
-                pass
-            elif proto == "http" and forwarded_port != "80":
-                # Don't add port for standard HTTP
-                pass
-            return f"{proto}://{forwarded_host}{port_part}"
-
-        # Use X-Original-URL if available (contains full original URL)
-        if original_url:
-            from urllib.parse import urlparse
-
-            parsed = urlparse(original_url)
-            if parsed.netloc:
-                # Extract the base URL (scheme + netloc)
-                base_url = f"{parsed.scheme}://{parsed.netloc}"
-                return base_url
-
-        # Fall back to Host header with protocol detection
+        # Fall back to Host header with request.is_secure detection
         if host:
-            # Use X-Forwarded-Ssl header to detect HTTPS
-            if forwarded_ssl and forwarded_ssl.lower() == "on":
-                scheme = "https"
-            elif forwarded_proto:
-                scheme = forwarded_proto
-            else:
-                scheme = "https" if request.is_secure else "http"
+            scheme = "https" if request.is_secure else "http"
             return f"{scheme}://{host}"
 
     # Fall back to configuration-based URL generation
