@@ -130,19 +130,32 @@ SERVER=http://my.domain.com
 
 ### Reverse Proxy Setup
 
-Great news! Podly now automatically works behind any reverse proxy without any special configuration. The application automatically detects the correct URL scheme, host, and port from incoming requests.
+If you're running Podly behind a reverse proxy (like nginx, traefik, Cloudflare, etc.), you need to configure the reverse proxy settings so that generated RSS feed URLs use the correct external scheme and port instead of the internal container port.
 
-#### How It Works
+#### Configuration
 
-When you access Podly at:
+Add these settings to your `config/config.yml`:
 
-- `https://your-domain.com/feed/1` - Generated URLs will use `https://your-domain.com`
-- `http://192.168.1.100:8080/feed/1` - Generated URLs will use `http://192.168.1.100:8080`
-- `https://my-podly.example.com/feed/1` - Generated URLs will use `https://my-podly.example.com`
+```yaml
+server: your-domain.com
+reverse_proxy_enabled: true
+reverse_proxy_scheme: https # or http
+# reverse_proxy_port: 443  # Optional: only needed for non-standard ports
+```
 
-The RSS feeds will automatically contain the correct URLs regardless of how you access the application.
+#### Why This Is Needed
 
-#### Reverse Proxy Examples
+Without reverse proxy configuration, Podly generates URLs like:
+
+- `https://your-domain.com:5001/feed/1` (includes internal port)
+- `https://your-domain.com:5001/api/posts/abc123/download` (includes internal port)
+
+With reverse proxy configuration enabled, Podly generates clean URLs like:
+
+- `https://your-domain.com/feed/1` (no port for standard HTTPS)
+- `https://your-domain.com/api/posts/abc123/download` (no port for standard HTTPS)
+
+#### Common Reverse Proxy Examples
 
 **Nginx:**
 
@@ -171,19 +184,17 @@ labels:
   - "traefik.http.services.podly.loadbalancer.server.port=5001"
 ```
 
-**Apache:**
+**Custom Port Example:**
+If your reverse proxy serves on a non-standard port (e.g., 8443), configure it like this:
 
-```apache
-<VirtualHost *:443>
-    ServerName your-domain.com
-
-    ProxyPreserveHost On
-    ProxyPass / http://localhost:5001/
-    ProxyPassReverse / http://localhost:5001/
-</VirtualHost>
+```yaml
+server: your-domain.com
+reverse_proxy_enabled: true
+reverse_proxy_scheme: https
+reverse_proxy_port: 8443
 ```
 
-No additional configuration is needed in `config.yml` - just set up your reverse proxy and Podly will automatically adapt to whatever URL you use to access it!
+This will generate URLs like `https://your-domain.com:8443/feed/1`.
 
 ### Basic Authentication
 
