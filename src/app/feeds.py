@@ -31,7 +31,7 @@ def _get_base_url() -> str:
 
         # Fall back to Host header with scheme detection
         if host:
-            # Check multiple indicators for HTTPS (following audiobookshelf pattern)
+            # Check multiple indicators for HTTPS
             is_https = (
                 request.is_secure
                 or request.headers.get("X-Forwarded-Proto") == "https"
