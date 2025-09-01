@@ -81,41 +81,27 @@ fi
 echo -e "${YELLOW}Setting up environment from config.yml...${NC}"
 
 # Read configuration from config.yml
-SERVER_URL=$(grep "^server:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
 APP_PORT=$(grep "^port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
-BACKEND_PORT=$(grep "^backend_server_port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
-FRONTEND_PORT=$(grep "^frontend_server_port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
 
 # Default values
-if [ -z "$SERVER_URL" ]; then
-    SERVER_URL="http://localhost"
-fi
-# Use new port setting if available, otherwise fall back to backend_server_port, then default
-if [ -n "$APP_PORT" ]; then
-    BACKEND_PORT="$APP_PORT"
-elif [ -z "$BACKEND_PORT" ]; then
-    BACKEND_PORT="5001"
-fi
-if [ -z "$FRONTEND_PORT" ]; then
-    FRONTEND_PORT="5001"
+if [ -z "$APP_PORT" ]; then
+    APP_PORT="5001"
 fi
 
-# Set the API URL for the frontend
-export VITE_API_URL="${SERVER_URL}:${BACKEND_PORT}"
+# For this combined setup, both frontend and backend use the same port
+BACKEND_PORT="$APP_PORT"
+FRONTEND_PORT="5173"  # Standard Vite dev server port
 
-# Set CORS origins for the backend
-if [ "$SERVER_URL" != "http://localhost" ]; then
-    # For external servers, allow both localhost and the configured server
-    export CORS_ORIGINS="http://localhost:${FRONTEND_PORT},${SERVER_URL}:${FRONTEND_PORT}"
-else
-    # For localhost, just use the default
-    export CORS_ORIGINS="http://localhost:${FRONTEND_PORT}"
-fi
+# Set the API URL for the frontend (backend runs on the configured port)
+export VITE_API_URL="http://localhost:${BACKEND_PORT}"
+
+# CORS is now configured to wildcard by default in the app
+# Users can override with CORS_ORIGINS environment variable if needed
 
 echo -e "${GREEN}Environment configured:${NC}"
-echo -e "  Frontend: ${SERVER_URL}:${FRONTEND_PORT}"
+echo -e "  Frontend Dev Server: http://localhost:${FRONTEND_PORT}"
 echo -e "  Backend API: ${VITE_API_URL}"
-echo -e "  CORS Origins: ${CORS_ORIGINS}"
+echo -e "  CORS: Wildcard (*) - override with CORS_ORIGINS env var if needed"
 
 # Check if pipenv environment exists
 if ! pipenv --venv &> /dev/null; then
@@ -178,7 +164,7 @@ sleep 3
 
 if [ "$BACKGROUND_MODE" = true ]; then
     echo -e "${BOLD}${GREEN}🎉 PODLY RUNNING IN BACKGROUND${NC}"
-    echo -e "${GREEN}Frontend: ${SERVER_URL}:${FRONTEND_PORT}${NC}"
+    echo -e "${GREEN}Frontend Dev Server: http://localhost:${FRONTEND_PORT}${NC}"
     echo -e "${GREEN}Backend API: ${VITE_API_URL}${NC}"
     echo -e "${YELLOW}Logs:${NC}"
     echo -e "  Backend: backend.log"
@@ -200,7 +186,7 @@ cat << 'EOF'
 EOF
 
 echo -e "${BOLD}${GREEN}🎉 PODLY RUNNING${NC}"
-echo -e "${GREEN}Frontend: ${SERVER_URL}:${FRONTEND_PORT}${NC}"
+echo -e "${GREEN}Frontend Dev Server: http://localhost:${FRONTEND_PORT}${NC}"
 echo -e "${GREEN}Backend API: ${VITE_API_URL}${NC}"
 echo ""
 echo -e "${YELLOW}Controls:${NC}"
@@ -219,7 +205,7 @@ while true; do
             echo -e "${YELLOW}Backend PID: $BACKEND_PID${NC}"
             echo -e "${YELLOW}Frontend PID: $FRONTEND_PID${NC}"
             echo -e "${YELLOW}To stop: kill $BACKEND_PID $FRONTEND_PID${NC}"
-            echo -e "${YELLOW}Alternate kill command: (lsof -i :5001; lsof -i :5001) | grep LISTEN | awk '{print \$2}' | xargs kill -9${NC}"
+            echo -e "${YELLOW}Alternate kill command: pkill -f 'python src/main.py'; pkill -f 'vite'${NC}"
             exit 0
             ;;
         *)
