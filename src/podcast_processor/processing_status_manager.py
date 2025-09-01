@@ -2,6 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Optional
+from sqlalchemy.orm import object_session
 
 from app.models import ProcessingJob
 
@@ -72,6 +73,15 @@ class ProcessingStatusManager:
         progress: Optional[float] = None,
     ) -> None:
         """Update job status in database."""
+        self.logger.debug(
+            (
+                "update_job_status enter: job_id=%s status=%s step=%s bound=%s"
+            ),
+            getattr(job, "id", None),
+            status,
+            step,
+            object_session(job) is not None,
+        )
         job.status = status
         job.current_step = step
         job.step_name = step_name
@@ -87,7 +97,27 @@ class ProcessingStatusManager:
         elif status in ["completed", "failed"]:
             job.completed_at = datetime.utcnow()
 
-        self.db_session.commit()
+        try:
+            self.db_session.commit()
+            if self.logger:
+                self.logger.debug(
+                    (
+                        "update_job_status committed: job_id=%s status=%s step=%s progress=%.2f"
+                    ),
+                    getattr(job, "id", None),
+                    job.status,
+                    job.current_step,
+                    job.progress_percentage,
+                )
+        except Exception as e:
+            if self.logger:
+                self.logger.error(
+                    "update_job_status commit failed for job_id=%s: %s",
+                    getattr(job, "id", None),
+                    e,
+                    exc_info=True,
+                )
+            raise
 
     def mark_cancelled(self, job_id: str, error_message: Optional[str] = None) -> None:
         # Use a fresh query to ensure we get the latest state

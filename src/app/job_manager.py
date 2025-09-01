@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from sqlalchemy import case
+from sqlalchemy.orm import object_session
 
 from app import config
 from app import db as _db
@@ -96,6 +97,9 @@ class JobManager:
                 # Ensure app context in worker
                 with scheduler.app.app_context():
                     try:
+                        logger.debug(
+                            "_run_job start: job_id=%s post_guid=%s", job.id, post_guid
+                        )
                         # Reload Post inside the worker thread to avoid detached instances
                         worker_post = Post.query.filter_by(guid=post_guid).first()
                         if not worker_post:
@@ -115,6 +119,11 @@ class JobManager:
                                 pass
                             return
 
+                        logger.debug(
+                            "_run_job calling processor.process job_id=%s bound=%s",
+                            job.id,
+                            object_session(job) is not None,
+                        )
                         get_processor().process(
                             worker_post, job_id=job.id, cancel_callback=_cancelled
                         )
@@ -137,7 +146,7 @@ class JobManager:
                         fut.result()
                     except Exception as e:
                         # Update job status to failed if there was an unhandled exception
-                        logger.error(f"Job {job_id} failed with exception: {e}")
+                        logger.error(f"Job {job_id} failed with exception: {e}", exc_info=True)
                         try:
                             with scheduler.app.app_context():
                                 failed_job = ProcessingJob.query.get(job_id)

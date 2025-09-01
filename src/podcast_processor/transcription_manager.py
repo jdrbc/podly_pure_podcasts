@@ -3,6 +3,7 @@ from typing import Any, List, Optional
 
 from app import db
 from app.models import ModelCall, Post, TranscriptSegment
+from sqlalchemy.exc import IntegrityError
 from shared.config import (
     Config,
     GroqWhisperConfig,
@@ -119,7 +120,7 @@ class TranscriptionManager:
         if existing_segments is not None:
             return existing_segments
 
-        # Create a new ModelCall record for this transcription attempt
+        # Create a new ModelCall record for this transcription attempt (upsert-safe)
         current_whisper_call = ModelCall(
             post_id=post.id,
             model_name=self.transcriber.model_name,
@@ -128,8 +129,25 @@ class TranscriptionManager:
             prompt="Whisper transcription job",  # Standardized prompt for Whisper calls
             status="pending",
         )
-        self.db_session.add(current_whisper_call)
-        self.db_session.commit()  # Commit to get an ID for current_whisper_call if needed, and to mark it as pending
+        try:
+            self.db_session.add(current_whisper_call)
+            self.db_session.commit()
+        except IntegrityError:
+            # Another process/thread created the same unique ModelCall concurrently
+            self.db_session.rollback()
+            current_whisper_call = (
+                self.model_call_query.filter_by(
+                    post_id=post.id,
+                    model_name=self.transcriber.model_name,
+                    first_segment_sequence_num=0,
+                    last_segment_sequence_num=-1,
+                )
+                .order_by(ModelCall.timestamp.desc())
+                .first()
+            )
+            if not current_whisper_call:
+                # If not found despite conflict, re-raise
+                raise
 
         self.logger.info(
             f"Created new Whisper ModelCall {current_whisper_call.id} for post {post.id}."
@@ -189,15 +207,15 @@ class TranscriptionManager:
             )
             self.db_session.rollback()  # Rollback any potential partial additions from the try block
 
+            # Re-fetch the ModelCall using THIS session to avoid cross-session conflicts
             call_to_update = (
-                self.model_call_query.get(current_whisper_call.id)
+                self.db_session.query(ModelCall).get(current_whisper_call.id)
                 if current_whisper_call.id
                 else None
             )
             if call_to_update:
                 call_to_update.status = "failed_permanent"
                 call_to_update.error_message = str(e)
-                self.db_session.add(call_to_update)
                 self.db_session.commit()
                 self.logger.info(
                     f"Updated ModelCall {call_to_update.id} to status 'failed_permanent' for post {post.id}."

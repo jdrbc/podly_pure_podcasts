@@ -9,6 +9,7 @@ from jinja2 import Template
 
 from app import db, logger
 from app.models import Post, ProcessingJob, TranscriptSegment
+from sqlalchemy.orm import object_session
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.podcast_downloader import PodcastDownloader, sanitize_title
@@ -112,6 +113,12 @@ class PodcastProcessor:
             raise ProcessorException(f"Job with ID {job_id} not found")
 
         try:
+            self.logger.debug(
+                "processor.process enter: job_id=%s post_guid=%s job_bound=%s",
+                job_id,
+                getattr(post, "guid", None),
+                object_session(job) is not None,
+            )
             # Update job to running status
             self.status_manager.update_job_status(
                 job, "running", 0, "Starting processing"
@@ -177,6 +184,12 @@ class PodcastProcessor:
             raise
 
         except Exception as e:
+            self.logger.error(
+                "processor.process unexpected error: job_id=%s %s",
+                job_id,
+                e,
+                exc_info=True,
+            )
             self.status_manager.update_job_status(
                 job, "failed", job.current_step, f"Unexpected error: {str(e)}"
             )
