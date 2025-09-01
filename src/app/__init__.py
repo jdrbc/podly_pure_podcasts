@@ -68,21 +68,12 @@ def create_app() -> Flask:
     app = Flask(__name__, static_folder=static_folder)
 
     # Configure CORS
-    default_origins = [f"http://localhost:{config.frontend_server_port}"]
-    if config.server:
-        server_url = config.server
-        if not server_url.startswith(("http://", "https://")):
-            server_url = f"http://{server_url}"
-
-        # Add frontend URL with configured port
-        frontend_url = f"{server_url}:{config.frontend_server_port}"
-        default_origins.append(frontend_url)
-
-        # Also add the server URL without port for cases where it's served on port 80/443
-        if not server_url.endswith((":80", ":443")):
-            default_origins.append(server_url)
-
-    cors_origins = os.environ.get("CORS_ORIGINS", ",".join(default_origins)).split(",")
+    # Default to wildcard to accept all origins, but allow override via environment variable
+    default_cors = "*"
+    cors_origins_env = os.environ.get("CORS_ORIGINS", default_cors)
+    cors_origins = (
+        cors_origins_env.split(",") if cors_origins_env != "*" else cors_origins_env
+    )
     CORS(
         app,
         resources={r"/*": {"origins": cors_origins}},

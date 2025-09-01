@@ -388,9 +388,8 @@ def test_get_base_url_with_reverse_proxy_custom_port():
 
 
 def test_get_base_url_localhost():
-    # Test _get_base_url with localhost
+    # Test _get_base_url with localhost (fallback when not in request context)
     with mock.patch("app.feeds.config") as mock_config:
-        mock_config.server = None
         mock_config.port = 5001
 
         result = _get_base_url()
