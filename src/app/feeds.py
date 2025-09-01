@@ -3,7 +3,7 @@ import uuid
 from typing import Any, Optional
 
 import feedparser  # type: ignore[import-untyped]
-import flask
+import flask  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
 
 from app import config, db, logger
