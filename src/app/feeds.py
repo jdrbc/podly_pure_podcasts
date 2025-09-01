@@ -13,9 +13,6 @@ from podcast_processor.podcast_downloader import find_audio_link
 
 def _get_base_url() -> str:
     try:
-        logger.debug(f"Headers: {dict(request.headers)}")
-        logger.debug(f"Request is_secure: {request.is_secure}")
-
         # Check various ways HTTP/2 pseudo-headers might be available
         http2_scheme = (
             request.headers.get(":scheme")
@@ -29,14 +26,8 @@ def _get_base_url() -> str:
         )
         host = request.headers.get("Host")
 
-        logger.debug(
-            f"Detected - http2_scheme: {http2_scheme}, http2_authority: {http2_authority}, host: {host}"
-        )
-
         if http2_scheme and http2_authority:
-            result = f"{http2_scheme}://{http2_authority}"
-            logger.debug(f"Using HTTP/2 pseudo-headers: {result}")
-            return result
+            return f"{http2_scheme}://{http2_authority}"
 
         # Fall back to Host header with scheme detection
         if host:
@@ -50,17 +41,13 @@ def _get_base_url() -> str:
                 or request.scheme == "https"
             )
             scheme = "https" if is_https else "http"
-            result = f"{scheme}://{host}"
-            logger.debug(f"Using Host header with detected scheme: {result}")
-            return result
+            return f"{scheme}://{host}"
     except RuntimeError:
         # Working outside of request context
         pass
 
     # Use localhost with main app port
-    result = f"http://localhost:{config.port}"
-    logger.debug(f"Using fallback localhost: {result}")
-    return result
+    return f"http://localhost:{config.port}"
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
