@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Feed, Episode } from '../types';
+import type { Feed, Episode, Job } from '../types';
 
 // Type for runtime configuration
 interface AppConfig {
@@ -305,5 +305,20 @@ export const feedsApi = {
 
   getEpisodeOriginalDownloadUrl: (guid: string): string => {
     return feedsApi.getPostOriginalDownloadUrl(guid);
+  },
+};
+
+export const jobsApi = {
+  getActiveJobs: async (limit: number = 100): Promise<Job[]> => {
+    const response = await api.get('/api/jobs/active', { params: { limit } });
+    return response.data;
+  },
+  getAllJobs: async (limit: number = 200): Promise<Job[]> => {
+    const response = await api.get('/api/jobs/all', { params: { limit } });
+    return response.data;
+  },
+  cancelJob: async (jobId: string): Promise<{ status: string; job_id: string; message: string }> => {
+    const response = await api.post(`/api/jobs/${jobId}/cancel`);
+    return response.data;
   },
 };

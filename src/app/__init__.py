@@ -50,13 +50,13 @@ def setup_scheduler(app: Flask) -> None:
 
 def add_background_job() -> None:
     """Add the recurring background job for refreshing feeds."""
-    from app.jobs import (  # pylint: disable=import-outside-toplevel
-        run_refresh_all_feeds,
+    from app.job_manager import (  # pylint: disable=import-outside-toplevel
+        scheduled_refresh_all_feeds,
     )
 
     scheduler.add_job(
         id="refresh_all_feeds",
-        func=run_refresh_all_feeds,
+        func=scheduled_refresh_all_feeds,
         trigger="interval",
         minutes=config.background_update_interval_minute,
         replace_existing=True,
@@ -117,6 +117,18 @@ def create_app() -> Flask:
     # Always start the scheduler for on-demand jobs
     logger.info(f"Starting scheduler with {config.threads} thread(s).")
     setup_scheduler(app)
+
+    # Clear all jobs on startup to ensure clean state
+    from app.job_manager import (  # pylint: disable=import-outside-toplevel
+        get_job_manager,
+    )
+
+    job_manager = get_job_manager()
+    clear_result = job_manager.clear_all_jobs()
+    if clear_result["status"] == "success":
+        logger.info(f"Startup: {clear_result['message']}")
+    else:
+        logger.warning(f"Startup job clearing failed: {clear_result['message']}")
 
     # Only add the recurring background job if enabled
     if config.background_update_interval_minute is not None:

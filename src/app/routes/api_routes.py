@@ -6,17 +6,9 @@ import flask
 from flask import Blueprint, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
-from app import db, logger, scheduler
-from app.jobs import process_episode_async
-from app.models import (
-    Feed,
-    Identification,
-    ModelCall,
-    Post,
-    ProcessingJob,
-    TranscriptSegment,
-    generate_job_id,
-)
+from app import db, logger
+from app.job_manager import get_job_manager
+from app.models import Feed, Identification, ModelCall, Post, TranscriptSegment
 
 api_bp = Blueprint("api", __name__)
 
@@ -453,19 +445,11 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             }
         )
 
-    # Always start a new job - the processor will handle locking and job management
+    # Delegate to JobManager
     try:
-        # Schedule the job
-        scheduler.add_job(
-            func=process_episode_async,
-            args=[p_guid],
-            id=f"process-{p_guid}-{generate_job_id()}",  # Unique scheduler ID
-            name=f"Process post {post.title}",
-            replace_existing=True,
-        )
-
-        return flask.jsonify({"status": "started", "message": "Processing job started"})
-
+        result = get_job_manager().start_post_processing(p_guid, priority="interactive")
+        status_code = 200 if result.get("status") in ("started", "completed") else 400
+        return flask.jsonify(result), status_code
     except Exception as e:
         logger.error(f"Failed to start processing job for {p_guid}: {e}")
         return (
@@ -482,81 +466,65 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
 
 @api_bp.route("/api/posts/<string:p_guid>/status", methods=["GET"])
 def api_post_status(p_guid: str) -> ResponseReturnValue:
-    """Get the current processing status of a post."""
+    """Get the current processing status of a post via JobManager."""
+    result = get_job_manager().get_post_status(p_guid)
+    status_code = (
+        200
+        if result.get("status") != "error"
+        else (404 if result.get("error_code") == "NOT_FOUND" else 400)
+    )
+    return flask.jsonify(result), status_code
 
-    # Get the post
-    post = Post.query.filter_by(guid=p_guid).first()
-    if not post:
+
+@api_bp.route("/api/jobs/active", methods=["GET"])
+def api_list_active_jobs() -> ResponseReturnValue:
+    """Return only active jobs (pending/running) ordered by priority."""
+    try:
+        limit = int(request.args.get("limit", "100"))
+    except ValueError:
+        limit = 100
+    result = get_job_manager().list_active_jobs(limit=limit)
+    return flask.jsonify(result)
+
+
+@api_bp.route("/api/jobs/all", methods=["GET"])
+def api_list_all_jobs() -> ResponseReturnValue:
+    """Return all jobs ordered by priority."""
+    try:
+        limit = int(request.args.get("limit", "100"))
+    except ValueError:
+        limit = 100
+    result = get_job_manager().list_all_jobs_detailed(limit=limit)
+    return flask.jsonify(result)
+
+
+@api_bp.route("/api/jobs/<string:job_id>/cancel", methods=["POST"])
+def api_cancel_job(job_id: str) -> ResponseReturnValue:
+    """Cancel a specific job by job ID."""
+    try:
+        result = get_job_manager().cancel_job(job_id)
+        status_code = (
+            200
+            if result.get("status") == "cancelled"
+            else (404 if result.get("error_code") == "NOT_FOUND" else 400)
+        )
+
+        # Force a database session refresh to ensure changes are visible
+        db.session.expire_all()
+
+        return flask.jsonify(result), status_code
+    except Exception as e:
+        logger.error(f"Failed to cancel job {job_id}: {e}")
         return (
             flask.jsonify(
                 {
                     "status": "error",
-                    "error_code": "NOT_FOUND",
-                    "message": "Post not found",
+                    "error_code": "CANCEL_FAILED",
+                    "message": f"Failed to cancel job: {str(e)}",
                 }
             ),
-            404,
+            500,
         )
-
-    # Get the most recent job for this post
-    job = (
-        ProcessingJob.query.filter_by(post_guid=p_guid)
-        .order_by(ProcessingJob.created_at.desc())
-        .first()
-    )
-
-    if not job:
-        # No job found - check if already processed
-        if post.processed_audio_path and os.path.exists(post.processed_audio_path):
-            return flask.jsonify(
-                {
-                    "status": "completed",
-                    "step": 4,
-                    "step_name": "Processing complete",
-                    "total_steps": 4,
-                    "progress_percentage": 100.0,
-                    "message": "Post already processed",
-                    "download_url": f"/api/posts/{p_guid}/download",
-                }
-            )
-        return flask.jsonify(
-            {
-                "status": "not_started",
-                "step": 0,
-                "step_name": "Not started",
-                "total_steps": 4,
-                "progress_percentage": 0.0,
-                "message": "No processing job found",
-            }
-        )
-
-    # Build response from job data
-    response_data = {
-        "status": job.status,
-        "step": job.current_step,
-        "step_name": job.step_name or "Unknown",
-        "total_steps": job.total_steps,
-        "progress_percentage": job.progress_percentage,
-        "message": job.step_name or f"Step {job.current_step} of {job.total_steps}",
-    }
-
-    # Add timestamps if available
-    if job.started_at:
-        response_data["started_at"] = job.started_at.isoformat()
-
-    # Add download URL if completed
-    if (
-        job.status == "completed"
-        and post.processed_audio_path
-        and os.path.exists(post.processed_audio_path)
-    ):
-        response_data["download_url"] = f"/api/posts/{p_guid}/download"
-
-    # Add error message if failed
-    if job.status == "failed" and job.error_message:
-        response_data["error"] = job.error_message
-
-    return flask.jsonify(response_data)
 
 
 @api_bp.route("/api/posts/<string:p_guid>/audio", methods=["GET"])

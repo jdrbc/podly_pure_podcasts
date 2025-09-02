@@ -187,8 +187,7 @@ else
         COMPOSE_FILES="$COMPOSE_FILES -f compose.rocm.yml"
     fi
     if [ "$DEV_MODE" = true ]; then
-        COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
-        echo -e "${YELLOW}Development mode enabled - frontend will run with hot reloading${NC}"
+        echo -e "${YELLOW}Development mode enabled - containers will be rebuilt for testing${NC}"
     fi
     if [ "$REBUILD" = true ]; then
         echo -e "${YELLOW}Rebuild mode - will rebuild containers before starting${NC}"
