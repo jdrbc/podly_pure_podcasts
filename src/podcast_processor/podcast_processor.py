@@ -6,17 +6,21 @@ from typing import Any, Callable, Dict, List, Optional
 
 import litellm
 from jinja2 import Template
+from sqlalchemy.orm import object_session
 
 from app import db, logger
 from app.models import Post, ProcessingJob, TranscriptSegment
-from sqlalchemy.orm import object_session
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.podcast_downloader import PodcastDownloader, sanitize_title
 from podcast_processor.processing_status_manager import ProcessingStatusManager
 from podcast_processor.transcription_manager import TranscriptionManager
 from shared.config import Config
-from shared.processing_paths import ProcessingPaths, paths_from_unprocessed_path
+from shared.processing_paths import (
+    ProcessingPaths,
+    get_job_unprocessed_path,
+    paths_from_unprocessed_path,
+)
 
 
 def get_post_processed_audio_path(post: Post) -> Optional[ProcessingPaths]:
@@ -112,6 +116,9 @@ class PodcastProcessor:
         if not job:
             raise ProcessorException(f"Job with ID {job_id} not found")
 
+        # Cache GUID early to avoid ORM access during error cleanup if the session rolls back
+        cached_lock_key = getattr(post, "guid", None)
+
         try:
             self.logger.debug(
                 "processor.process enter: job_id=%s post_guid=%s job_bound=%s",
@@ -137,11 +144,7 @@ class PodcastProcessor:
 
             # Step 1: Download (if needed)
             self._handle_download_step(post, job)
-            if cancel_callback and cancel_callback():
-                self.status_manager.update_job_status(
-                    job, "cancelled", job.current_step, "Cancellation requested"
-                )
-                raise ProcessorException("Cancelled")
+            self._raise_if_cancelled(job, cancel_callback)
 
             # Get processing paths and acquire lock
             processed_audio_path = self._acquire_processing_lock(post, job)
@@ -165,8 +168,15 @@ class PodcastProcessor:
                 self.logger.info(f"Processing podcast: {post} complete")
                 return processed_audio_path
             finally:
-                # Release lock using post GUID as key
-                PodcastProcessor.locks[post.guid].release()
+                # Release lock using cached GUID without touching ORM state after potential rollback
+                try:
+                    if cached_lock_key is not None:
+                        lock = PodcastProcessor.locks.get(cached_lock_key)
+                        if lock is not None and lock.locked():
+                            lock.release()
+                except Exception:
+                    # Best-effort lock release; avoid masking original exceptions
+                    pass
 
         except ProcessorException as e:
             error_msg = str(e)
@@ -257,19 +267,11 @@ class PodcastProcessor:
             job, "running", 2, "Transcribing audio", 50.0
         )
         transcript_segments = self.transcription_manager.transcribe(post)
-        if cancel_callback and cancel_callback():
-            self.status_manager.update_job_status(
-                job, "cancelled", job.current_step, "Cancellation requested"
-            )
-            raise ProcessorException("Cancelled")
+        self._raise_if_cancelled(job, cancel_callback)
 
         # Step 3: Classify ad segments
         self._classify_ad_segments(post, job, transcript_segments)
-        if cancel_callback and cancel_callback():
-            self.status_manager.update_job_status(
-                job, "cancelled", job.current_step, "Cancellation requested"
-            )
-            raise ProcessorException("Cancelled")
+        self._raise_if_cancelled(job, cancel_callback)
 
         # Step 4: Process audio (remove ad segments)
         self.status_manager.update_job_status(
@@ -285,6 +287,16 @@ class PodcastProcessor:
         self.status_manager.update_job_status(
             job, "completed", 4, "Processing complete", 100.0
         )
+
+    def _raise_if_cancelled(
+        self, job: ProcessingJob, cancel_callback: Optional[Callable[[], bool]]
+    ) -> None:
+        """Helper to centralize cancellation checking and update job state."""
+        if cancel_callback and cancel_callback():
+            self.status_manager.update_job_status(
+                job, "cancelled", job.current_step, "Cancellation requested"
+            )
+            raise ProcessorException("Cancelled")
 
     def _classify_ad_segments(
         self,
@@ -337,10 +349,10 @@ class PodcastProcessor:
             post.unprocessed_audio_path = None
             self.db_session.commit()
 
-        # Check if file exists on disk at expected location
-        safe_post_title = sanitize_title(post.title)
-        post_subdir = safe_post_title.replace(".mp3", "")
-        expected_unprocessed_path = Path("in") / post_subdir / f"{safe_post_title}.mp3"
+        # Compute a unique per-job expected path
+        expected_unprocessed_path = get_job_unprocessed_path(
+            post.guid, job.id, post.title
+        )
 
         if (
             expected_unprocessed_path.exists()
@@ -360,7 +372,9 @@ class PodcastProcessor:
             job, "running", 1, "Downloading episode", 25.0
         )
         self.logger.info(f"Downloading post: {post.title}")
-        download_path = self.downloader.download_episode(post)
+        download_path = self.downloader.download_episode(
+            post, dest_path=str(expected_unprocessed_path)
+        )
         if download_path is None:
             raise ProcessorException("Download failed")
         post.unprocessed_audio_path = download_path

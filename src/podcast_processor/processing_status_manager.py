@@ -2,6 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Optional
+
 from sqlalchemy.orm import object_session
 
 from app.models import ProcessingJob
@@ -74,9 +75,7 @@ class ProcessingStatusManager:
     ) -> None:
         """Update job status in database."""
         self.logger.debug(
-            (
-                "update_job_status enter: job_id=%s status=%s step=%s bound=%s"
-            ),
+            ("update_job_status enter: job_id=%s status=%s step=%s bound=%s"),
             getattr(job, "id", None),
             status,
             step,

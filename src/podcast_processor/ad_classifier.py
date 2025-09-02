@@ -7,10 +7,10 @@ from jinja2 import Template
 from litellm.exceptions import InternalServerError
 from litellm.types.utils import Choices
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
-from sqlalchemy.exc import IntegrityError
 from podcast_processor.model_output import (
     AdSegmentPredictionList,
     clean_and_parse_model_output,

@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from sqlalchemy import case
-from sqlalchemy.orm import object_session
 
 from app import config
 from app import db as _db
@@ -85,106 +84,8 @@ class JobManager:
 
             # Create a new job record and submit to pool
             job_id = self._status_manager.generate_job_id()
-            job = self._status_manager.create_job(post_guid, job_id)
-
-            def _cancelled() -> bool:
-                # Check cancellation status from database
-                with scheduler.app.app_context():
-                    current_job = ProcessingJob.query.get(job_id)
-                    return current_job is None or current_job.status == "cancelled"
-
-            def _run_job() -> None:
-                # Ensure app context in worker
-                with scheduler.app.app_context():
-                    try:
-                        logger.debug(
-                            "_run_job start: job_id=%s post_guid=%s", job.id, post_guid
-                        )
-                        # Reload Post inside the worker thread to avoid detached instances
-                        worker_post = Post.query.filter_by(guid=post_guid).first()
-                        if not worker_post:
-                            # If the post disappeared, mark job failed and exit
-                            logger.error(
-                                f"Post with GUID {post_guid} not found in worker; failing job {job.id}"
-                            )
-                            try:
-                                # Best-effort status update
-                                self._status_manager.update_job_status(
-                                    ProcessingJob.query.get(job.id),
-                                    "failed",
-                                    0,
-                                    "Post not found",
-                                )
-                            except Exception:  # pylint: disable=broad-except
-                                pass
-                            return
-
-                        logger.debug(
-                            "_run_job calling processor.process job_id=%s bound=%s",
-                            job.id,
-                            object_session(job) is not None,
-                        )
-                        get_processor().process(
-                            worker_post, job_id=job.id, cancel_callback=_cancelled
-                        )
-                    except ProcessorException as e:
-                        # Cancellation is handled cooperatively inside processor
-                        logger.info(f"Job {job.id} ended with ProcessorException: {e}")
-                    except Exception as e:  # pylint: disable=broad-except
-                        logger.error(f"Unexpected error in job {job.id}: {e}")
-                    finally:
-                        # No in-memory cleanup needed - all state is in database
-                        pass
-
-            try:
-                future = self._executor.submit(_run_job)
-
-                # Add callback to handle any submission failures
-                def _on_job_done(fut: Future[None]) -> None:
-                    try:
-                        # This will raise any exception that occurred during execution
-                        fut.result()
-                    except Exception as e:
-                        # Update job status to failed if there was an unhandled exception
-                        logger.error(f"Job {job_id} failed with exception: {e}", exc_info=True)
-                        try:
-                            with scheduler.app.app_context():
-                                failed_job = ProcessingJob.query.get(job_id)
-                                if failed_job and failed_job.status not in [
-                                    "completed",
-                                    "cancelled",
-                                ]:
-                                    self._status_manager.update_job_status(
-                                        failed_job,
-                                        "failed",
-                                        failed_job.current_step,
-                                        f"Job execution failed: {str(e)}",
-                                    )
-                        except Exception as cleanup_error:
-                            logger.error(
-                                f"Failed to update job status after failure: {cleanup_error}"
-                            )
-
-                future.add_done_callback(_on_job_done)
-                logger.info(f"Successfully submitted job {job_id} to thread pool")
-
-                return {"status": "started", "job_id": job_id}
-
-            except Exception as e:
-                # Thread pool submission failed
-                logger.error(f"Failed to submit job {job_id} to thread pool: {e}")
-                # Reload job from database to avoid session detachment issues
-                fresh_job = ProcessingJob.query.get(job_id)
-                if fresh_job:
-                    self._status_manager.update_job_status(
-                        fresh_job, "failed", 0, f"Failed to start job: {str(e)}"
-                    )
-                return {
-                    "status": "error",
-                    "error_code": "SUBMISSION_FAILED",
-                    "message": f"Failed to submit job to thread pool: {str(e)}",
-                    "job_id": job_id,
-                }
+            self._status_manager.create_job(post_guid, job_id)
+            return self._submit_processing_job(job_id, post_guid)
 
     def get_post_status(self, post_guid: str) -> Dict[str, Any]:
         with scheduler.app.app_context():
@@ -545,29 +446,6 @@ class JobManager:
         if not new_posts:
             return 0
 
-        # Clean up existing unprocessed files for new posts
-        for post in new_posts:
-            if not post.download_url:
-                logger.error(f"Skipping Post ID {post.id}: Download URL is missing.")
-                continue
-            download_path = post.unprocessed_audio_path
-            if (
-                post.processed_audio_path is None
-                and download_path is not None
-                and os.path.exists(download_path)
-            ):
-                try:
-                    os.remove(download_path)
-                    logger.info(
-                        f"Deleted existing file at {download_path} for post '{post.title}' "
-                        f"(ID: {post.id}) because processed_audio_path is None."
-                    )
-                except OSError as e:
-                    logger.error(
-                        f"Error deleting file {download_path} for post '{post.title}' (ID: {post.id}): {e}",
-                        exc_info=True,
-                    )
-
         # Start processing for new posts
         for post in new_posts:
             if post.download_url:
@@ -576,6 +454,104 @@ class JobManager:
         return len(new_posts)
 
     # Removed _get_active_job_for_guid - now using direct database queries
+
+    # ------------------------ Internal helpers ------------------------
+    def _submit_processing_job(self, job_id: str, post_guid: str) -> Dict[str, Any]:
+        """Encapsulate job submission and callback wiring to reduce complexity."""
+
+        def _cancelled() -> bool:
+            # Check cancellation status from database
+            with scheduler.app.app_context():
+                current_job = ProcessingJob.query.get(job_id)
+                return current_job is None or current_job.status == "cancelled"
+
+        def _run_job() -> None:
+            # Ensure app context in worker
+            with scheduler.app.app_context():
+                try:
+                    logger.debug(
+                        "_run_job start: job_id=%s post_guid=%s", job_id, post_guid
+                    )
+                    # Reload Post inside the worker thread to avoid detached instances
+                    worker_post = Post.query.filter_by(guid=post_guid).first()
+                    if not worker_post:
+                        # If the post disappeared, mark job failed and exit
+                        logger.error(
+                            f"Post with GUID {post_guid} not found in worker; failing job {job_id}"
+                        )
+                        try:
+                            # Best-effort status update
+                            self._status_manager.update_job_status(
+                                ProcessingJob.query.get(job_id),
+                                "failed",
+                                0,
+                                "Post not found",
+                            )
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+                        return
+
+                    logger.debug("_run_job calling processor.process job_id=%s", job_id)
+                    get_processor().process(
+                        worker_post, job_id=job_id, cancel_callback=_cancelled
+                    )
+                except ProcessorException as e:
+                    # Cancellation is handled cooperatively inside processor
+                    logger.info(f"Job {job_id} ended with ProcessorException: {e}")
+                except Exception as e:  # pylint: disable=broad-except
+                    logger.error(f"Unexpected error in job {job_id}: {e}")
+
+        try:
+            future = self._executor.submit(_run_job)
+
+            # Add callback to handle any submission failures
+            def _on_job_done(fut: Future[None]) -> None:
+                try:
+                    # This will raise any exception that occurred during execution
+                    fut.result()
+                except Exception as e:
+                    # Update job status to failed if there was an unhandled exception
+                    logger.error(
+                        f"Job {job_id} failed with exception: {e}", exc_info=True
+                    )
+                    try:
+                        with scheduler.app.app_context():
+                            failed_job = ProcessingJob.query.get(job_id)
+                            if failed_job and failed_job.status not in [
+                                "completed",
+                                "cancelled",
+                            ]:
+                                self._status_manager.update_job_status(
+                                    failed_job,
+                                    "failed",
+                                    failed_job.current_step,
+                                    f"Job execution failed: {str(e)}",
+                                )
+                    except Exception as cleanup_error:
+                        logger.error(
+                            f"Failed to update job status after failure: {cleanup_error}"
+                        )
+
+            future.add_done_callback(_on_job_done)
+            logger.info(f"Successfully submitted job {job_id} to thread pool")
+
+            return {"status": "started", "job_id": job_id}
+
+        except Exception as e:
+            # Thread pool submission failed
+            logger.error(f"Failed to submit job {job_id} to thread pool: {e}")
+            # Reload job from database to avoid session detachment issues
+            fresh_job = ProcessingJob.query.get(job_id)
+            if fresh_job:
+                self._status_manager.update_job_status(
+                    fresh_job, "failed", 0, f"Failed to start job: {str(e)}"
+                )
+            return {
+                "status": "error",
+                "error_code": "SUBMISSION_FAILED",
+                "message": f"Failed to submit job to thread pool: {str(e)}",
+                "job_id": job_id,
+            }
 
 
 # Singleton accessor

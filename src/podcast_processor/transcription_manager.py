@@ -1,9 +1,10 @@
 import logging
 from typing import Any, List, Optional
 
-from app import db
-from app.models import ModelCall, Post, TranscriptSegment
 from sqlalchemy.exc import IntegrityError
+
+from app import db
+from app.models import Identification, ModelCall, Post, TranscriptSegment
 from shared.config import (
     Config,
     GroqWhisperConfig,
@@ -162,37 +163,19 @@ class TranscriptionManager:
                 f"Transcription by {self.transcriber.model_name} for post {post.id} resulted in {len(pydantic_segments)} segments."
             )
 
-            db_transcript_segments = []
-            if pydantic_segments:
-                for i, segment_data in enumerate(pydantic_segments):
-                    start_time = round(segment_data.start, 1)
-                    end_time = round(segment_data.end, 1)
+            self._delete_existing_segments_for_post(post.id)
 
-                    db_segment = TranscriptSegment(
-                        post_id=post.id,
-                        sequence_num=i,
-                        start_time=start_time,
-                        end_time=end_time,
-                        text=segment_data.text,
-                    )
-                    db_transcript_segments.append(db_segment)
+            db_transcript_segments = self._persist_segments(post.id, pydantic_segments)
 
-                self.db_session.add_all(db_transcript_segments)
-
-                # Update ModelCall with success status and details
-                current_whisper_call.first_segment_sequence_num = 0
-                current_whisper_call.last_segment_sequence_num = (
-                    len(db_transcript_segments) - 1
-                )
-                current_whisper_call.response = (
-                    f"{len(db_transcript_segments)} segments transcribed."
-                )
-                current_whisper_call.status = "success"
-            else:
-                # No segments produced, still a form of success but note it.
-                current_whisper_call.response = "No segments produced by transcriber."
-                current_whisper_call.status = "success"
-                # first/last_segment_sequence_num remain 0/-1 as initialized
+            # Update ModelCall with success status and details
+            current_whisper_call.first_segment_sequence_num = 0
+            current_whisper_call.last_segment_sequence_num = (
+                len(db_transcript_segments) - 1
+            )
+            current_whisper_call.response = (
+                f"{len(db_transcript_segments)} segments transcribed."
+            )
+            current_whisper_call.status = "success"
 
             self.db_session.commit()
             self.logger.info(
@@ -227,3 +210,42 @@ class TranscriptionManager:
                 )
 
             raise
+
+    # ------------------------ Internal helpers ------------------------
+    def _delete_existing_segments_for_post(self, post_id: int) -> None:
+        """Delete existing transcript segments and their identifications for a post."""
+        existing_segment_ids = [
+            row[0]
+            for row in self.db_session.query(TranscriptSegment.id)
+            .filter_by(post_id=post_id)
+            .all()
+        ]
+        if not existing_segment_ids:
+            return
+        # Delete identifications that reference existing segments
+        self.db_session.query(Identification).filter(
+            Identification.transcript_segment_id.in_(existing_segment_ids)
+        ).delete(synchronize_session=False)
+        # Delete existing transcript segments
+        self.segment_query.filter_by(post_id=post_id).delete(synchronize_session=False)
+        self.db_session.flush()
+
+    def _persist_segments(
+        self, post_id: int, pydantic_segments: List[Any]
+    ) -> List[TranscriptSegment]:
+        """Persist pydantic segments to DB and return created ORM objects."""
+        db_transcript_segments: List[TranscriptSegment] = []
+        for i, segment_data in enumerate(pydantic_segments or []):
+            start_time = round(segment_data.start, 1)
+            end_time = round(segment_data.end, 1)
+            db_segment = TranscriptSegment(
+                post_id=post_id,
+                sequence_num=i,
+                start_time=start_time,
+                end_time=end_time,
+                text=segment_data.text,
+            )
+            db_transcript_segments.append(db_segment)
+        if db_transcript_segments:
+            self.db_session.add_all(db_transcript_segments)
+        return db_transcript_segments
