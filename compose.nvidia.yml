@@ -1,5 +1,14 @@
 services:
-  backend:
+  podly:
+    container_name: podly-pure-podcasts
+    ports:
+      - "5001:5001"
+    build: .
+    volumes:
+      - ./in:/app/in
+      - ./srv:/app/srv
+      - ./config:/app/config
+      - ./processing:/app/processing
     environment:
       - CUDA_VISIBLE_DEVICES=0
     deploy:
@@ -8,4 +17,8 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu] 
+              capabilities: [gpu]
+
+networks:
+  default:
+    name: podly-pure-podcasts-network

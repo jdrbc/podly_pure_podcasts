@@ -21,3 +21,20 @@ export interface Episode {
   download_url: string;
   image_url: string | null;
 } 
+
+export interface Job {
+  job_id: string;
+  post_guid: string;
+  post_title: string | null;
+  feed_title: string | null;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | string;
+  priority: number;
+  step: number;
+  step_name: string | null;
+  total_steps: number;
+  progress_percentage: number;
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+}

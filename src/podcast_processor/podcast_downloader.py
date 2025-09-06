@@ -26,7 +26,7 @@ class PodcastDownloader:
         self.download_dir = download_dir
         self.logger = logger or logging.getLogger(__name__)
 
-    def download_episode(self, post: Post) -> Optional[str]:
+    def download_episode(self, post: Post, dest_path: str) -> Optional[str]:
         """
         Download a podcast episode if it doesn't already exist.
 
@@ -36,7 +36,9 @@ class PodcastDownloader:
         Returns:
             Path to the downloaded file, or None if download failed
         """
-        download_path = str(self.get_and_make_download_path(post.title))
+        # Destination is required; ensure parent directory exists
+        download_path = dest_path
+        Path(download_path).parent.mkdir(parents=True, exist_ok=True)
         if not download_path:
             self.logger.error(f"Invalid download path for post {post.id}")
             return None
@@ -113,8 +115,8 @@ def find_audio_link(entry: Any) -> str:
 _default_downloader = PodcastDownloader()
 
 
-def download_episode(post: Post) -> Optional[str]:
-    return _default_downloader.download_episode(post)
+def download_episode(post: Post, dest_path: str) -> Optional[str]:
+    return _default_downloader.download_episode(post, dest_path)
 
 
 def get_and_make_download_path(post_title: str) -> Path:

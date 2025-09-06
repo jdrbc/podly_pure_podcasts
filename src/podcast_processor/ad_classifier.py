@@ -7,6 +7,7 @@ from jinja2 import Template
 from litellm.exceptions import InternalServerError
 from litellm.types.utils import Choices
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
@@ -201,9 +202,34 @@ class AdClassifier:
                 prompt=user_prompt_str,
                 status="pending",
             )
-            self.db_session.add(model_call)
+            try:
+                self.db_session.add(model_call)
+                self.db_session.commit()
+            except IntegrityError:
+                # Someone else created the same unique row concurrently; fetch and reuse
+                self.db_session.rollback()
+                model_call = (
+                    self.model_call_query.filter_by(
+                        post_id=post.id,
+                        model_name=model,
+                        first_segment_sequence_num=first_seq_num,
+                        last_segment_sequence_num=last_seq_num,
+                    )
+                    .order_by(ModelCall.timestamp.desc())
+                    .first()
+                )
+                if not model_call:
+                    raise
+                # If found, update prompt/status to pending for retry
+                model_call.status = "pending"
+                model_call.prompt = user_prompt_str
+                model_call.retry_attempts = 0
+                model_call.error_message = None
+                model_call.response = None
 
-        self.db_session.commit()
+        # If we got here without creating, ensure commit for any field updates
+        if self.db_session.is_active:
+            self.db_session.commit()
         return model_call
 
     def _should_call_llm(self, model_call: ModelCall) -> bool:

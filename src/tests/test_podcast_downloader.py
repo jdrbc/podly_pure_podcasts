@@ -97,7 +97,7 @@ def test_download_episode_already_exists(mock_get, test_post, downloader, app):
         episode_file = episode_dir / "Test Episode.mp3"
         episode_file.write_bytes(b"dummy data")
 
-        result = downloader.download_episode(test_post)
+        result = downloader.download_episode(test_post, dest_path=str(episode_file))
 
         # Check that we didn't try to download the file
         mock_get.assert_not_called()
@@ -115,7 +115,8 @@ def test_download_episode_new_file(mock_get, test_post, downloader, app):
         mock_response.content = b"podcast audio content"
         mock_get.return_value = mock_response
 
-        result = downloader.download_episode(test_post)
+        expected_path = downloader.get_and_make_download_path(test_post.title)
+        result = downloader.download_episode(test_post, dest_path=str(expected_path))
 
         # Check that we tried to download the file
         mock_get.assert_called_once_with("https://example.com/podcast.mp3")
@@ -137,7 +138,8 @@ def test_download_episode_download_failed(mock_get, test_post, downloader, app):
         mock_response.status_code = 404
         mock_get.return_value = mock_response
 
-        result = downloader.download_episode(test_post)
+        expected_path = downloader.get_and_make_download_path(test_post.title)
+        result = downloader.download_episode(test_post, dest_path=str(expected_path))
 
         # Check that we tried to download the file
         mock_get.assert_called_once_with("https://example.com/podcast.mp3")
@@ -159,7 +161,8 @@ def test_download_episode_invalid_url(
         # Make the validator fail
         mock_validator.return_value = False
 
-        downloader.download_episode(test_post)
+        expected_path = downloader.get_and_make_download_path(test_post.title)
+        downloader.download_episode(test_post, dest_path=str(expected_path))
 
         # Check that abort was called with 404
         mock_abort.assert_called_once_with(404)
@@ -175,7 +178,10 @@ def test_download_episode_invalid_post_title(test_post, downloader, app):
         ) as mock_get_path:
             mock_get_path.return_value = None
 
-            result = downloader.download_episode(test_post)
+            expected_path = downloader.get_and_make_download_path(test_post.title)
+            result = downloader.download_episode(
+                test_post, dest_path=str(expected_path)
+            )
 
             # Check that None was returned
             assert result is None
