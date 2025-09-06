@@ -63,8 +63,7 @@ For detailed setup instructions, see our [beginner's guide](docs/how_to_run_begi
    ./run_podly.sh -b
    # Alternative: ./run_podly.sh -d
 
-   # For frontend development with hot reloading
-   ./run_podly.sh --dev
+   # Note: For frontend changes, restart the script to rebuild assets
    ```
 
 The script will automatically:
@@ -423,7 +422,7 @@ Both local and Docker deployments provide a consistent experience:
   - Frontend is built as static assets and served by the backend
 - **Development**: Both `run_podly.sh` and `run_podly_docker.sh` serve everything on port 5001
   - Local script builds frontend to static assets (like Docker)
-  - Use `./run_podly.sh --dev` for frontend development with automatic asset rebuilding
+  - Restart `./run_podly.sh` after frontend changes to rebuild assets
 
 #### Development Modes
 
@@ -432,15 +431,12 @@ Both scripts provide equivalent core functionality with some unique features:
 **Common Options (work in both scripts)**:
 
 - `-b/--background` or `-d/--detach`: Run in background mode
-- `--dev`: Development mode with enhanced features
 - `-h/--help`: Show help information
 
 **Local Development** (`./run_podly.sh`):
 
-- **Standard mode**: `./run_podly.sh` - builds frontend once, good for backend development
-- **Frontend development mode**: `./run_podly.sh --dev` - automatically rebuilds frontend assets when files change
-  - Requires `fswatch` (macOS: `brew install fswatch`) or `inotify-tools` (Ubuntu: `sudo apt-get install inotify-tools`)
-  - Watches `frontend/src/`, `package.json`, and `package-lock.json` for changes
+- **Development mode**: `./run_podly.sh` - always builds frontend fresh, restart after frontend changes
+- Focused on local development only (use Docker script for production)
 
 **Docker Development** (`./run_podly_docker.sh`):
 

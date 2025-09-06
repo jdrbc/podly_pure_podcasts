@@ -8,18 +8,13 @@ The frontend is integrated into the main Podly application and served as static 
 
 ### Development Workflows
 
-1. **Backend Development**: Use `./run_podly.sh` (from project root)
+1. **Local Development**: Use `./run_podly.sh` (from project root)
 
-   - Builds frontend once at startup
-   - Good for backend development when frontend changes are infrequent
+   - Always builds frontend fresh at startup
+   - Restart the script after making frontend changes to rebuild assets
+   - Focused on local development only
 
-2. **Frontend Development**: Use `./run_podly.sh --dev` (from project root)
-
-   - Automatically rebuilds frontend assets when files change
-   - Watches `frontend/src/`, `package.json`, and `package-lock.json`
-   - Requires `fswatch` (macOS) or `inotify-tools` (Linux) for file watching
-
-3. **Direct Frontend Development**: You can still run the frontend development server separately for advanced frontend work:
+2. **Direct Frontend Development**: You can still run the frontend development server separately for advanced frontend work:
 
    ```bash
    cd frontend
@@ -29,41 +24,25 @@ The frontend is integrated into the main Podly application and served as static 
 
    This starts the Vite development server on port 5173 with hot reloading and proxies API calls to the backend on port 5001.
 
-### File Watcher Setup
+### Frontend Changes
 
-For `./run_podly.sh --dev` to work optimally, install a file watcher:
-
-**macOS**:
-
-```bash
-brew install fswatch
-```
-
-**Ubuntu/Debian**:
-
-```bash
-sudo apt-get install inotify-tools
-```
-
-Without a file watcher, you'll need to restart the application manually to see frontend changes.
+To see frontend changes when using `./run_podly.sh`, restart the application. The script always builds frontend assets fresh on startup.
 
 ## Build Process
 
 The frontend build process depends on how you're running the application:
 
-1. **Standard Mode** (`./run_podly.sh`): Frontend is built once using `npm run build` and static files are served by Flask from port 5001
-2. **Development Mode** (`./run_podly.sh --dev`): Frontend is initially built, then automatically rebuilt when source files change
-3. **Direct Development** (`npm run dev`): Vite dev server serves files with hot reloading on port 5173 and proxies API calls to backend on port 5001
-4. **Docker**: Multi-stage build compiles frontend assets during image creation and copies them to the Flask static directory
+1. **Local Development** (`./run_podly.sh`): Frontend is built fresh using `npm run build` and static files are served by Flask from port 5001
+2. **Direct Development** (`npm run dev`): Vite dev server serves files with hot reloading on port 5173 and proxies API calls to backend on port 5001
+3. **Docker**: Multi-stage build compiles frontend assets during image creation and copies them to the Flask static directory
 
 ### Development Asset Rebuilding
 
-When using `./run_podly.sh --dev`, the system:
+The `./run_podly.sh` script always builds frontend assets fresh on startup:
 
-- Monitors `frontend/src/`, `frontend/package.json`, and `frontend/package-lock.json` for changes
-- Automatically runs `npm run build` when changes are detected
+- Runs `npm run build` to compile the latest frontend code
 - Copies the built assets to `src/app/static/` for Flask to serve
-- Logs build output to `frontend-build.log`
+- To see frontend changes, restart the script
 
 ## Technology Stack
 
