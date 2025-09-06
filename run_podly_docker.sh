@@ -137,12 +137,16 @@ if [ "$FORCE_CPU" = true ]; then
     USE_GPU=false
     echo -e "${YELLOW}Forcing CPU mode${NC}"
 elif [ "$FORCE_GPU" = true ]; then
-    # Assume nvidia if this happens. Probably ought to make FORCE_GPU_TYPE variables somtime.
-    if [ "$NVIDIA_GPU_AVAILABLE" = false ]; then
-        echo -e "${RED}Warning: GPU requested but no NVIDIA GPU detected. Build may fail.${NC}"
+    if [ "$NVIDIA_GPU_AVAILABLE" = true ]; then
+        USE_GPU_NVIDIA=true
+        echo -e "${YELLOW}Forcing GPU mode (NVIDIA detected)${NC}"
+    elif [ "$AMD_GPU_AVAILABLE" = true ]; then
+        USE_GPU_AMD=true
+        echo -e "${YELLOW}Forcing GPU mode (AMD detected)${NC}"
+    else
+        echo -e "${RED}Error: GPU requested but no compatible GPU detected. Please install NVIDIA or AMD GPU drivers.${NC}"
+        exit 1
     fi
-    USE_GPU_NVIDIA=true
-    echo -e "${YELLOW}Forcing GPU mode${NC}"
 elif [ "$NVIDIA_GPU_AVAILABLE" = true ]; then
     USE_GPU_NVIDIA=true
     echo -e "${YELLOW}Using GPU mode (auto-detected)${NC}"
@@ -182,19 +186,16 @@ export USE_GPU_AMD
 # Setup Docker Compose configuration
 if [ "$PRODUCTION_MODE" = true ]; then
     COMPOSE_FILES="-f compose.prod.yml"
-    # Set backend variant based on GPU detection and branch
+    # Set branch tag based on GPU detection and branch
     if [ "$USE_GPU_NVIDIA" = true ]; then
-        export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-nvidia"
+        export BRANCH="${BRANCH_SUFFIX}-gpu-nvidia"
     elif [ "$USE_GPU_AMD" = true ]; then
-        export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-amd"
+        export BRANCH="${BRANCH_SUFFIX}-gpu-amd"
     else
-        export BACKEND_VARIANT="${BRANCH_SUFFIX}-latest"
+        export BRANCH="${BRANCH_SUFFIX}-latest"
     fi
-    # Set frontend variant (always uses the same branch suffix)
-    export FRONTEND_VARIANT="${BRANCH_SUFFIX}"
     echo -e "${YELLOW}Production mode - using published images${NC}"
-    echo -e "${YELLOW}  Backend variant: ${BACKEND_VARIANT}${NC}"
-    echo -e "${YELLOW}  Frontend variant: ${FRONTEND_VARIANT}${NC}"
+    echo -e "${YELLOW}  Branch tag: ${BRANCH}${NC}"
     if [ "$BRANCH_SUFFIX" != "latest" ]; then
         echo -e "${GREEN}Using branch: ${BRANCH_SUFFIX}${NC}"
     fi
