@@ -45,7 +45,6 @@ TEST_BUILD=false
 FORCE_CPU=false
 FORCE_GPU=false
 DETACHED=false
-DEV_MODE=false
 PRODUCTION_MODE=true
 REBUILD=false
 BRANCH_SUFFIX="main"
@@ -90,7 +89,6 @@ while [[ $# -gt 0 ]]; do
             DETACHED=true
             ;;
         --dev)
-            DEV_MODE=true
             REBUILD=true
             PRODUCTION_MODE=false
             ;;
@@ -99,7 +97,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --production)
             PRODUCTION_MODE=true
-            DEV_MODE=false
             ;;
         --branch=*)
             BRANCH_NAME="${1#*=}"
@@ -208,10 +205,6 @@ else
     fi
     if [ "$USE_GPU_AMD" = true ]; then
         COMPOSE_FILES="$COMPOSE_FILES -f compose.rocm.yml"
-    fi
-    if [ "$DEV_MODE" = true ]; then
-        COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
-        echo -e "${YELLOW}Development mode enabled - rebuilding containers with code changes${NC}"
     fi
     if [ "$REBUILD" = true ]; then
         echo -e "${YELLOW}Rebuild mode - will rebuild containers before starting${NC}"
