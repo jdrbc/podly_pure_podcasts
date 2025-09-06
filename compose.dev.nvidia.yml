@@ -1,16 +1,13 @@
 services:
   podly:
-    container_name: podly-pure-podcasts
-    ports:
-      - "5001:5001"
-    build: .
-    volumes:
-      - ./in:/app/in
-      - ./srv:/app/srv
-      - ./config:/app/config
-      - ./processing:/app/processing
+    extends:
+      file: compose.dev.cpu.yml
+      service: podly
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - CUDA_VISIBLE_DEVICES=0
+      - CORS_ORIGINS=*
     deploy:
       resources:
         reservations:

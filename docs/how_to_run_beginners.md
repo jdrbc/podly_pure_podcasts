@@ -232,7 +232,7 @@ The run script supports several options:
 ### Port 5001 already in use
 
 - Another application is using port 5001
-- **Docker users**: Either stop that application or modify the port in `compose.yml`
+- **Docker users**: Either stop that application or modify the port in `compose.dev.cpu.yml` and `compose.prod.yml`
 - **Native users**: Change the `port` setting in your `config.yml` to use a different port (e.g., `port: 5002`)
 - To kill processes on that port run `lsof -i :5001 | grep LISTEN | awk '{print $2}' | xargs kill -9`
 

@@ -8,7 +8,7 @@ NC='\033[0m' # No Color
 
 # Central configuration defaults
 CUDA_VERSION="12.4.1"
-ROCM_VERSION="6.4.3"
+ROCM_VERSION="6.4"
 CPU_BASE_IMAGE="python:3.11-slim"
 GPU_NVIDIA_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
 GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
@@ -131,6 +131,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Determine if GPU should be used based on availability and flags
+USE_GPU=false
 USE_GPU_NVIDIA=false
 USE_GPU_AMD=false
 if [ "$FORCE_CPU" = true ]; then
@@ -138,9 +139,11 @@ if [ "$FORCE_CPU" = true ]; then
     echo -e "${YELLOW}Forcing CPU mode${NC}"
 elif [ "$FORCE_GPU" = true ]; then
     if [ "$NVIDIA_GPU_AVAILABLE" = true ]; then
+        USE_GPU=true
         USE_GPU_NVIDIA=true
         echo -e "${YELLOW}Forcing GPU mode (NVIDIA detected)${NC}"
     elif [ "$AMD_GPU_AVAILABLE" = true ]; then
+        USE_GPU=true
         USE_GPU_AMD=true
         echo -e "${YELLOW}Forcing GPU mode (AMD detected)${NC}"
     else
@@ -148,9 +151,11 @@ elif [ "$FORCE_GPU" = true ]; then
         exit 1
     fi
 elif [ "$NVIDIA_GPU_AVAILABLE" = true ]; then
+    USE_GPU=true
     USE_GPU_NVIDIA=true
     echo -e "${YELLOW}Using GPU mode (auto-detected)${NC}"
 elif [ "${AMD_GPU_AVAILABLE}" = true ]; then
+    USE_GPU=true
     USE_GPU_AMD=true
     echo -e "${YELLOW}Using GPU mode (auto-detected)${NC}"
 else
@@ -196,16 +201,16 @@ if [ "$PRODUCTION_MODE" = true ]; then
     fi
     echo -e "${YELLOW}Production mode - using published images${NC}"
     echo -e "${YELLOW}  Branch tag: ${BRANCH}${NC}"
-    if [ "$BRANCH_SUFFIX" != "latest" ]; then
-        echo -e "${GREEN}Using branch: ${BRANCH_SUFFIX}${NC}"
+    if [ "$BRANCH_SUFFIX" != "main" ]; then
+        echo -e "${GREEN}Using custom branch: ${BRANCH_SUFFIX}${NC}"
     fi
 else
-    COMPOSE_FILES="-f compose.yml"
+    COMPOSE_FILES="-f compose.dev.cpu.yml"
     if [ "$USE_GPU_NVIDIA" = true ]; then
-        COMPOSE_FILES="$COMPOSE_FILES -f compose.nvidia.yml"
+        COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.nvidia.yml"
     fi
     if [ "$USE_GPU_AMD" = true ]; then
-        COMPOSE_FILES="$COMPOSE_FILES -f compose.rocm.yml"
+        COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.rocm.yml"
     fi
     if [ "$REBUILD" = true ]; then
         echo -e "${YELLOW}Rebuild mode - will rebuild containers before starting${NC}"

@@ -1,18 +1,16 @@
 services:
   podly:
-    container_name: podly-pure-podcasts
-    ports:
-      - "5001:5001"
-    build: .
-    volumes:
-      - ./in:/app/in
-      - ./srv:/app/srv
-      - ./config:/app/config
-      - ./processing:/app/processing
+    extends:
+      file: compose.dev.cpu.yml
+      service: podly
     devices:
       - /dev/kfd
       - /dev/dri
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
+      - CORS_ORIGINS=*
       # Don't ask me why this is needed for ROCM. See
       # https://github.com/openai/whisper/discussions/55#discussioncomment-3714528
       - HSA_OVERRIDE_GFX_VERSION=10.3.0
