@@ -34,7 +34,7 @@ export default function FeedList({ feeds, onFeedDeleted, onFeedSelected, selecte
   }
 
   return (
-    <div className="space-y-2 overflow-y-auto">
+    <div className="space-y-2 overflow-y-auto h-full">
       {feedsArray.map((feed) => (
         <div 
           key={feed.id} 

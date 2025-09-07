@@ -14,15 +14,19 @@ BACKGROUND_MODE=false
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -b|--background)
+        -b|--background|-d|--detach)
             BACKGROUND_MODE=true
             ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
+            echo "This script is for local development only."
+            echo "For production deployment, use run_podly_docker.sh instead."
+            echo ""
             echo "Options:"
             echo "  -b, --background    Run in background mode"
-            echo "  -h, --help         Show this help message"
+            echo "  -d, --detach        Alias for --background"
+            echo "  -h, --help          Show this help message"
             exit 0
             ;;
         *)
@@ -40,10 +44,6 @@ cleanup() {
     if [ ! -z "$BACKEND_PID" ]; then
         kill $BACKEND_PID 2>/dev/null
         echo -e "${GREEN}Backend stopped${NC}"
-    fi
-    if [ ! -z "$FRONTEND_PID" ]; then
-        kill $FRONTEND_PID 2>/dev/null
-        echo -e "${GREEN}Frontend stopped${NC}"
     fi
     exit 0
 }
@@ -80,38 +80,26 @@ fi
 # Set up environment variables from config.yml
 echo -e "${YELLOW}Setting up environment from config.yml...${NC}"
 
-# Read server URL from config.yml
-SERVER_URL=$(grep "^server:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
-BACKEND_PORT=$(grep "^backend_server_port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
-FRONTEND_PORT=$(grep "^frontend_server_port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
+# Read configuration from config.yml
+APP_PORT=$(grep "^port:" "$CONFIG_FILE" | cut -d' ' -f2- | tr -d ' ')
 
 # Default values
-if [ -z "$SERVER_URL" ]; then
-    SERVER_URL="http://localhost"
-fi
-if [ -z "$BACKEND_PORT" ]; then
-    BACKEND_PORT="5002"
-fi
-if [ -z "$FRONTEND_PORT" ]; then
-    FRONTEND_PORT="5001"
+if [ -z "$APP_PORT" ]; then
+    APP_PORT="5001"
 fi
 
-# Set the API URL for the frontend
-export VITE_API_URL="${SERVER_URL}:${BACKEND_PORT}"
+# For this combined setup, the backend serves both API and frontend on the same port
+BACKEND_PORT="$APP_PORT"
 
-# Set CORS origins for the backend
-if [ "$SERVER_URL" != "http://localhost" ]; then
-    # For external servers, allow both localhost and the configured server
-    export CORS_ORIGINS="http://localhost:${FRONTEND_PORT},${SERVER_URL}:${FRONTEND_PORT}"
-else
-    # For localhost, just use the default
-    export CORS_ORIGINS="http://localhost:${FRONTEND_PORT}"
-fi
+# Set the API URL for the frontend build (backend runs on the configured port)
+export VITE_API_URL="http://localhost:${BACKEND_PORT}"
+
+# CORS is now configured to wildcard by default in the app
+# Users can override with CORS_ORIGINS environment variable if needed
 
 echo -e "${GREEN}Environment configured:${NC}"
-echo -e "  Frontend: ${SERVER_URL}:${FRONTEND_PORT}"
-echo -e "  Backend API: ${VITE_API_URL}"
-echo -e "  CORS Origins: ${CORS_ORIGINS}"
+echo -e "  Application: http://localhost:${BACKEND_PORT}"
+echo -e "  CORS: Wildcard (*) - override with CORS_ORIGINS env var if needed"
 
 # Check if pipenv environment exists
 if ! pipenv --venv &> /dev/null; then
@@ -126,23 +114,40 @@ else
     fi
 fi
 
-# Check if frontend dependencies are installed
+# Check if frontend dependencies are installed and build static assets
 if [ ! -d "frontend/node_modules" ]; then
     echo -e "${YELLOW}Installing frontend dependencies...${NC}"
-    cd frontend
+    cd frontend || exit 1
     npm install
-    cd ..
+    cd .. || exit 1
 else
     # Check if package-lock.json is newer than node_modules
     if [ "frontend/package-lock.json" -nt "frontend/node_modules" ]; then
         echo -e "${YELLOW}Updating frontend dependencies...${NC}"
-        cd frontend
+        cd frontend || exit 1
         npm ci
-        cd ..
+        cd .. || exit 1
     fi
 fi
 
-# Start backend
+# Always build frontend assets fresh for development
+echo -e "${YELLOW}Building frontend assets...${NC}"
+cd frontend || exit 1
+npm run build
+cd .. || exit 1
+
+# Copy built frontend assets to Flask static folder
+echo -e "${YELLOW}Copying frontend assets to backend static folder...${NC}"
+mkdir -p src/app/static
+rm -rf src/app/static/*
+if [ -d "frontend/dist" ]; then
+    cp -r frontend/dist/* src/app/static/
+else
+    echo -e "${RED}Error: Frontend build failed - dist directory not found${NC}"
+    exit 1
+fi
+
+# Start backend server (which now serves both API and frontend)
 echo -e "${YELLOW}Starting backend server...${NC}"
 if [ "$BACKGROUND_MODE" = true ]; then
     nohup pipenv run python src/main.py > backend.log 2>&1 &
@@ -156,30 +161,13 @@ fi
 # Wait a moment for backend to start
 sleep 3
 
-# Start frontend
-echo -e "${YELLOW}Starting frontend server...${NC}"
-cd frontend
-if [ "$BACKGROUND_MODE" = true ]; then
-    nohup npm run dev > ../frontend.log 2>&1 &
-    FRONTEND_PID=$!
-    disown
-else
-    npm run dev > ../frontend.log 2>&1 &
-    FRONTEND_PID=$!
-fi
-cd ..
-
-# Wait a moment for frontend to start
-sleep 3
+# Note: For frontend reloading during development, restart this script after making changes
 
 if [ "$BACKGROUND_MODE" = true ]; then
     echo -e "${BOLD}${GREEN}🎉 PODLY RUNNING IN BACKGROUND${NC}"
-    echo -e "${GREEN}Frontend: ${SERVER_URL}:${FRONTEND_PORT}${NC}"
-    echo -e "${GREEN}Backend API: ${VITE_API_URL}${NC}"
-    echo -e "${YELLOW}Logs:${NC}"
-    echo -e "  Backend: backend.log"
-    echo -e "  Frontend: frontend.log"
-    echo -e "${YELLOW}To stop: kill $BACKEND_PID $FRONTEND_PID${NC}"
+    echo -e "${GREEN}Application: http://localhost:${BACKEND_PORT}${NC}"
+    echo -e "${YELLOW}Logs: backend.log${NC}"
+    echo -e "${YELLOW}To stop: kill $BACKEND_PID${NC}"
     exit 0
 fi
 
@@ -189,15 +177,15 @@ clear
 cat << 'EOF'
  ____   ___  ____  _  __   __
 |  _ \ / _ \|  _ \| | \ \ / /
-| |_) | | | | | | | |  \ V / 
-|  __/| |_| | |_| | |___| |  
-|_|    \___/|____/|_____|_|  
-                             
+| |_) | | | | | | | |  \ V /
+|  __/| |_| | |_| | |___| |
+|_|    \___/|____/|_____|_|
+
 EOF
 
 echo -e "${BOLD}${GREEN}🎉 PODLY RUNNING${NC}"
-echo -e "${GREEN}Frontend: ${SERVER_URL}:${FRONTEND_PORT}${NC}"
-echo -e "${GREEN}Backend API: ${VITE_API_URL}${NC}"
+echo -e "${GREEN}Application: http://localhost:${BACKEND_PORT}${NC}"
+echo -e "${YELLOW}Development mode: Restart script to reload frontend changes${NC}"
 echo ""
 echo -e "${YELLOW}Controls:${NC}"
 echo -e "  ${BOLD}[b]${NC}        Run in background"
@@ -213,22 +201,18 @@ while true; do
             echo -e "\n${YELLOW}Moving to background mode...${NC}"
             echo -e "${GREEN}Podly is now running in the background${NC}"
             echo -e "${YELLOW}Backend PID: $BACKEND_PID${NC}"
-            echo -e "${YELLOW}Frontend PID: $FRONTEND_PID${NC}"
-            echo -e "${YELLOW}To stop: kill $BACKEND_PID $FRONTEND_PID${NC}"
-            echo -e "${YELLOW}Alternate kill command: (lsof -i :5001; lsof -i :5002) | grep LISTEN | awk '{print \$2}' | xargs kill -9${NC}"
+            echo -e "${YELLOW}To stop: kill $BACKEND_PID${NC}"
+            echo -e "${YELLOW}Alternate kill command: pkill -f 'python src/main.py'${NC}"
             exit 0
             ;;
         *)
             # Show recent logs
             clear
             echo -e "${BOLD}${BLUE}=== RECENT LOGS ===${NC}"
-            echo -e "${YELLOW}Backend (last 10 lines):${NC}"
-            tail -n 10 backend.log 2>/dev/null || echo "No backend logs yet"
-            echo ""
-            echo -e "${YELLOW}Frontend (last 10 lines):${NC}"
-            tail -n 10 frontend.log 2>/dev/null || echo "No frontend logs yet"
+            echo -e "${YELLOW}Backend (last 20 lines):${NC}"
+            tail -n 20 backend.log 2>/dev/null || echo "No backend logs yet"
             echo ""
             echo -e "${BLUE}Press [b] for background mode, [Ctrl+C] to quit, or any key to refresh logs...${NC}"
             ;;
     esac
-done 
+done

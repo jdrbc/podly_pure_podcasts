@@ -4,10 +4,50 @@ from typing import Any, Optional
 
 import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
+from flask import request
 
 from app import config, db, logger
 from app.models import Feed, Post
 from podcast_processor.podcast_downloader import find_audio_link
+
+
+def _get_base_url() -> str:
+    try:
+        # Check various ways HTTP/2 pseudo-headers might be available
+        http2_scheme = (
+            request.headers.get(":scheme")
+            or request.headers.get("scheme")
+            or request.environ.get("HTTP2_SCHEME")
+        )
+        http2_authority = (
+            request.headers.get(":authority")
+            or request.headers.get("authority")
+            or request.environ.get("HTTP2_AUTHORITY")
+        )
+        host = request.headers.get("Host")
+
+        if http2_scheme and http2_authority:
+            return f"{http2_scheme}://{http2_authority}"
+
+        # Fall back to Host header with scheme detection
+        if host:
+            # Check multiple indicators for HTTPS
+            is_https = (
+                request.is_secure
+                or request.headers.get("X-Forwarded-Proto") == "https"
+                or request.headers.get("Strict-Transport-Security") is not None
+                or request.headers.get("X-Forwarded-Ssl") == "on"
+                or request.environ.get("HTTPS") == "on"
+                or request.scheme == "https"
+            )
+            scheme = "https" if is_https else "http"
+            return f"{scheme}://{host}"
+    except RuntimeError:
+        # Working outside of request context
+        pass
+
+    # Use localhost with main app port
+    return f"http://localhost:{config.port}"
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
@@ -115,17 +155,7 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
     """
 
-    # For backwards compatibility, generate URLs that point to the frontend port
-    # The frontend will proxy these requests to the backend
-    if config.server is not None:
-        # Use the configured server with frontend port
-        server_url = config.server
-        if not server_url.startswith(("http://", "https://")):
-            server_url = f"http://{server_url}"
-        base_url = f"{server_url}:{config.frontend_server_port}"
-    else:
-        # Use localhost with frontend port
-        base_url = f"http://localhost:{config.frontend_server_port}"
+    base_url = _get_base_url()
 
     # Generate URLs that will be proxied by the frontend to the backend
     audio_url = f"{base_url}/api/posts/{post.guid}/download"
@@ -158,16 +188,8 @@ def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
 
-    # For backwards compatibility, generate feed link that points to the frontend port
-    if config.server is not None:
-        # Use the configured server with frontend port
-        server_url = config.server
-        if not server_url.startswith(("http://", "https://")):
-            server_url = f"http://{server_url}"
-        link = f"{server_url}:{config.frontend_server_port}/feed/{feed.id}"
-    else:
-        # Use localhost with frontend port
-        link = f"http://localhost:{config.frontend_server_port}/feed/{feed.id}"
+    base_url = _get_base_url()
+    link = f"{base_url}/feed/{feed.id}"
 
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,

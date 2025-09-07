@@ -1,33 +1,7 @@
 import axios from 'axios';
-import type { Feed, Episode } from '../types';
+import type { Feed, Episode, Job } from '../types';
 
-// Type for runtime configuration
-interface AppConfig {
-  API_BASE_URL: string;
-}
-
-// Extend window interface to include our app config
-declare global {
-  interface Window {
-    __APP_CONFIG__?: AppConfig;
-  }
-}
-
-// Get API URL from runtime config or fall back to environment variable
-const getApiBaseUrl = (): string => {
-  // Check if runtime config exists and has been properly replaced (not a placeholder)
-  if (typeof window !== 'undefined' && 
-      window.__APP_CONFIG__ && 
-      window.__APP_CONFIG__.API_BASE_URL && 
-      !window.__APP_CONFIG__.API_BASE_URL.includes('PLACEHOLDER')) {
-    return window.__APP_CONFIG__.API_BASE_URL;
-  }
-
-  // Fall back to Vite environment variable (development or when runtime config is placeholder)
-  return import.meta.env.VITE_API_URL || 'http://localhost:5002';
-};
-
-const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL = '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -305,5 +279,20 @@ export const feedsApi = {
 
   getEpisodeOriginalDownloadUrl: (guid: string): string => {
     return feedsApi.getPostOriginalDownloadUrl(guid);
+  },
+};
+
+export const jobsApi = {
+  getActiveJobs: async (limit: number = 100): Promise<Job[]> => {
+    const response = await api.get('/api/jobs/active', { params: { limit } });
+    return response.data;
+  },
+  getAllJobs: async (limit: number = 200): Promise<Job[]> => {
+    const response = await api.get('/api/jobs/all', { params: { limit } });
+    return response.data;
+  },
+  cancelJob: async (jobId: string): Promise<{ status: string; job_id: string; message: string }> => {
+    const response = await api.post(`/api/jobs/${jobId}/cancel`);
+    return response.data;
   },
 };

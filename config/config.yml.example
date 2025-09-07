@@ -2,17 +2,21 @@
 llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 
 # Optional global setting (default gpt-4o)
-# llm_model: phi3:14b-medium-4k-instruct-q5_K_M
+# llm_model: gpt-4o
 
 # Optional openai settings
 # openai_base_url: http://127.0.0.1:11434/v1
 # openai_timeout: 300
 # openai_max_tokens: 4096
 
-# server: http://my.domain.com
-# backend_server_port: 5002
+# Application server settings
+# host: 0.0.0.0  # Interface to listen on (default: 0.0.0.0, accepts all requests)
+# port: 5001     # Port to listen on (default: 5001)
 # threads: 5
 
+# Deprecated settings (use request-aware URL generation instead)
+# server: http://my.domain.com
+# backend_server_port: 5002
 
 #setting a value here enables automatic scheduler to auto-refresh the feed lists and download new episodes
 #background_update_interval_minute: 10

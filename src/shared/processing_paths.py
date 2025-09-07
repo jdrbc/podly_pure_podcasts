@@ -25,3 +25,13 @@ def paths_from_unprocessed_path(
         / sanitized_feed_title
         / unprocessed_filename,
     )
+
+
+def get_job_unprocessed_path(post_guid: str, job_id: str, post_title: str) -> Path:
+    """Return a unique per-job path for the unprocessed audio file.
+
+    Layout: in/jobs/{post_guid}/{job_id}/{sanitized_title}.mp3
+    """
+    # Keep same sanitization behavior used for download filenames
+    sanitized_title = re.sub(r"[^a-zA-Z0-9\s]", "", post_title).strip()
+    return Path("in") / "jobs" / post_guid / job_id / f"{sanitized_title}.mp3"

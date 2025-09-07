@@ -48,3 +48,6 @@ config/config.yml
 *.sqlite
 .DS_Store
 src/instance/sqlite3.db-journal
+
+# Frontend build logs
+frontend-build.log

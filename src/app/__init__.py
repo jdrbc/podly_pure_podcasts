@@ -50,13 +50,13 @@ def setup_scheduler(app: Flask) -> None:
 
 def add_background_job() -> None:
     """Add the recurring background job for refreshing feeds."""
-    from app.jobs import (  # pylint: disable=import-outside-toplevel
-        run_refresh_all_feeds,
+    from app.job_manager import (  # pylint: disable=import-outside-toplevel
+        scheduled_refresh_all_feeds,
     )
 
     scheduler.add_job(
         id="refresh_all_feeds",
-        func=run_refresh_all_feeds,
+        func=scheduled_refresh_all_feeds,
         trigger="interval",
         minutes=config.background_update_interval_minute,
         replace_existing=True,
@@ -64,24 +64,16 @@ def add_background_job() -> None:
 
 
 def create_app() -> Flask:
-    app = Flask(__name__, static_folder="static")
+    static_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
+    app = Flask(__name__, static_folder=static_folder)
 
     # Configure CORS
-    default_origins = [f"http://localhost:{config.frontend_server_port}"]
-    if config.server:
-        server_url = config.server
-        if not server_url.startswith(("http://", "https://")):
-            server_url = f"http://{server_url}"
-
-        # Add frontend URL with configured port
-        frontend_url = f"{server_url}:{config.frontend_server_port}"
-        default_origins.append(frontend_url)
-
-        # Also add the server URL without port for cases where it's served on port 80/443
-        if not server_url.endswith((":80", ":443")):
-            default_origins.append(server_url)
-
-    cors_origins = os.environ.get("CORS_ORIGINS", ",".join(default_origins)).split(",")
+    # Default to wildcard to accept all origins, but allow override via environment variable
+    default_cors = "*"
+    cors_origins_env = os.environ.get("CORS_ORIGINS", default_cors)
+    cors_origins = (
+        cors_origins_env.split(",") if cors_origins_env != "*" else cors_origins_env
+    )
     CORS(
         app,
         resources={r"/*": {"origins": cors_origins}},
@@ -117,6 +109,18 @@ def create_app() -> Flask:
     # Always start the scheduler for on-demand jobs
     logger.info(f"Starting scheduler with {config.threads} thread(s).")
     setup_scheduler(app)
+
+    # Clear all jobs on startup to ensure clean state
+    from app.job_manager import (  # pylint: disable=import-outside-toplevel
+        get_job_manager,
+    )
+
+    job_manager = get_job_manager()
+    clear_result = job_manager.clear_all_jobs()
+    if clear_result["status"] == "success":
+        logger.info(f"Startup: {clear_result['message']}")
+    else:
+        logger.warning(f"Startup job clearing failed: {clear_result['message']}")
 
     # Only add the recurring background job if enabled
     if config.background_update_interval_minute is not None:

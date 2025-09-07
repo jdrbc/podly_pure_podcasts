@@ -8,18 +8,22 @@ NC='\033[0m' # No Color
 
 # Central configuration defaults
 CUDA_VERSION="12.4.1"
-ROCM_VERSION="6.4.3"
+ROCM_VERSION="6.4"
 CPU_BASE_IMAGE="python:3.11-slim"
 GPU_NVIDIA_BASE_IMAGE="nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04"
 GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
 
 # Read server URL from config.yml if it exists
 SERVER_URL=""
+
 if [ -f "config/config.yml" ]; then
     SERVER_URL=$(grep "^server:" config/config.yml | cut -d' ' -f2- | tr -d ' ')
+
     if [ -n "$SERVER_URL" ]; then
-        echo -e "${GREEN}Using server URL from config.yml: ${SERVER_URL}${NC}"
-        export VITE_API_URL="${SERVER_URL}:5002"
+        # Remove http:// or https:// prefix to get just the hostname
+        CLEAN_URL=$(echo "$SERVER_URL" | sed 's|^https\?://||')
+        export VITE_API_URL="http://${CLEAN_URL}:5001"
+        echo -e "${GREEN}Using server URL from config.yml: ${VITE_API_URL}${NC}"
     fi
 fi
 
@@ -41,7 +45,6 @@ TEST_BUILD=false
 FORCE_CPU=false
 FORCE_GPU=false
 DETACHED=false
-DEV_MODE=false
 PRODUCTION_MODE=true
 REBUILD=false
 BRANCH_SUFFIX="main"
@@ -82,11 +85,10 @@ while [[ $# -gt 0 ]]; do
             ROCM_VERSION="${1#*=}"
             GPU_ROCM_BASE_IMAGE="rocm/dev-ubuntu-22.04:${ROCM_VERSION}-complete"
             ;;
-        -d|--detach)
+        -d|--detach|-b|--background)
             DETACHED=true
             ;;
         --dev)
-            DEV_MODE=true
             REBUILD=true
             PRODUCTION_MODE=false
             ;;
@@ -95,15 +97,33 @@ while [[ $# -gt 0 ]]; do
             ;;
         --production)
             PRODUCTION_MODE=true
-            DEV_MODE=false
             ;;
         --branch=*)
             BRANCH_NAME="${1#*=}"
             BRANCH_SUFFIX="${BRANCH_NAME}"
             ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --build             Build containers only (don't start)"
+            echo "  --test-build        Test build with no cache"
+            echo "  --gpu               Force GPU mode"
+            echo "  --cpu               Force CPU mode"
+            echo "  --cuda=VERSION      Specify CUDA version"
+            echo "  --rocm=VERSION      Specify ROCM version"
+            echo "  -d, --detach        Run in detached/background mode"
+            echo "  -b, --background    Alias for --detach"
+            echo "  --dev               Development mode (rebuild containers)"
+            echo "  --rebuild           Rebuild containers before starting"
+            echo "  --production        Use published images (default)"
+            echo "  --branch=BRANCH     Use specific branch images"
+            echo "  -h, --help          Show this help message"
+            exit 0
+            ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [-d|--detach] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [--rocm=VERSION] [-d|--detach] [-b|--background] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME] [-h|--help]"
             exit 1
             ;;
     esac
@@ -111,22 +131,31 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Determine if GPU should be used based on availability and flags
+USE_GPU=false
 USE_GPU_NVIDIA=false
 USE_GPU_AMD=false
 if [ "$FORCE_CPU" = true ]; then
     USE_GPU=false
     echo -e "${YELLOW}Forcing CPU mode${NC}"
 elif [ "$FORCE_GPU" = true ]; then
-    # Assume nvidia if this happens. Probably ought to make FORCE_GPU_TYPE variables somtime.
-    if [ "$NVIDIA_GPU_AVAILABLE" = false ]; then
-        echo -e "${RED}Warning: GPU requested but no NVIDIA GPU detected. Build may fail.${NC}"
+    if [ "$NVIDIA_GPU_AVAILABLE" = true ]; then
+        USE_GPU=true
+        USE_GPU_NVIDIA=true
+        echo -e "${YELLOW}Forcing GPU mode (NVIDIA detected)${NC}"
+    elif [ "$AMD_GPU_AVAILABLE" = true ]; then
+        USE_GPU=true
+        USE_GPU_AMD=true
+        echo -e "${YELLOW}Forcing GPU mode (AMD detected)${NC}"
+    else
+        echo -e "${RED}Error: GPU requested but no compatible GPU detected. Please install NVIDIA or AMD GPU drivers.${NC}"
+        exit 1
     fi
-    USE_GPU_NVIDIA=true
-    echo -e "${YELLOW}Forcing GPU mode${NC}"
 elif [ "$NVIDIA_GPU_AVAILABLE" = true ]; then
+    USE_GPU=true
     USE_GPU_NVIDIA=true
     echo -e "${YELLOW}Using GPU mode (auto-detected)${NC}"
 elif [ "${AMD_GPU_AVAILABLE}" = true ]; then
+    USE_GPU=true
     USE_GPU_AMD=true
     echo -e "${YELLOW}Using GPU mode (auto-detected)${NC}"
 else
@@ -161,34 +190,27 @@ export USE_GPU_AMD
 
 # Setup Docker Compose configuration
 if [ "$PRODUCTION_MODE" = true ]; then
-    COMPOSE_FILES="-f compose.prod.yml"
-    # Set backend variant based on GPU detection and branch
+    COMPOSE_FILES="-f compose.yml"
+    # Set branch tag based on GPU detection and branch
     if [ "$USE_GPU_NVIDIA" = true ]; then
-        export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-nvidia"
+        export BRANCH="${BRANCH_SUFFIX}-gpu-nvidia"
     elif [ "$USE_GPU_AMD" = true ]; then
-        export BACKEND_VARIANT="${BRANCH_SUFFIX}-gpu-amd"
+        export BRANCH="${BRANCH_SUFFIX}-gpu-amd"
     else
-        export BACKEND_VARIANT="${BRANCH_SUFFIX}-latest"
+        export BRANCH="${BRANCH_SUFFIX}-latest"
     fi
-    # Set frontend variant (always uses the same branch suffix)
-    export FRONTEND_VARIANT="${BRANCH_SUFFIX}"
     echo -e "${YELLOW}Production mode - using published images${NC}"
-    echo -e "${YELLOW}  Backend variant: ${BACKEND_VARIANT}${NC}"
-    echo -e "${YELLOW}  Frontend variant: ${FRONTEND_VARIANT}${NC}"
-    if [ "$BRANCH_SUFFIX" != "latest" ]; then
-        echo -e "${GREEN}Using branch: ${BRANCH_SUFFIX}${NC}"
+    echo -e "${YELLOW}  Branch tag: ${BRANCH}${NC}"
+    if [ "$BRANCH_SUFFIX" != "main" ]; then
+        echo -e "${GREEN}Using custom branch: ${BRANCH_SUFFIX}${NC}"
     fi
 else
-    COMPOSE_FILES="-f compose.yml"
+    COMPOSE_FILES="-f compose.dev.cpu.yml"
     if [ "$USE_GPU_NVIDIA" = true ]; then
-        COMPOSE_FILES="$COMPOSE_FILES -f compose.nvidia.yml"
+        COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.nvidia.yml"
     fi
     if [ "$USE_GPU_AMD" = true ]; then
-        COMPOSE_FILES="$COMPOSE_FILES -f compose.rocm.yml"
-    fi
-    if [ "$DEV_MODE" = true ]; then
-        COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.yml"
-        echo -e "${YELLOW}Development mode enabled - frontend will run with hot reloading${NC}"
+        COMPOSE_FILES="$COMPOSE_FILES -f compose.dev.rocm.yml"
     fi
     if [ "$REBUILD" = true ]; then
         echo -e "${YELLOW}Rebuild mode - will rebuild containers before starting${NC}"
@@ -210,18 +232,16 @@ else
         echo -e "${YELLOW}Rebuilding containers...${NC}"
         docker compose $COMPOSE_FILES build
     fi
-    
+
     if [ "$DETACHED" = true ]; then
         echo -e "${YELLOW}Starting Podly in detached mode...${NC}"
         docker compose $COMPOSE_FILES up -d
         echo -e "${GREEN}Podly is running in the background.${NC}"
-        echo -e "${GREEN}Frontend: http://localhost:5001${NC}"
-        echo -e "${GREEN}Backend API: http://localhost:5002${NC}"
+        echo -e "${GREEN}Application: http://localhost:5001${NC}"
     else
         echo -e "${YELLOW}Starting Podly...${NC}"
-        echo -e "${GREEN}Frontend will be available at: http://localhost:5001${NC}"
-        echo -e "${GREEN}Backend API will be available at: http://localhost:5002${NC}"
+        echo -e "${GREEN}Application will be available at: http://localhost:5001${NC}"
         docker compose $COMPOSE_FILES up
     fi
-fi 
+fi
 
