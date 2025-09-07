@@ -190,7 +190,7 @@ export USE_GPU_AMD
 
 # Setup Docker Compose configuration
 if [ "$PRODUCTION_MODE" = true ]; then
-    COMPOSE_FILES="-f compose.prod.yml"
+    COMPOSE_FILES="-f compose.yml"
     # Set branch tag based on GPU detection and branch
     if [ "$USE_GPU_NVIDIA" = true ]; then
         export BRANCH="${BRANCH_SUFFIX}-gpu-nvidia"
