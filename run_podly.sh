@@ -10,12 +10,16 @@ NC='\033[0m' # No Color
 
 # Default values
 BACKGROUND_MODE=false
+LITE_BUILD=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -b|--background|-d|--detach)
             BACKGROUND_MODE=true
+            ;;
+        --lite)
+            LITE_BUILD=true
             ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
@@ -26,6 +30,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  -b, --background    Run in background mode"
             echo "  -d, --detach        Alias for --background"
+            echo "  --lite              Install without Whisper (remote transcription only)"
             echo "  -h, --help          Show this help message"
             exit 0
             ;;
@@ -100,17 +105,37 @@ export VITE_API_URL="http://localhost:${BACKEND_PORT}"
 echo -e "${GREEN}Environment configured:${NC}"
 echo -e "  Application: http://localhost:${BACKEND_PORT}"
 echo -e "  CORS: Wildcard (*) - override with CORS_ORIGINS env var if needed"
+if [ "$LITE_BUILD" = true ]; then
+    echo -e "  ${YELLOW}Lite mode: Local Whisper disabled, use remote transcription services${NC}"
+fi
 
 # Check if pipenv environment exists
 if ! pipenv --venv &> /dev/null; then
     echo -e "${YELLOW}Setting up Python virtual environment...${NC}"
     pipenv --python 3.11
-    pipenv install
+    if [ "$LITE_BUILD" = true ]; then
+        echo -e "${YELLOW}Installing dependencies without Whisper (lite mode)...${NC}"
+        # Use the lite Pipfile for installation
+        cp Pipfile.lite Pipfile
+        pipenv install --dev
+        # Restore original Pipfile
+        git checkout Pipfile 2>/dev/null || cp Pipfile.lite Pipfile.backup
+    else
+        echo -e "${YELLOW}Installing full dependencies including Whisper...${NC}"
+        pipenv install --dev
+    fi
 else
     # Check if dependencies need updating
     if ! pipenv verify &> /dev/null; then
         echo -e "${YELLOW}Updating Python dependencies...${NC}"
-        pipenv sync
+        if [ "$LITE_BUILD" = true ]; then
+            echo -e "${YELLOW}Syncing lite dependencies...${NC}"
+            cp Pipfile.lite Pipfile
+            pipenv sync --dev
+            git checkout Pipfile 2>/dev/null || cp Pipfile.lite Pipfile.backup
+        else
+            pipenv sync --dev
+        fi
     fi
 fi
 
