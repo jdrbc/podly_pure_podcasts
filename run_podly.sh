@@ -115,14 +115,15 @@ if ! pipenv --venv &> /dev/null; then
     pipenv --python 3.11
     if [ "$LITE_BUILD" = true ]; then
         echo -e "${YELLOW}Installing dependencies without Whisper (lite mode)...${NC}"
-        # Use the lite Pipfile for installation
+        # Use the lite Pipfile and lock file for installation
         cp Pipfile.lite Pipfile
-        pipenv install
-        # Restore original Pipfile
-        git checkout Pipfile 2>/dev/null || cp Pipfile.lite Pipfile.backup
+        cp Pipfile.lite.lock Pipfile.lock
+        pipenv sync
+        # Restore original files
+        git checkout Pipfile Pipfile.lock 2>/dev/null || true
     else
         echo -e "${YELLOW}Installing full dependencies including Whisper...${NC}"
-        pipenv install
+        pipenv sync
     fi
 else
     # Check if dependencies need updating
@@ -131,8 +132,9 @@ else
         if [ "$LITE_BUILD" = true ]; then
             echo -e "${YELLOW}Syncing lite dependencies...${NC}"
             cp Pipfile.lite Pipfile
+            cp Pipfile.lite.lock Pipfile.lock
             pipenv sync
-            git checkout Pipfile 2>/dev/null || cp Pipfile.lite Pipfile.backup
+            git checkout Pipfile Pipfile.lock 2>/dev/null || true
         else
             pipenv sync
         fi
