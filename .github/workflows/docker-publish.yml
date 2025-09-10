@@ -20,14 +20,6 @@ jobs:
       matrix:
         variant:
           - {
-              name: "latest",
-              base: "python:3.11-slim",
-              gpu: "false",
-              gpu_nvidia: "false",
-              gpu_amd: "false",
-              lite_build: "false",
-            }
-          - {
               name: "lite",
               base: "python:3.11-slim",
               gpu: "false",
@@ -35,22 +27,31 @@ jobs:
               gpu_amd: "false",
               lite_build: "true",
             }
-          - {
-              name: "gpu-nvidia",
-              base: "nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04",
-              gpu: "true",
-              gpu_nvidia: "true",
-              gpu_amd: "false",
-              lite_build: "false",
-            }
-          - {
-              name: "gpu-amd",
-              base: "rocm/dev-ubuntu-22.04:6.4-complete",
-              gpu: "false",
-              gpu_nvidia: "false",
-              gpu_amd: "true",
-              lite_build: "false",
-            }
+          # Temporarily disabled other variants to focus on lite build
+          # - {
+          #     name: "latest",
+          #     base: "python:3.11-slim",
+          #     gpu: "false",
+          #     gpu_nvidia: "false",
+          #     gpu_amd: "false",
+          #     lite_build: "false",
+          #   }
+          # - {
+          #     name: "gpu-nvidia",
+          #     base: "nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04",
+          #     gpu: "true",
+          #     gpu_nvidia: "true",
+          #     gpu_amd: "false",
+          #     lite_build: "false",
+          #   }
+          # - {
+          #     name: "gpu-amd",
+          #     base: "rocm/dev-ubuntu-22.04:6.4-complete",
+          #     gpu: "false",
+          #     gpu_nvidia: "false",
+          #     gpu_amd: "true",
+          #     lite_build: "false",
+          #   }
 
     steps:
       - name: Checkout repository
@@ -97,7 +98,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          platforms: ${{ (matrix.variant.name == 'latest' || matrix.variant.name == 'lite') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          platforms: linux/amd64  # Temporarily build only for amd64 to speed up builds
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |

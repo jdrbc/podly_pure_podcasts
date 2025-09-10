@@ -68,8 +68,10 @@ RUN if command -v pip >/dev/null 2>&1; then \
     fi
 
 # Set pip timeout and retries for better reliability
-ENV PIP_DEFAULT_TIMEOUT=100
+ENV PIP_DEFAULT_TIMEOUT=1000
 ENV PIP_RETRIES=3
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_NO_CACHE_DIR=1
 
 # Install dependencies conditionally based on LITE_BUILD
 RUN set -e && \
@@ -78,12 +80,12 @@ RUN set -e && \
         cp Pipfile.lite Pipfile && \
         echo "Using lite Pipfile:" && \
         head -20 Pipfile && \
-        pipenv install --system --dev --verbose; \
+        PIPENV_VENV_IN_PROJECT=1 pipenv install --system --dev --verbose; \
     else \
         echo "Installing full dependencies (including Whisper)"; \
         echo "Using full Pipfile:" && \
         head -20 Pipfile && \
-        pipenv install --deploy --system --dev --verbose; \
+        PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system --dev --verbose; \
     fi
 
 # Install PyTorch with CUDA support if using NVIDIA image (skip if LITE_BUILD)
