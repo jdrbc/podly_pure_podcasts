@@ -72,19 +72,18 @@ ENV PIP_DEFAULT_TIMEOUT=100
 ENV PIP_RETRIES=3
 
 # Install dependencies conditionally based on LITE_BUILD
-RUN if [ "${LITE_BUILD}" = "true" ]; then \
-    echo "Installing lite dependencies (without Whisper)"; \
-    mv Pipfile.lite Pipfile && \
-    pipenv requirements > requirements.txt && \
-    pipenv requirements --dev > requirements-dev.txt && \
-    pip install --no-cache-dir --timeout 300 -r requirements.txt && \
-    pip install --no-cache-dir --timeout 300 -r requirements-dev.txt; \
+RUN set -e && \
+    if [ "${LITE_BUILD}" = "true" ]; then \
+        echo "Installing lite dependencies (without Whisper)"; \
+        cp Pipfile.lite Pipfile && \
+        echo "Using lite Pipfile:" && \
+        head -20 Pipfile && \
+        pipenv install --system --dev --verbose; \
     else \
-    echo "Installing full dependencies (including Whisper)"; \
-    pipenv requirements > requirements.txt && \
-    pipenv requirements --dev > requirements-dev.txt && \
-    pip install --no-cache-dir --timeout 300 -r requirements.txt && \
-    pip install --no-cache-dir --timeout 300 -r requirements-dev.txt; \
+        echo "Installing full dependencies (including Whisper)"; \
+        echo "Using full Pipfile:" && \
+        head -20 Pipfile && \
+        pipenv install --deploy --system --dev --verbose; \
     fi
 
 # Install PyTorch with CUDA support if using NVIDIA image (skip if LITE_BUILD)
