@@ -76,16 +76,16 @@ ENV PIP_NO_CACHE_DIR=1
 # Install dependencies conditionally based on LITE_BUILD
 RUN set -e && \
     if [ "${LITE_BUILD}" = "true" ]; then \
-        echo "Installing lite dependencies (without Whisper)"; \
-        cp Pipfile.lite Pipfile && \
-        echo "Using lite Pipfile:" && \
-        head -20 Pipfile && \
-        PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system --dev; \
+    echo "Installing lite dependencies (without Whisper)"; \
+    cp Pipfile.lite Pipfile && \
+    echo "Using lite Pipfile:" && \
+    head -20 Pipfile && \
+    PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system --dev; \
     else \
-        echo "Installing full dependencies (including Whisper)"; \
-        echo "Using full Pipfile:" && \
-        head -20 Pipfile && \
-        PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system --dev; \
+    echo "Installing full dependencies (including Whisper)"; \
+    echo "Using full Pipfile:" && \
+    head -20 Pipfile && \
+    PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system --dev; \
     fi
 
 # Install PyTorch with CUDA support if using NVIDIA image (skip if LITE_BUILD)
