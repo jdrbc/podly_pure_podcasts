@@ -67,14 +67,24 @@ RUN if command -v pip >/dev/null 2>&1; then \
     python3 -m pip install --no-cache-dir pipenv; \
     fi
 
+# Set pip timeout and retries for better reliability
+ENV PIP_DEFAULT_TIMEOUT=100
+ENV PIP_RETRIES=3
+
 # Install dependencies conditionally based on LITE_BUILD
 RUN if [ "${LITE_BUILD}" = "true" ]; then \
     echo "Installing lite dependencies (without Whisper)"; \
     mv Pipfile.lite Pipfile && \
-    pipenv install --skip-lock --system --dev; \
+    pipenv requirements > requirements.txt && \
+    pipenv requirements --dev > requirements-dev.txt && \
+    pip install --no-cache-dir --timeout 300 -r requirements.txt && \
+    pip install --no-cache-dir --timeout 300 -r requirements-dev.txt; \
     else \
     echo "Installing full dependencies (including Whisper)"; \
-    pipenv install --deploy --system --dev; \
+    pipenv requirements > requirements.txt && \
+    pipenv requirements --dev > requirements-dev.txt && \
+    pip install --no-cache-dir --timeout 300 -r requirements.txt && \
+    pip install --no-cache-dir --timeout 300 -r requirements-dev.txt; \
     fi
 
 # Install PyTorch with CUDA support if using NVIDIA image (skip if LITE_BUILD)
