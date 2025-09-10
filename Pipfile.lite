@@ -26,7 +26,7 @@ flask-sqlalchemy = "*"
 flask-migrate = "*"
 Flask-APScheduler = "*"
 ffmpeg-python = "*"
-litellm = ">=1.59.8"
+litellm = ">=1.59.8,<1.75.0"  # Pin to avoid fastuuid dependency
 bleach = "*"
 types-bleach = "*"
 groq = "*"
