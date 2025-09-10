@@ -14,9 +14,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # Increase timeout for heavy builds
+    timeout-minutes: 90 # Increase timeout for heavy builds
     strategy:
-      fail-fast: false  # Don't cancel other builds if one fails
+      fail-fast: false # Don't cancel other builds if one fails
       matrix:
         variant:
           - {

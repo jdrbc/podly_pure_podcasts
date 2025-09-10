@@ -117,12 +117,12 @@ if ! pipenv --venv &> /dev/null; then
         echo -e "${YELLOW}Installing dependencies without Whisper (lite mode)...${NC}"
         # Use the lite Pipfile for installation
         cp Pipfile.lite Pipfile
-        pipenv install --dev
+        pipenv install
         # Restore original Pipfile
         git checkout Pipfile 2>/dev/null || cp Pipfile.lite Pipfile.backup
     else
         echo -e "${YELLOW}Installing full dependencies including Whisper...${NC}"
-        pipenv install --dev
+        pipenv install
     fi
 else
     # Check if dependencies need updating
@@ -131,10 +131,10 @@ else
         if [ "$LITE_BUILD" = true ]; then
             echo -e "${YELLOW}Syncing lite dependencies...${NC}"
             cp Pipfile.lite Pipfile
-            pipenv sync --dev
+            pipenv sync
             git checkout Pipfile 2>/dev/null || cp Pipfile.lite Pipfile.backup
         else
-            pipenv sync --dev
+            pipenv sync
         fi
     fi
 fi
