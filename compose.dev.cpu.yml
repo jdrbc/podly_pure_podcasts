@@ -16,6 +16,7 @@ services:
         - USE_GPU=${USE_GPU:-false}
         - USE_GPU_NVIDIA=${USE_GPU_NVIDIA:-false}
         - USE_GPU_AMD=${USE_GPU_AMD:-false}
+        - LITE_BUILD=${LITE_BUILD:-false}
     ports:
       - 5001:5001
     environment:

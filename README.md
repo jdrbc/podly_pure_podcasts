@@ -121,6 +121,7 @@ Podly supports multiple options for audio transcription:
 
    - See `config/config.yml.example` for configuration
    - Slower but doesn't require an external API (~ 1 minute per 15 minutes of podcast on an M3 MacBook)
+   - **Note**: Not available in lite mode (`--lite` flag)
 
 2. **OpenAI Hosted Whisper** - Uses OpenAI's hosted Whisper service
 
@@ -132,6 +133,59 @@ Podly supports multiple options for audio transcription:
    - Fast and cost-effective alternative to OpenAI
 
 To use Groq for transcription, you'll need a Groq API key. Copy the `config/config_groq_whisper.yml.example` to `config/config.yml` and update the `api_key` field with your Groq API key.
+
+### Lite Mode
+
+For smaller deployments or when you only need remote transcription services, you can use the `--lite` flag with both run scripts:
+
+```bash
+# Docker lite mode (much smaller image, faster builds)
+./run_podly_docker.sh --lite
+
+# Local lite mode (faster setup, fewer dependencies)
+./run_podly.sh --lite
+```
+
+**Lite mode benefits:**
+
+- Significantly smaller Docker images (saves ~1GB)
+- Faster installation and builds
+- Reduced memory usage
+- No PyTorch/CUDA dependencies
+
+**Lite mode limitations:**
+
+- Local Whisper transcription is not available
+- Must use OpenAI, Groq, or other remote transcription services
+
+**Lite mode configuration:**
+
+When using lite mode, you must configure a remote transcription service in your `config/config.yml`. Add one of the following configurations:
+
+#### Option 1: OpenAI Whisper (recommended for accuracy)
+
+```yaml
+whisper:
+  whisper_type: remote
+  model: whisper-1
+  api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX # Your OpenAI API key
+  # Optional settings:
+  # base_url: https://api.openai.com/v1  # Default OpenAI endpoint
+  # language: "en"
+  # timeout_sec: 600
+  # chunksize_mb: 24
+```
+
+#### Option 2: Groq Whisper (recommended for speed and cost)
+
+```yaml
+whisper:
+  whisper_type: groq
+  api_key: gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXX # Your Groq API key
+  model: whisper-large-v3-turbo
+  language: en
+  max_retries: 3
+```
 
 ## Remote Setup
 
@@ -322,6 +376,9 @@ You can use these command-line options with the run script:
 
 # Production mode - use published Docker images from GitHub Container Registry
 ./run_podly_docker.sh --production
+
+# Lite mode - smaller image without Whisper (remote transcription only)
+./run_podly_docker.sh --lite
 
 # Force CPU mode even if GPU is available
 ./run_podly_docker.sh --cpu

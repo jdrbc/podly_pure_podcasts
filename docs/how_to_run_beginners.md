@@ -26,6 +26,15 @@ The docker image have both ffmpeg & local whisper preconfigured.
 Help me setup config/config.yml
 Podly works with many different LLMs, it does not require an open-ai key.
 Check your work by retrieving the index page from localhost:5001 at the end.
+
+💡 **Tip**: For faster setup and smaller images, consider using the `--lite` flag which skips local Whisper installation and uses remote transcription services only:
+```
+
+./run-podly-docker.sh --lite --build
+./run-podly-docker.sh --lite -d
+
+```
+
 ```
 
 If you do have the repo pulled, open this file and prompt:
