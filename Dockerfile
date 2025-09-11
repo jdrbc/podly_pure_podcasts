@@ -54,7 +54,7 @@ RUN if [ -f /etc/debian_version ]; then \
     fi ; \
     fi
 
-# Set up Python environment and copy all Pipfiles/lock files
+# Copy all Pipfiles/lock files
 COPY Pipfile Pipfile.lock Pipfile.lite Pipfile.lite.lock ./
 
 # Install pipenv and dependencies
