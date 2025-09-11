@@ -148,7 +148,7 @@ For smaller deployments or when you only need remote transcription services, you
 
 **Lite mode benefits:**
 
-- Significantly smaller Docker images (saves ~2GB)
+- Significantly smaller Docker images (saves ~1GB)
 - Faster installation and builds
 - Reduced memory usage
 - No PyTorch/CUDA dependencies
