@@ -14,9 +14,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90 # Increase timeout for heavy builds
     strategy:
-      fail-fast: false # Don't cancel other builds if one fails
       matrix:
         variant:
           - {
@@ -106,7 +104,6 @@ jobs:
             USE_GPU_NVIDIA=${{ matrix.variant.gpu_nvidia }}
             USE_GPU_AMD=${{ matrix.variant.gpu_amd }}
             LITE_BUILD=${{ matrix.variant.lite_build }}
-            BUILDKIT_INLINE_CACHE=1
           # Temporarily disabled due to GitHub Actions Cache service outage
           # cache-from: type=gha
           # cache-to: type=gha,mode=max
