@@ -119,19 +119,19 @@ Podly supports multiple options for audio transcription:
 
 1. **Local Whisper (Default)** - Uses OpenAI's Whisper model running locally on your machine
 
-   - See `config/config.yml.example` for configuration
+   - See `config/config.yml.example` for configuration (OPTION 1)
    - Slower but doesn't require an external API (~ 1 minute per 15 minutes of podcast on an M3 MacBook)
 
 2. **OpenAI Hosted Whisper** - Uses OpenAI's hosted Whisper service
 
-   - See `config/config_remote_whisper.yml.example` for configuration
+   - See `config/config.yml.example` for configuration (OPTION 2)
    - Fast and accurate but requires OpenAI API credits
 
 3. **Groq Hosted Whisper** - Uses Groq's hosted Whisper service
-   - See `config/config_groq_whisper.yml.example` for configuration
+   - See `config/config.yml.example` for configuration (OPTION 3)
    - Fast and cost-effective alternative to OpenAI
 
-To use Groq for transcription, you'll need a Groq API key. Copy the `config/config_groq_whisper.yml.example` to `config/config.yml` and update the `api_key` field with your Groq API key.
+To use different transcription options, copy `config/config.yml.example` to `config/config.yml` and uncomment the relevant whisper section for your preferred option.
 
 ## Remote Setup
 
