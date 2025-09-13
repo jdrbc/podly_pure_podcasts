@@ -57,13 +57,13 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     const feedHeader = feedHeaderRef.current;
-    
+
     if (!scrollContainer || !feedHeader) return;
 
     const handleScroll = () => {
       const scrollTop = scrollContainer.scrollTop;
       const feedHeaderHeight = feedHeader.offsetHeight;
-      
+
       // Show sticky header when scrolled past the feed header
       setShowStickyHeader(scrollTop > feedHeaderHeight - 100);
     };
@@ -228,7 +228,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             {/* RSS Button and Menu */}
             <div className="flex items-center gap-3">
               {/* Podly RSS Subscribe Button */}
-              <button 
+              <button
                 onClick={() => window.open(`${window.location.origin}/feed/${feed.id}`, '_blank')}
                 className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
               >
@@ -265,7 +265,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                       <span className="text-green-600">✓</span>
                       Enable all episodes
                     </button>
-                    
+
                     <button
                       onClick={() => {
                         if (allWhitelisted) {
@@ -356,15 +356,15 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
               <h4 className="font-semibold text-blue-900 mb-2">About Enabling & Disabling Ad Removal</h4>
               <div className="text-sm text-blue-800 space-y-2 text-left">
                 <p>
-                  <strong>Enabled episodes</strong> are processed by Podly to automatically detect and remove advertisements, 
+                  <strong>Enabled episodes</strong> are processed by Podly to automatically detect and remove advertisements,
                   giving you a clean, ad-free listening experience.
                 </p>
                 <p>
-                  <strong>Disabled episodes</strong> are not processed and won't be available for download through Podly. 
+                  <strong>Disabled episodes</strong> are not processed and won't be available for download through Podly.
                   This is useful for episodes you don't want to listen to.
                 </p>
                 <p>
-                  <strong>Why whitelist episodes?</strong> Processing takes time and computational resources. 
+                  <strong>Why whitelist episodes?</strong> Processing takes time and computational resources.
                   By only enabling episodes you want to hear, you can save LLM credits. This is useful when adding a new feed with a large back catalog.
                 </p>
               </div>
@@ -400,7 +400,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             <div className="divide-y divide-gray-200">
               {sortedEpisodes.map((episode) => (
                 <div key={episode.id} className="p-4 hover:bg-gray-50">
-                  <div className="flex flex-col gap-3">
+                  <div className={`flex flex-col ${episode.whitelisted ? 'gap-3' : 'gap-2'}`}>
                     {/* Top Section: Thumbnail and Title */}
                     <div className="flex items-start gap-3">
                       {/* Episode/Podcast Thumbnail */}
@@ -419,7 +419,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                           </div>
                         )}
                       </div>
-                      
+
                       {/* Title and Feed Name */}
                       <div className="flex-1 min-w-0 text-left">
                         <h4 className="font-medium text-gray-900 mb-1 line-clamp-2 text-left">
@@ -440,8 +440,37 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                       </div>
                     )}
 
-                    {/* Metadata: Date and Duration */}
+                    {/* Metadata: Status, Date and Duration */}
                     <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <button
+                        onClick={() => handleWhitelistToggle(episode)}
+                        disabled={whitelistMutation.isPending}
+                        className={`px-2 py-1 text-xs font-medium rounded-full transition-colors flex items-center justify-center gap-1 ${
+                          episode.whitelisted
+                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                            : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                        } ${whitelistMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {whitelistMutation.isPending ? (
+                          <>
+                            <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span>...</span>
+                          </>
+                        ) : episode.whitelisted ? (
+                          <>
+                            <span>✅</span>
+                            <span>Enabled</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>⛔</span>
+                            <span>Disabled</span>
+                          </>
+                        )}
+                      </button>
+                      <span>•</span>
                       <span>{formatDate(episode.release_date)}</span>
                       {episode.duration && (
                         <>
@@ -451,62 +480,36 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                       )}
                     </div>
 
-                    {/* Bottom Controls */}
-                    <div className="flex items-center justify-between">
-                      {/* Left side: Whitelist and Download buttons */}
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleWhitelistToggle(episode)}
-                          disabled={whitelistMutation.isPending}
-                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors flex items-center justify-center gap-1 ${
-                            episode.whitelisted
-                              ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                              : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                          } ${whitelistMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                          {whitelistMutation.isPending ? (
-                            <>
-                              <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                              </svg>
-                              <span>...</span>
-                            </>
-                          ) : episode.whitelisted ? (
-                            <>
-                              <span>✅</span>
-                              <span>Enabled</span>
-                            </>
-                          ) : (
-                            <>
-                              <span>⛔</span>
-                              <span>Disabled</span>
-                            </>
-                          )}
-                        </button>
-                        
-                        <DownloadButton
-                          episodeGuid={episode.guid}
-                          isWhitelisted={episode.whitelisted}
-                          hasProcessedAudio={episode.has_processed_audio}
-                          feedId={feed.id}
-                          className="min-w-[100px]"
-                        />
-                        
-                        <ProcessingStatsButton
-                          episodeGuid={episode.guid}
-                          hasProcessedAudio={episode.has_processed_audio}
-                          className="ml-2"
-                        />
-                      </div>
+                    {/* Bottom Controls - only show if episode is whitelisted */}
+                    {episode.whitelisted && (
+                      <div className="flex items-center justify-between">
+                        {/* Left side: Download buttons */}
+                        <div className="flex items-center gap-2">
+                          <DownloadButton
+                            episodeGuid={episode.guid}
+                            isWhitelisted={episode.whitelisted}
+                            hasProcessedAudio={episode.has_processed_audio}
+                            feedId={feed.id}
+                            className="min-w-[100px]"
+                          />
 
-                      {/* Right side: Play button */}
-                      <div className="flex-shrink-0">
-                        <PlayButton
-                          episode={episode}
-                          className="ml-2"
-                        />
+                          <ProcessingStatsButton
+                            episodeGuid={episode.guid}
+                            hasProcessedAudio={episode.has_processed_audio}
+                          />
+                        </div>
+
+                        {/* Right side: Play button */}
+                        <div className="flex-shrink-0 w-12 flex justify-end">
+                          {episode.has_processed_audio && (
+                            <PlayButton
+                              episode={episode}
+                              className="ml-2"
+                            />
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -516,4 +519,4 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
       </div>
     </div>
   );
-} 
+}

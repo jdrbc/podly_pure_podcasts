@@ -9,6 +9,7 @@ from flask.typing import ResponseReturnValue
 from app import db, logger
 from app.job_manager import get_job_manager
 from app.models import Feed, Identification, ModelCall, Post, TranscriptSegment
+from app.posts import clear_post_processing_data
 
 api_bp = Blueprint("api", __name__)
 
@@ -458,6 +459,67 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
                     "status": "error",
                     "error_code": "JOB_START_FAILED",
                     "message": f"Failed to start processing job: {str(e)}",
+                }
+            ),
+            500,
+        )
+
+
+@api_bp.route("/api/posts/<string:p_guid>/reprocess", methods=["POST"])
+def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
+    """Clear all processing data for a post and start processing from scratch."""
+
+    # Get the post
+    post = Post.query.filter_by(guid=p_guid).first()
+    if not post:
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "NOT_FOUND",
+                    "message": "Post not found",
+                }
+            ),
+            404,
+        )
+
+    if not post.whitelisted:
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "NOT_WHITELISTED",
+                    "message": "Post not whitelisted",
+                }
+            ),
+            400,
+        )
+
+    try:
+        # First, cancel any active processing jobs for this post
+        get_job_manager().cancel_post_jobs(p_guid)
+
+        # Clear all processing data (files and database entries)
+        clear_post_processing_data(post)
+
+        # Start fresh processing
+        result = get_job_manager().start_post_processing(p_guid, priority="interactive")
+        status_code = 200 if result.get("status") in ("started", "completed") else 400
+
+        # Add reprocess indicator to the response
+        if result.get("status") == "started":
+            result["message"] = "Post cleared and reprocessing started"
+
+        return flask.jsonify(result), status_code
+
+    except Exception as e:
+        logger.error(f"Failed to reprocess post {p_guid}: {e}", exc_info=True)
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "REPROCESS_FAILED",
+                    "message": f"Failed to reprocess post: {str(e)}",
                 }
             ),
             500,
