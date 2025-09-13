@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { feedsApi } from '../services/api';
+import ReprocessButton from './ReprocessButton';
 
 interface DownloadButtonProps {
   episodeGuid: string;
@@ -20,12 +21,12 @@ interface ProcessingStatus {
   error?: string;
 }
 
-export default function DownloadButton({ 
-  episodeGuid, 
-  isWhitelisted, 
+export default function DownloadButton({
+  episodeGuid,
+  isWhitelisted,
   hasProcessedAudio,
   feedId,
-  className = '' 
+  className = ''
 }: DownloadButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
@@ -53,7 +54,7 @@ export default function DownloadButton({
       if (!hasProcessedAudio && isWhitelisted) {
         try {
           const statusResponse = await feedsApi.getPostStatus(episodeGuid);
-          
+
           // If there's an active job, set the processing state
           if (statusResponse.status === 'pending' || statusResponse.status === 'running') {
             setIsProcessing(true);
@@ -79,13 +80,13 @@ export default function DownloadButton({
   // Poll for status updates when processing
   useEffect(() => {
     let interval: number;
-    
+
     if (isProcessing) {
       interval = window.setInterval(async () => {
         try {
           const statusResponse = await feedsApi.getPostStatus(episodeGuid);
           setStatus(statusResponse);
-          
+
           if (statusResponse.status === 'completed' || statusResponse.status === 'error' || statusResponse.status === 'not_started') {
             setIsProcessing(false);
             if (statusResponse.status === 'error') {
@@ -131,9 +132,9 @@ export default function DownloadButton({
 
     try {
       setError(null);
-      
+
       const response = await feedsApi.processPost(episodeGuid);
-      
+
       if (response.status === 'completed' && response.download_url) {
         // Already processed
         setStatus({
@@ -144,7 +145,7 @@ export default function DownloadButton({
           message: 'Episode ready for download',
           download_url: response.download_url
         });
-        
+
         // Trigger download
         try {
           await feedsApi.downloadPost(episodeGuid);
@@ -170,7 +171,7 @@ export default function DownloadButton({
       }
     } catch (err: unknown) {
       console.error('Error starting processing:', err);
-      const errorMessage = err && typeof err === 'object' && 'response' in err 
+      const errorMessage = err && typeof err === 'object' && 'response' in err
         ? (err as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to start processing'
         : 'Failed to start processing';
       setError(errorMessage);
@@ -184,7 +185,7 @@ export default function DownloadButton({
 
   const getStepIcon = (stepNumber: number) => {
     if (!status) return '○';
-    
+
     if (status.step > stepNumber) {
       return '✓'; // Completed
     } else if (status.step === stepNumber) {
@@ -194,29 +195,29 @@ export default function DownloadButton({
     }
   };
 
-  if (!isWhitelisted) {
-    return (
-      <button
-        disabled
-        className={`px-3 py-1 text-xs bg-gray-100 text-gray-500 rounded cursor-not-allowed ${className}`}
-        title="Post must be whitelisted to download"
-      >
-        Not Whitelisted
-      </button>
-    );
-  }
-
   // Show completed state with download button only
   if (status?.status === 'completed' && status.download_url) {
     return (
       <div className={`${className}`}>
-        <button
-          onClick={handleDownloadClick}
-          className="px-3 py-1 text-xs rounded font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700"
-          title="Download processed episode"
-        >
-          ⬇ Download
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleDownloadClick}
+            className="px-3 py-1 text-xs rounded font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700"
+            title="Download processed episode"
+          >
+            Download
+          </button>
+          <ReprocessButton
+            episodeGuid={episodeGuid}
+            isWhitelisted={isWhitelisted}
+            feedId={feedId}
+            onReprocessStart={() => {
+              // Reset status to trigger re-processing UI
+              setStatus(null);
+              setIsProcessing(true);
+            }}
+          />
+        </div>
         {error && (
           <div className="text-xs text-red-600 mt-1">
             {error}
@@ -231,10 +232,10 @@ export default function DownloadButton({
       <button
         onClick={handleDownloadClick}
         disabled={isProcessing}
-        className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
+        className={`px-3 py-1 text-xs rounded font-medium transition-colors border ${
           isProcessing
-            ? 'bg-blue-600 text-white cursor-wait'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
+            ? 'bg-gray-500 text-white cursor-wait border-gray-500'
+            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900'
         }`}
         title={
           isProcessing
@@ -245,7 +246,7 @@ export default function DownloadButton({
         {isProcessing ? (
           'Processing...'
         ) : (
-          '🎵 Process'
+          'Process'
         )}
       </button>
 
@@ -296,4 +297,4 @@ export default function DownloadButton({
       )}
     </div>
   );
-} 
+}
