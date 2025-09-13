@@ -1,28 +1,80 @@
-# Required global setting
+# =============================================================================
+# LLM CONFIGURATION
+# =============================================================================
+
+# Required: API key for your chosen LLM provider
 llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 
-# Optional global setting (default gpt-4o)
+# Choose your LLM model (uncomment one of the options below)
+# Default LLM if none selected is OpenAI gpt-4o
+
+# OpenAI models:
 # llm_model: gpt-4o
+# llm_model: gpt-4o-mini
 
-# Optional openai settings
-# openai_base_url: http://127.0.0.1:11434/v1
-# openai_timeout: 300
-# openai_max_tokens: 4096
+# Anthropic Claude models:
+# llm_model: anthropic/claude-sonnet-4-20250514
+# llm_model: anthropic/claude-opus-4-1-20250805
 
-# Application server settings
+# Google Gemini models:
+# llm_model: gemini/gemini-2.5-flash
+# llm_model: gemini/gemini-2.5-pro
+
+# Optional: OpenAI settings (for custom endpoints or local models)
+# openai_base_url: http://127.0.0.1:11434/v1        # For local ollama or other OpenAI-compatible APIs
+# openai_timeout: 300                               # Timeout in seconds
+# openai_max_tokens: 4096                           # Max tokens in response
+# openai_model: phi3:14b-medium-4k-instruct-q5_K_M  # For custom models via openai_base_url
+
+# =============================================================================
+# APPLICATION SERVER SETTINGS
+# =============================================================================
+
+# Optional: Application server settings
 # host: 0.0.0.0  # Interface to listen on (default: 0.0.0.0, accepts all requests)
 # port: 5001     # Port to listen on (default: 5001)
-# threads: 5
+# threads: 5     # Number of worker threads
 
-# Deprecated settings (use request-aware URL generation instead)
-# server: http://my.domain.com
-# backend_server_port: 5002
+# Optional: Background processing settings
+# background_update_interval_minute: 10  # Auto-refresh feeds and download new episodes (minutes)
+# job_timeout: 10800                     # Timeout for background jobs (seconds, default: 3 hours)
 
-#setting a value here enables automatic scheduler to auto-refresh the feed lists and download new episodes
-#background_update_interval_minute: 10
-#job_timeout: 10800 #background jobs can get stuck on broken episodes, this will free up threads which exceed this time limit
+# =============================================================================
+# WHISPER TRANSCRIPTION CONFIGURATION
+# =============================================================================
 
-# if true then all new episodes will be whitelisted for download
+# Choose your transcription method
+# Defaults to option 1, local whisper
+
+# OPTION 1: Local Whisper (default - runs on your machine)
+whisper:
+  whisper_type: local
+  model: base  # Options: tiny, base, small, medium, large, large-v2, large-v3
+  # language: en  # Optional: force language detection
+
+# OPTION 2: Remote Whisper API (OpenAI or compatible service)
+# whisper:
+#   whisper_type: remote
+#   model: whisper-1                    # OpenAI model name
+#   api_key: sk-proj-XXXXXXXXXXXXXXXX   # Your OpenAI API key (or compatible service key)
+#   # base_url: http://localhost/v1     # Optional: custom endpoint (default is OpenAI)
+#   # language: en                      # Optional: force language
+#   # timeout_sec: 600                  # Optional: HTTP timeout in seconds
+#   # chunksize_mb: 24                  # Optional: file size in MB for chunked uploads
+
+# OPTION 3: Groq Whisper (fast cloud transcription)
+# whisper:
+#   whisper_type: groq
+#   api_key: gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXX  # Your Groq API key
+#   model: whisper-large-v3-turbo               # Groq Whisper model
+#   language: en                                # Language code
+#   max_retries: 3                              # Number of retry attempts
+
+# =============================================================================
+# PODCAST PROCESSING SETTINGS
+# =============================================================================
+
+# If true then all new episodes will be whitelisted for download
 automatically_whitelist_new_episodes: true
 
 # limit the number episodes that podly will include from a new feed's archive
@@ -44,7 +96,3 @@ output:
   min_ad_segement_separation_seconds: 60
   min_ad_segment_length_seconds: 14
   min_confidence: 0.8
-
-whisper:
-  whisper_type: local
-  model: base
