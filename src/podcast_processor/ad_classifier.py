@@ -16,6 +16,10 @@ from podcast_processor.model_output import (
     clean_and_parse_model_output,
 )
 from podcast_processor.prompt import transcript_excerpt_for_prompt
+from podcast_processor.token_rate_limiter import (
+    TokenRateLimiter,
+    configure_rate_limiter_for_model,
+)
 from podcast_processor.transcribe import Segment
 from shared.config import Config, TestWhisperConfig
 
@@ -36,6 +40,27 @@ class AdClassifier:
         self.model_call_query = model_call_query or ModelCall.query
         self.identification_query = identification_query or Identification.query
         self.db_session = db_session or db.session
+
+        # Initialize rate limiter for the configured model
+        self.rate_limiter: Optional[TokenRateLimiter]
+        if self.config.llm_enable_token_rate_limiting:
+            tokens_per_minute = self.config.llm_max_input_tokens_per_minute
+            if tokens_per_minute is None:
+                # Use model-specific defaults
+                self.rate_limiter = configure_rate_limiter_for_model(
+                    self.config.llm_model
+                )
+            else:
+                # Use custom limit
+                from podcast_processor.token_rate_limiter import get_rate_limiter
+
+                self.rate_limiter = get_rate_limiter(tokens_per_minute)
+                self.logger.info(
+                    f"Using custom token rate limit: {tokens_per_minute}/min"
+                )
+        else:
+            self.rate_limiter = None
+            self.logger.info("Token rate limiting disabled")
 
     def classify(
         self,
@@ -368,14 +393,31 @@ class AdClassifier:
         if isinstance(error, InternalServerError):
             return True
 
-        # Check for 503 errors in other exception types
+        # Check for retryable HTTP errors in other exception types
         error_str = str(error).lower()
-        return "503" in error_str or "service unavailable" in error_str
+        return (
+            "503" in error_str
+            or "service unavailable" in error_str
+            or "rate_limit_error" in error_str
+            or "ratelimiterror" in error_str
+            or "429" in error_str
+            or "rate limit" in error_str
+        )
 
     def _call_model(
-        self, model_call_obj: ModelCall, system_prompt: str, max_retries: int = 3
+        self,
+        model_call_obj: ModelCall,
+        system_prompt: str,
+        max_retries: Optional[int] = None,
     ) -> Optional[str]:
         """Call the LLM model with retry logic."""
+        # Use configured retry count if not specified
+        retry_count = (
+            max_retries
+            if max_retries is not None
+            else getattr(self.config, "llm_max_retry_attempts", 3)
+        )
+
         last_error: Optional[Exception] = None
         raw_response_content = None
         original_retry_attempts = (
@@ -384,24 +426,40 @@ class AdClassifier:
             else model_call_obj.retry_attempts
         )
 
-        for attempt in range(max_retries):
+        for attempt in range(retry_count):
             model_call_obj.retry_attempts = original_retry_attempts + attempt + 1
             current_attempt_num = attempt + 1
 
             self.logger.info(
-                f"Calling model {model_call_obj.model_name} for ModelCall {model_call_obj.id} (attempt {current_attempt_num}/{max_retries})"
+                f"Calling model {model_call_obj.model_name} for ModelCall {model_call_obj.id} (attempt {current_attempt_num}/{retry_count})"
             )
 
             try:
                 if model_call_obj.status != "pending":
                     model_call_obj.status = "pending"
 
+                # Prepare messages for the API call
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": model_call_obj.prompt},
+                ]
+
+                # Use rate limiter to wait if necessary and track token usage
+                if self.rate_limiter:
+                    self.rate_limiter.wait_if_needed(
+                        messages, model_call_obj.model_name
+                    )
+
+                    # Get usage stats for logging
+                    usage_stats = self.rate_limiter.get_usage_stats()
+                    self.logger.info(
+                        f"Token usage: {usage_stats['current_usage']}/{usage_stats['limit']} "
+                        f"({usage_stats['usage_percentage']:.1f}%) for ModelCall {model_call_obj.id}"
+                    )
+
                 response = litellm.completion(
                     model=model_call_obj.model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": model_call_obj.prompt},
-                    ],
+                    messages=messages,
                     max_tokens=self.config.openai_max_tokens,
                     timeout=self.config.openai_timeout,
                 )
@@ -444,12 +502,12 @@ class AdClassifier:
                     raise  # Re-raise non-retryable exceptions immediately
 
         # If we get here, all retries were exhausted
-        self._handle_retry_exhausted(model_call_obj, max_retries, last_error)
+        self._handle_retry_exhausted(model_call_obj, retry_count, last_error)
 
         if last_error:
             raise last_error
         raise RuntimeError(
-            f"Maximum retries ({max_retries}) exceeded for ModelCall {model_call_obj.id}."
+            f"Maximum retries ({retry_count}) exceeded for ModelCall {model_call_obj.id}."
         )
 
     def _handle_retryable_error(
@@ -462,16 +520,30 @@ class AdClassifier:
     ) -> None:
         """Handle a retryable error during LLM call."""
         self.logger.error(
-            f"LLM InternalServerError for ModelCall {model_call_obj.id} (attempt {current_attempt_num}): {error}"
+            f"LLM retryable error for ModelCall {model_call_obj.id} (attempt {current_attempt_num}): {error}"
         )
         model_call_obj.error_message = str(error)
         self.db_session.add(model_call_obj)
         self.db_session.commit()
 
-        wait_time = (2**attempt) * 1  # Exponential backoff: 1, 2, 4 seconds...
-        self.logger.info(
-            f"Waiting {wait_time}s before next retry for ModelCall {model_call_obj.id}."
-        )
+        # Use longer backoff for rate limiting errors
+        error_str = str(error).lower()
+        if any(
+            term in error_str
+            for term in ["rate_limit_error", "ratelimiterror", "429", "rate limit"]
+        ):
+            # For rate limiting, use longer backoff: 60, 120, 240 seconds
+            wait_time = 60 * (2**attempt)
+            self.logger.info(
+                f"Rate limit detected. Waiting {wait_time}s before retry for ModelCall {model_call_obj.id}."
+            )
+        else:
+            # For other errors, use shorter exponential backoff: 1, 2, 4 seconds
+            wait_time = (2**attempt) * 1
+            self.logger.info(
+                f"Waiting {wait_time}s before next retry for ModelCall {model_call_obj.id}."
+            )
+
         time.sleep(wait_time)
 
     def _handle_retry_exhausted(
