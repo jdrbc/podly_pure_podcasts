@@ -370,15 +370,23 @@ class AdClassifier:
                 if model_call_obj.status != "pending":
                     model_call_obj.status = "pending"
 
-                response = litellm.completion(
-                    model=model_call_obj.model_name,
-                    messages=[
+                # Prepare completion arguments
+                completion_args = {
+                    "model": model_call_obj.model_name,
+                    "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": model_call_obj.prompt},
                     ],
-                    max_tokens=self.config.openai_max_tokens,
-                    timeout=self.config.openai_timeout,
-                )
+                    "timeout": self.config.openai_timeout,
+                }
+                
+                # Use max_completion_tokens for GPT-5 models, max_tokens for others
+                if model_call_obj.model_name.lower().startswith("gpt-5"):
+                    completion_args["max_completion_tokens"] = self.config.openai_max_tokens
+                else:
+                    completion_args["max_tokens"] = self.config.openai_max_tokens
+                
+                response = litellm.completion(**completion_args)
 
                 response_first_choice = response.choices[0]
                 assert isinstance(response_first_choice, Choices)
