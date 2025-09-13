@@ -132,7 +132,7 @@ def clear_post_processing_data(post: Post) -> None:
             exc_info=True,
         )
         db.session.rollback()
-        raise PostException(f"Failed to clear processing data: {str(e)}")
+        raise PostException(f"Failed to clear processing data: {str(e)}") from e
 
 
 class PostException(Exception):
