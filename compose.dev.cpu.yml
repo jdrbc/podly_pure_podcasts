@@ -1,14 +1,23 @@
 services:
   podly:
     container_name: podly-pure-podcasts
-    ports:
-      - 5001:5001
-    image: ghcr.io/jdrbc/podly-pure-podcasts:${BRANCH:-main-latest}
+    image: podly-pure-podcasts
     volumes:
       - ./config:/app/config
       - ./in:/app/in
       - ./srv:/app/srv
       - ./src/instance:/app/src/instance
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BASE_IMAGE=${BASE_IMAGE:-python:3.11-slim}
+        - CUDA_VERSION=${CUDA_VERSION:-12.4.1}
+        - USE_GPU=${USE_GPU:-false}
+        - USE_GPU_NVIDIA=${USE_GPU_NVIDIA:-false}
+        - USE_GPU_AMD=${USE_GPU_AMD:-false}
+    ports:
+      - 5001:5001
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

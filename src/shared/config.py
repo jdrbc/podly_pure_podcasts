@@ -60,9 +60,23 @@ class Config(BaseModel):
     openai_timeout: int = 300
     output: OutputConfig
     processing: ProcessingConfig
-    server: Optional[str] = None
-    backend_server_port: int = 5002
-    frontend_server_port: int = 5001
+    host: str = "0.0.0.0"  # What the application should listen on
+    port: int = 5001  # Port the application should listen on
+    server: Optional[str] = Field(
+        default=None,
+        deprecated=True,
+        description="deprecated in favor of request-aware URL generation",
+    )
+    backend_server_port: int = Field(
+        default=5001,
+        deprecated=True,
+        description="deprecated in favor of unified 'port' setting",
+    )
+    frontend_server_port: int = Field(
+        default=5001,
+        deprecated=True,
+        description="deprecated in favor of unified 'port' setting",
+    )
     background_update_interval_minute: Optional[int] = None
     job_timeout: int = 10800  # Default to 3 hours if not set
     threads: int = 1

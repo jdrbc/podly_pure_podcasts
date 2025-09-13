@@ -61,14 +61,18 @@ For detailed setup instructions, see our [beginner's guide](docs/how_to_run_begi
 
    # Or start in background mode
    ./run_podly.sh -b
+   # Alternative: ./run_podly.sh -d
+
+   # Note: For frontend changes, restart the script to rebuild assets
    ```
 
 The script will automatically:
 
 - Set up Python virtual environment
-- Install frontend dependencies
+- Install and build frontend dependencies
+- Copy frontend assets to backend static folder
 - Configure environment variables from config.yml
-- Start both backend and frontend servers
+- Start the unified application server on port 5001
 
 ### Quick Start - With Docker
 
@@ -84,56 +88,25 @@ The script will automatically:
    ```bash
    # Make the script executable first
    chmod +x run_podly_docker.sh
+
+   # Start Podly (interactive mode)
    ./run_podly_docker.sh
+
+   # Or start in background mode
+   ./run_podly_docker.sh -d
+   # Alternative: ./run_podly_docker.sh -b
+
+   # For development with container rebuilding
+   ./run_podly_docker.sh --dev
    ```
 
    This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
-
-### Manual Setup
-
-If you prefer to run components separately:
-
-1. Install Python dependencies:
-
-   ```shell
-   pipenv --python 3.11
-   pipenv install
-   ```
-
-2. Install frontend dependencies:
-
-   ```shell
-   cd frontend
-   npm install
-   cd ..
-   ```
-
-3. Set up environment variables:
-
-   ```shell
-   # Set API URL based on your config.yml
-   export VITE_API_URL="http://localhost:5002"  # or your server URL
-   ```
-
-4. Start backend:
-
-   ```shell
-   pipenv run python src/main.py
-   ```
-
-5. Start frontend (in another terminal):
-   ```shell
-   cd frontend
-   npm run dev
-   ```
-
-The servers will start at http://localhost:5001 (frontend) and http://localhost:5002 (backend) by default.
 
 ## Usage
 
 Once the server is running:
 
-1. Open http://localhost:5001 in your web browser
+1. Open <http://localhost:5001> in your web browser
 2. Add podcast RSS feeds through the web interface
 3. Open your podcast app and subscribe to the Podly endpoint
    - For example, `http://localhost:5001/feed/1`
@@ -162,11 +135,70 @@ To use Groq for transcription, you'll need a Groq API key. Copy the `config/conf
 
 ## Remote Setup
 
-Podly works out of the box when running locally (see [Usage](#usage)). To run it on a remote server add SERVER to config/config.yml
+Podly works out of the box when running locally (see [Usage](#usage)). For remote deployment, the application automatically detects the requesting domain and generates appropriate URLs through request headers.
 
+### Configuration Options
+
+Podly provides flexible configuration options for different deployment scenarios:
+
+#### Application Settings
+
+```yaml
+# Application server settings (optional)
+host: 0.0.0.0 # Interface to listen on (default: 0.0.0.0, accepts all requests)
+port: 5001 # Port to listen on (default: 5001)
 ```
-SERVER=http://my.domain.com
+
+### Reverse Proxy Setup
+
+Podly automatically detects when it's running behind a reverse proxy and generates feed URLs using the requesting domain. This works seamlessly with most reverse proxy setups without any configuration.
+
+#### How It Works
+
+Podly uses request headers to determine the correct domain and protocol:
+
+1. **X-Forwarded headers** (highest priority): `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Forwarded-Port`
+2. **Host header** (fallback): Uses the `Host` header from the request
+3. **Configuration** (last resort): Falls back to config when no request context
+
+#### Example Results
+
+- Request to `https://my.domain.com/feed/1` → generates URLs like `https://my.domain.com/api/posts/abc123/download`
+- Request to `http://localhost:5001/feed/1` → generates URLs like `http://localhost:5001/api/posts/abc123/download`
+
+#### Reverse Proxy Examples
+
+**Nginx:**
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+}
 ```
+
+**Traefik (docker-compose.yml):**
+
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.podly.rule=Host(`your-domain.com`)"
+  - "traefik.http.routers.podly.tls.certresolver=letsencrypt"
+  - "traefik.http.services.podly.loadbalancer.server.port=5001"
+```
+
+> **Note**: Most modern reverse proxies automatically set the required headers. No manual configuration is needed in most cases.
+
+### Basic Authentication
 
 Podly supports basic authentication. See below for example setup for `httpd.conf`.
 
@@ -174,7 +206,7 @@ Podly supports basic authentication. See below for example setup for `httpd.conf
 LoadModule proxy_module modules/mod_proxy.so
 LoadModule proxy_http_module modules/mod_proxy_http.so
 
-ProxyPass / http://127.0.0.1:5002/
+ProxyPass / http://127.0.0.1:5001/
 RequestHeader set X-Forwarded-Proto http
 RequestHeader set X-Forwarded-Prefix /
 
@@ -313,7 +345,7 @@ You can use these command-line options with the run script:
 
 - Uses local Docker builds
 - Requires rebuilding after code changes: `./run_podly_docker.sh --dev`
-- Mounts only essential directories (config, input/output, database)
+- Mounts essential directories (config, input/output, database) and live code for development
 - Good for: development, testing, customization
 
 **Production Mode**:
@@ -324,7 +356,7 @@ You can use these command-line options with the run script:
 - Good for: deployment, quick setup, consistent environments
 
 ```bash
-# Start with existing local containers
+# Start with existing local container
 ./run_podly_docker.sh
 
 # Rebuild and start after making code changes
@@ -336,26 +368,13 @@ You can use these command-line options with the run script:
 
 ### Docker Environment Configuration
 
-The Docker setup uses runtime environment variables that can be configured when starting the containers:
+The Docker setup uses runtime environment variables that can be configured when starting the container:
 
-**Frontend API URL Configuration**:
-
-- `VITE_API_URL`: Sets the backend API URL for the frontend (default: `http://localhost:5002`)
-- Can be customized at runtime without rebuilding the image
-
-```bash
-# Example: Run with custom API URL
-VITE_API_URL=http://your-server.com:5002 ./run_podly_docker.sh
-
-# Or set in Docker Compose environment:
-docker compose up -e VITE_API_URL=http://your-server.com:5002
-```
-
-**Other Environment Variables**:
+**Environment Variables**:
 
 - `PUID`/`PGID`: User/group IDs for file permissions (automatically set by run script)
 - `CUDA_VISIBLE_DEVICES`: GPU device selection for CUDA acceleration
-- `CORS_ORIGINS`: Backend CORS configuration
+- `CORS_ORIGINS`: Backend CORS configuration (defaults to accept requests from any origin)
 
 ## FAQ
 
@@ -393,6 +412,45 @@ We welcome contributions to Podly! Here's how you can help:
    ```bash
    git checkout -b feature/your-feature-name
    ```
+
+#### Application Ports
+
+Both local and Docker deployments provide a consistent experience:
+
+- **Application**: Runs on port 5001 (configurable via `config.yml`)
+  - Serves both the web interface and API endpoints
+  - Frontend is built as static assets and served by the backend
+- **Development**: Both `run_podly.sh` and `run_podly_docker.sh` serve everything on port 5001
+  - Local script builds frontend to static assets (like Docker)
+  - Restart `./run_podly.sh` after frontend changes to rebuild assets
+
+#### Development Modes
+
+Both scripts provide equivalent core functionality with some unique features:
+
+**Common Options (work in both scripts)**:
+
+- `-b/--background` or `-d/--detach`: Run in background mode
+- `-h/--help`: Show help information
+
+**Local Development** (`./run_podly.sh`):
+
+- **Development mode**: `./run_podly.sh` - always builds frontend fresh, restart after frontend changes
+- Focused on local development only (use Docker script for production)
+
+**Docker Development** (`./run_podly_docker.sh`):
+
+- **Development mode**: `./run_podly_docker.sh --dev` - rebuilds containers with code changes
+- **Production mode**: `./run_podly_docker.sh --production` - uses pre-built images
+- **Docker-specific options**: `--build`, `--test-build`, `--gpu`, `--cpu`, `--cuda=VERSION`, `--rocm=VERSION`, `--branch=BRANCH`
+
+**Functional Equivalence**:
+Both scripts provide the same core user experience:
+
+- Application runs on port 5001 (configurable)
+- Frontend served as static assets by Flask backend
+- Same web interface and API endpoints
+- Compatible background/detached modes
 
 ### Running Tests
 

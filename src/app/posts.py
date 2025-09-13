@@ -3,7 +3,6 @@ from typing import Optional
 
 from app import logger
 from app.models import Post
-from app.processor import get_processor
 from podcast_processor.podcast_downloader import get_and_make_download_path
 from podcast_processor.podcast_processor import get_post_processed_audio_path
 
@@ -65,24 +64,6 @@ def remove_associated_files(post: Post) -> None:
             f"Unexpected error in remove_associated_files for post {post.id}: {e}",
             exc_info=True,
         )
-
-
-def download_and_process_post(p_guid: str) -> Optional[str]:
-    """
-    Download and process a podcast episode using the PodcastProcessor.
-    This function now delegates to the processor to avoid code duplication.
-
-    Args:
-        p_guid: The GUID of the post to download and process
-
-    Returns:
-        Path to the processed audio file, or None if processing failed
-    """
-    try:
-        return get_processor().process_by_guid(p_guid)
-    except Exception as e:
-        # Convert processor exceptions to PostException for backward compatibility
-        raise PostException(str(e)) from e
 
 
 class PostException(Exception):
