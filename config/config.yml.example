@@ -9,6 +9,15 @@ llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # openai_timeout: 300
 # openai_max_tokens: 4096
 
+# Optional: Rate limiting controls
+# llm_max_concurrent_calls: 3           # Reduce concurrent calls to prevent rate limits (default: 3)
+# llm_max_retry_attempts: 5             # Maximum retry attempts for failed LLM calls (default: 5)
+# llm_max_input_tokens_per_call: 25000  # Maximum input tokens per LLM call to stay under API limits
+
+# Token-based rate limiting (prevents hitting API rate limits)
+# llm_enable_token_rate_limiting: true   # Enable client-side token counting and rate limiting
+# llm_max_input_tokens_per_minute: 25000 # Override default rate limit (detected automatically by model)
+
 # Application server settings
 # host: 0.0.0.0  # Interface to listen on (default: 0.0.0.0, accepts all requests)
 # port: 5001     # Port to listen on (default: 5001)
