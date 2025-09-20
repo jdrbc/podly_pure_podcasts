@@ -197,9 +197,9 @@ def configure_rate_limiter_for_model(model: str) -> TokenRateLimiter:
         "anthropic/claude-3-5-sonnet-20240620": 30000,
         "anthropic/claude-sonnet-4-20250514": 30000,
         "anthropic/claude-3-opus-20240229": 30000,
-        # OpenAI models - higher limits typically
-        "gpt-4o": 150000,
+        # OpenAI models
         "gpt-4o-mini": 200000,
+        "gpt-4o": 150000,
         "gpt-4": 40000,
         # Google Gemini models
         "gemini/gemini-2.5-flash": 60000,
