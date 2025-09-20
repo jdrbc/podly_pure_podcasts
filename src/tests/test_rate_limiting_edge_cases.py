@@ -7,36 +7,12 @@ from unittest.mock import patch
 
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.token_rate_limiter import TokenRateLimiter
-from shared.config import Config
+
+from .test_helpers import create_test_config
 
 
 class TestRateLimitingEdgeCases:
     """Test edge cases and boundary conditions for rate limiting."""
-
-    def create_test_config(self, **overrides):
-        """Create a test configuration."""
-        config_data = {
-            "llm_model": "anthropic/claude-3-5-sonnet-20240620",
-            "llm_api_key": "test-key",
-            "llm_enable_token_rate_limiting": True,
-            "llm_max_retry_attempts": 3,
-            "llm_max_concurrent_calls": 2,
-            "openai_timeout": 300,
-            "openai_max_tokens": 4096,
-            "output": {
-                "fade_ms": 3000,
-                "min_ad_segement_separation_seconds": 60,
-                "min_ad_segment_length_seconds": 14,
-                "min_confidence": 0.8,
-            },
-            "processing": {
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
-                "num_segments_to_input_to_prompt": 30,
-            },
-        }
-        config_data.update(overrides)
-        return Config(**config_data)
 
     def test_token_counting_edge_cases(self):
         """Test token counting with edge cases."""
@@ -95,7 +71,7 @@ class TestRateLimitingEdgeCases:
     def test_config_validation_boundary_values(self):
         """Test configuration with boundary values."""
         # Test minimum values
-        config = self.create_test_config(
+        config = create_test_config(
             llm_max_concurrent_calls=1,
             llm_max_retry_attempts=1,
             llm_max_input_tokens_per_call=1,
@@ -108,7 +84,7 @@ class TestRateLimitingEdgeCases:
 
     def test_error_classification_comprehensive(self):
         """Test comprehensive error classification scenarios."""
-        config = self.create_test_config()
+        config = create_test_config()
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)
@@ -156,7 +132,7 @@ class TestRateLimitingEdgeCases:
     @patch("time.sleep")
     def test_backoff_progression(self, mock_sleep):
         """Test the complete backoff progression for different error types."""
-        config = self.create_test_config()
+        config = create_test_config()
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)

@@ -6,40 +6,16 @@ from unittest.mock import Mock, patch
 
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.token_rate_limiter import TokenRateLimiter
-from shared.config import Config
+
+from .test_helpers import create_test_config
 
 
 class TestAdClassifierRateLimiting:
     """Test cases for rate limiting integration in AdClassifier."""
 
-    def create_test_config(self, **overrides):
-        """Create a test configuration with rate limiting enabled."""
-        config_data = {
-            "llm_model": "anthropic/claude-3-5-sonnet-20240620",
-            "llm_api_key": "test-key",
-            "llm_enable_token_rate_limiting": True,
-            "llm_max_retry_attempts": 3,
-            "llm_max_concurrent_calls": 2,
-            "openai_timeout": 300,
-            "openai_max_tokens": 4096,
-            "output": {
-                "fade_ms": 3000,
-                "min_ad_segement_separation_seconds": 60,
-                "min_ad_segment_length_seconds": 14,
-                "min_confidence": 0.8,
-            },
-            "processing": {
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
-                "num_segments_to_input_to_prompt": 30,
-            },
-        }
-        config_data.update(overrides)
-        return Config(**config_data)
-
     def test_rate_limiter_initialization_enabled(self):
         """Test that rate limiter is properly initialized when enabled."""
-        config = self.create_test_config()
+        config = create_test_config()
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)
@@ -52,7 +28,7 @@ class TestAdClassifierRateLimiting:
 
     def test_rate_limiter_initialization_disabled(self):
         """Test that rate limiter is None when disabled."""
-        config = self.create_test_config(llm_enable_token_rate_limiting=False)
+        config = create_test_config(llm_enable_token_rate_limiting=False)
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)
@@ -61,7 +37,7 @@ class TestAdClassifierRateLimiting:
 
     def test_rate_limiter_custom_limit(self):
         """Test rate limiter with custom token limit."""
-        config = self.create_test_config(llm_max_input_tokens_per_minute=15000)
+        config = create_test_config(llm_max_input_tokens_per_minute=15000)
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)
@@ -71,7 +47,7 @@ class TestAdClassifierRateLimiting:
 
     def test_is_retryable_error_rate_limit_errors(self):
         """Test that rate limit errors are correctly identified as retryable."""
-        config = self.create_test_config()
+        config = create_test_config()
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)
@@ -90,7 +66,7 @@ class TestAdClassifierRateLimiting:
 
     def test_is_retryable_error_non_retryable(self):
         """Test that non-retryable errors are correctly identified."""
-        config = self.create_test_config()
+        config = create_test_config()
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)
@@ -112,7 +88,7 @@ class TestAdClassifierRateLimiting:
         # Make isinstance return True for our mock objects
         mock_isinstance.return_value = True
 
-        config = self.create_test_config()
+        config = create_test_config()
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)
@@ -165,7 +141,7 @@ class TestAdClassifierRateLimiting:
     @patch("time.sleep")
     def test_rate_limit_backoff_timing(self, mock_sleep):
         """Test that rate limit errors use longer backoff timing."""
-        config = self.create_test_config()
+        config = create_test_config()
 
         with patch("podcast_processor.ad_classifier.db.session") as mock_session:
             classifier = AdClassifier(config=config, db_session=mock_session)
@@ -199,7 +175,7 @@ class TestAdClassifierRateLimiting:
 
             trl_module._rate_limiter = None
 
-            config = self.create_test_config(llm_model=model_name)
+            config = create_test_config(llm_model=model_name)
 
             with patch("podcast_processor.ad_classifier.db.session") as mock_session:
                 classifier = AdClassifier(config=config, db_session=mock_session)
