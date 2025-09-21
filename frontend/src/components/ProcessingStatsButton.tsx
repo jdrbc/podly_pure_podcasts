@@ -8,10 +8,10 @@ interface ProcessingStatsButtonProps {
   className?: string;
 }
 
-export default function ProcessingStatsButton({ 
-  episodeGuid, 
+export default function ProcessingStatsButton({
+  episodeGuid,
   hasProcessedAudio,
-  className = '' 
+  className = ''
 }: ProcessingStatsButtonProps) {
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'model-calls' | 'transcript' | 'identifications'>('overview');
@@ -27,7 +27,7 @@ export default function ProcessingStatsButton({
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.round(seconds % 60); // Round to nearest whole second
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes}m ${secs}s`;
     }
@@ -50,24 +50,16 @@ export default function ProcessingStatsButton({
   };
 
   if (!hasProcessedAudio) {
-    return (
-      <button
-        disabled
-        className={`px-3 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-400 cursor-not-allowed ${className}`}
-        title="Post must be processed first"
-      >
-        📊 Stats
-      </button>
-    );
+    return null;
   }
 
   return (
     <>
       <button
         onClick={() => setShowModal(true)}
-        className={`px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors flex items-center gap-1 ${className}`}
+        className={`px-3 py-1 text-xs rounded font-medium transition-colors border bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 flex items-center gap-1 ${className}`}
       >
-        📊 Stats
+        Stats
       </button>
 
       {/* Modal */}
@@ -157,14 +149,14 @@ export default function ProcessingStatsButton({
                             </div>
                             <div className="text-sm text-blue-800">Transcript Segments</div>
                           </div>
-                          
+
                           <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center">
                             <div className="text-2xl font-bold text-green-600">
                               {stats.processing_stats?.content_segments || 0}
                             </div>
                             <div className="text-sm text-green-800">Content Segments</div>
                           </div>
-                          
+
                           <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 text-center">
                             <div className="text-2xl font-bold text-red-600">
                               {stats.processing_stats?.ad_segments_count || 0}
@@ -328,8 +320,8 @@ export default function ProcessingStatsButton({
                                   </td>
                                   <td className="px-4 py-3">
                                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                                      segment.primary_label === 'ad' 
-                                        ? 'bg-red-100 text-red-800' 
+                                      segment.primary_label === 'ad'
+                                        ? 'bg-red-100 text-red-800'
                                         : 'bg-green-100 text-green-800'
                                     }`}>
                                       {segment.primary_label === 'ad' ? 'Ad' : 'Content'}
@@ -379,8 +371,8 @@ export default function ProcessingStatsButton({
                                   </td>
                                   <td className="px-4 py-3">
                                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                                      identification.label === 'ad' 
-                                        ? 'bg-red-100 text-red-800' 
+                                      identification.label === 'ad'
+                                        ? 'bg-red-100 text-red-800'
                                         : 'bg-green-100 text-green-800'
                                     }`}>
                                       {identification.label}
@@ -411,4 +403,4 @@ export default function ProcessingStatsButton({
       )}
     </>
   );
-} 
+}
