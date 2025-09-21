@@ -48,6 +48,7 @@ DETACHED=false
 PRODUCTION_MODE=true
 REBUILD=false
 BRANCH_SUFFIX="main"
+LITE_BUILD=false
 
 # Detect NVIDIA GPU
 NVIDIA_GPU_AVAILABLE=false
@@ -102,6 +103,9 @@ while [[ $# -gt 0 ]]; do
             BRANCH_NAME="${1#*=}"
             BRANCH_SUFFIX="${BRANCH_NAME}"
             ;;
+        --lite)
+            LITE_BUILD=true
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -118,12 +122,13 @@ while [[ $# -gt 0 ]]; do
             echo "  --rebuild           Rebuild containers before starting"
             echo "  --production        Use published images (default)"
             echo "  --branch=BRANCH     Use specific branch images"
+            echo "  --lite              Build without Whisper (smaller image, remote transcription only)"
             echo "  -h, --help          Show this help message"
             exit 0
             ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [--rocm=VERSION] [-d|--detach] [-b|--background] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME] [-h|--help]"
+            echo "Usage: $0 [--build] [--test-build] [--gpu] [--cpu] [--cuda=VERSION] [--rocm=VERSION] [-d|--detach] [-b|--background] [--dev] [--rebuild] [--production] [--branch=BRANCH_NAME] [--lite] [-h|--help]"
             exit 1
             ;;
     esac
@@ -187,6 +192,7 @@ export CUDA_VISIBLE_DEVICES
 export USE_GPU
 export USE_GPU_NVIDIA
 export USE_GPU_AMD
+export LITE_BUILD
 
 # Setup Docker Compose configuration
 if [ "$PRODUCTION_MODE" = true ]; then
@@ -199,6 +205,12 @@ if [ "$PRODUCTION_MODE" = true ]; then
     else
         export BRANCH="${BRANCH_SUFFIX}-latest"
     fi
+
+    # Append lite suffix if building lite version
+    if [ "$LITE_BUILD" = true ]; then
+        export BRANCH="${BRANCH}-lite"
+    fi
+
     echo -e "${YELLOW}Production mode - using published images${NC}"
     echo -e "${YELLOW}  Branch tag: ${BRANCH}${NC}"
     if [ "$BRANCH_SUFFIX" != "main" ]; then
@@ -214,6 +226,9 @@ else
     fi
     if [ "$REBUILD" = true ]; then
         echo -e "${YELLOW}Rebuild mode - will rebuild containers before starting${NC}"
+    fi
+    if [ "$LITE_BUILD" = true ]; then
+        echo -e "${YELLOW}Lite mode - building without Whisper (remote transcription only)${NC}"
     fi
 fi
 

@@ -25,6 +25,7 @@ ARG ROCM_VERSION=6.4
 ARG USE_GPU=false
 ARG USE_GPU_NVIDIA=${USE_GPU}
 ARG USE_GPU_AMD=false
+ARG LITE_BUILD=false
 
 WORKDIR /app
 
@@ -53,8 +54,8 @@ RUN if [ -f /etc/debian_version ]; then \
     fi ; \
     fi
 
-# Set up Python environment
-COPY Pipfile Pipfile.lock ./
+# Copy all Pipfiles/lock files
+COPY Pipfile Pipfile.lock Pipfile.lite Pipfile.lite.lock ./
 
 # Install pipenv and dependencies
 RUN if command -v pip >/dev/null 2>&1; then \
@@ -63,11 +64,30 @@ RUN if command -v pip >/dev/null 2>&1; then \
     pip3 install --no-cache-dir pipenv; \
     else \
     python3 -m pip install --no-cache-dir pipenv; \
-    fi && \
-    pipenv install --deploy --system --dev
+    fi
 
-# Install PyTorch with CUDA support if using NVIDIA image
-RUN if [ "${USE_GPU}" = "true" ] || [ "${USE_GPU_NVIDIA}" = "true" ]; then \
+# Set pip timeout and retries for better reliability
+ENV PIP_DEFAULT_TIMEOUT=1000
+ENV PIP_RETRIES=3
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_NO_CACHE_DIR=1
+
+# Install dependencies conditionally based on LITE_BUILD
+RUN set -e && \
+    if [ "${LITE_BUILD}" = "true" ]; then \
+    echo "Installing lite dependencies (without Whisper)"; \
+    echo "Using lite Pipfile:" && \
+    PIPENV_PIPFILE=Pipfile.lite PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system; \
+    else \
+    echo "Installing full dependencies (including Whisper)"; \
+    echo "Using full Pipfile:" && \
+    PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system; \
+    fi
+
+# Install PyTorch with CUDA support if using NVIDIA image (skip if LITE_BUILD)
+RUN if [ "${LITE_BUILD}" = "true" ]; then \
+    echo "Skipping PyTorch installation in lite mode"; \
+    elif [ "${USE_GPU}" = "true" ] || [ "${USE_GPU_NVIDIA}" = "true" ]; then \
     if command -v pip >/dev/null 2>&1; then \
     pip install --no-cache-dir nvidia-cudnn-cu12 torch; \
     elif command -v pip3 >/dev/null 2>&1; then \

@@ -3,7 +3,7 @@ services:
     container_name: podly-pure-podcasts
     ports:
       - 5001:5001
-    image: ghcr.io/jdrbc/podly-pure-podcasts:${BRANCH:-main-latest}
+    image: ghcr.io/${REPO_OWNER:-jdrbc}/podly-pure-podcasts:${BRANCH:-main-latest}
     volumes:
       - ./config:/app/config
       - ./in:/app/in
