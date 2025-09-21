@@ -1,4 +1,0 @@
-llm_api_key: XXXXXXXXXXXXXXXXXXXXXXXX
-llm_model: gemini/gemini-2.0-flash
-
-# ...copy the rest from config.yml.example
