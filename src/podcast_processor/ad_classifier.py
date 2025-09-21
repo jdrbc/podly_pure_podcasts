@@ -463,13 +463,15 @@ class AdClassifier:
                     "messages": messages,
                     "timeout": self.config.openai_timeout,
                 }
-                
+
                 # Use max_completion_tokens for GPT-5 models, max_tokens for others
                 if model_call_obj.model_name.lower().startswith("gpt-5"):
-                    completion_args["max_completion_tokens"] = self.config.openai_max_tokens
+                    completion_args["max_completion_tokens"] = (
+                        self.config.openai_max_tokens
+                    )
                 else:
                     completion_args["max_tokens"] = self.config.openai_max_tokens
-                
+
                 response = litellm.completion(**completion_args)
 
                 response_first_choice = response.choices[0]
