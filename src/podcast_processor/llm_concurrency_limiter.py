@@ -37,13 +37,18 @@ class LLMConcurrencyLimiter:
         """
         Acquire a slot for making an LLM API call.
 
+        Note: Consider using ConcurrencyContext for automatic resource management.
+
         Args:
             timeout: Maximum time to wait for a slot in seconds. None means wait indefinitely.
 
         Returns:
             True if a slot was acquired, False if timeout occurred
         """
-        acquired = self._semaphore.acquire(timeout=timeout)  # pylint: disable=consider-using-with
+        # Disable specific pylint warning for this line as manual semaphore control is needed
+        acquired = self._semaphore.acquire(  # pylint: disable=consider-using-with
+            timeout=timeout
+        )
         if acquired:
             logger.debug("Acquired LLM concurrency slot")
         else:
@@ -53,7 +58,11 @@ class LLMConcurrencyLimiter:
         return acquired
 
     def release(self) -> None:
-        """Release a slot after completing an LLM API call."""
+        """
+        Release a slot after completing an LLM API call.
+
+        Note: Consider using ConcurrencyContext for automatic resource management.
+        """
         self._semaphore.release()
         logger.debug("Released LLM concurrency slot")
 
