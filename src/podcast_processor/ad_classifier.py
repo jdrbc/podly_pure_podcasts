@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import litellm
 from jinja2 import Template
@@ -91,14 +91,27 @@ class AdClassifier:
 
         num_segments_per_prompt = self.config.processing.num_segments_to_input_to_prompt
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
-            self._process_segment_chunk(
-                transcript_segments=transcript_segments,
-                start_idx=i,
-                end_idx=min(i + num_segments_per_prompt, len(transcript_segments)),
-                system_prompt=system_prompt,
-                user_prompt_template=user_prompt_template,
-                post=post,
-            )
+            end_idx = min(i + num_segments_per_prompt, len(transcript_segments))
+
+            # If per-call token limiting is enabled, validate and potentially split the chunk
+            if self.config.llm_max_input_tokens_per_call is not None:
+                self._process_segment_chunk_with_token_limit(
+                    transcript_segments=transcript_segments,
+                    start_idx=i,
+                    end_idx=end_idx,
+                    system_prompt=system_prompt,
+                    user_prompt_template=user_prompt_template,
+                    post=post,
+                )
+            else:
+                self._process_segment_chunk(
+                    transcript_segments=transcript_segments,
+                    start_idx=i,
+                    end_idx=end_idx,
+                    system_prompt=system_prompt,
+                    user_prompt_template=user_prompt_template,
+                    post=post,
+                )
 
     def _process_segment_chunk(
         self,
@@ -157,6 +170,159 @@ class AdClassifier:
             self.logger.info(
                 f"LLM call for ModelCall {model_call.id} was not successful (status: {model_call.status}). No identifications to process."
             )
+
+    def _process_segment_chunk_with_token_limit(
+        self,
+        *,
+        transcript_segments: List[TranscriptSegment],
+        start_idx: int,
+        end_idx: int,
+        system_prompt: str,
+        user_prompt_template: Template,
+        post: Post,
+    ) -> None:
+        """Process a chunk of transcript segments with token limit validation."""
+        current_start = start_idx
+
+        while current_start < end_idx:
+            # Try progressively smaller chunks until we find one that fits the token limit
+            for current_end in range(end_idx, current_start, -1):
+                # Generate prompt for this sub-chunk
+                temp_segments = transcript_segments[current_start:current_end]
+                if not temp_segments:
+                    break
+
+                user_prompt_str = self._generate_user_prompt(
+                    current_chunk_db_segments=temp_segments,
+                    post=post,
+                    user_prompt_template=user_prompt_template,
+                    start_idx=current_start,
+                    end_idx=current_end,
+                    total_segments=len(transcript_segments),
+                )
+
+                # Check if this prompt fits within the token limit
+                if self._validate_token_limit(user_prompt_str, system_prompt):
+                    self.logger.info(
+                        f"Processing sub-chunk with {len(temp_segments)} segments "
+                        f"(indices {current_start}-{current_end}) for post {post.id}"
+                    )
+
+                    # Process this valid sub-chunk
+                    self._process_segment_chunk(
+                        transcript_segments=transcript_segments,
+                        start_idx=current_start,
+                        end_idx=current_end,
+                        system_prompt=system_prompt,
+                        user_prompt_template=user_prompt_template,
+                        post=post,
+                    )
+
+                    current_start = current_end
+                    break
+            else:
+                # If we can't find any valid chunk size, try with a single segment
+                if current_start + 1 <= end_idx:
+                    self.logger.warning(
+                        f"Even single segment at index {current_start} exceeds token limit. "
+                        f"Processing anyway for post {post.id}"
+                    )
+                    self._process_segment_chunk(
+                        transcript_segments=transcript_segments,
+                        start_idx=current_start,
+                        end_idx=current_start + 1,
+                        system_prompt=system_prompt,
+                        user_prompt_template=user_prompt_template,
+                        post=post,
+                    )
+                    current_start += 1
+                else:
+                    break
+
+    def _validate_token_limit(self, user_prompt_str: str, system_prompt: str) -> bool:
+        """Validate that the prompt doesn't exceed the configured token limit."""
+        if self.config.llm_max_input_tokens_per_call is None:
+            return True
+
+        # Create messages as they would be sent to the API
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt_str},
+        ]
+
+        # Count tokens (reuse the existing token counting logic from rate limiter)
+        if self.rate_limiter:
+            token_count = self.rate_limiter.count_tokens(
+                messages, self.config.llm_model
+            )
+        else:
+            # Fallback token estimation if no rate limiter
+            total_chars = len(system_prompt) + len(user_prompt_str)
+            token_count = total_chars // 4  # ~4 characters per token
+
+        is_valid = token_count <= self.config.llm_max_input_tokens_per_call
+
+        if not is_valid:
+            self.logger.debug(
+                f"Prompt exceeds token limit: {token_count} > {self.config.llm_max_input_tokens_per_call}"
+            )
+        else:
+            self.logger.debug(
+                f"Prompt within token limit: {token_count} <= {self.config.llm_max_input_tokens_per_call}"
+            )
+
+        return is_valid
+
+    def _prepare_api_call(
+        self, model_call_obj: ModelCall, system_prompt: str
+    ) -> Optional[Dict[str, Any]]:
+        """Prepare API call arguments and validate token limits."""
+        # Prepare messages for the API call
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": model_call_obj.prompt},
+        ]
+
+        # Use rate limiter to wait if necessary and track token usage
+        if self.rate_limiter:
+            self.rate_limiter.wait_if_needed(messages, model_call_obj.model_name)
+
+            # Get usage stats for logging
+            usage_stats = self.rate_limiter.get_usage_stats()
+            self.logger.info(
+                f"Token usage: {usage_stats['current_usage']}/{usage_stats['limit']} "
+                f"({usage_stats['usage_percentage']:.1f}%) for ModelCall {model_call_obj.id}"
+            )
+
+        # Final validation: Check per-call token limit before making API call
+        if self.config.llm_max_input_tokens_per_call is not None:
+            if not self._validate_token_limit(model_call_obj.prompt, system_prompt):
+                error_msg = (
+                    f"Prompt for ModelCall {model_call_obj.id} exceeds configured "
+                    f"token limit of {self.config.llm_max_input_tokens_per_call}. "
+                    f"Consider reducing num_segments_to_input_to_prompt."
+                )
+                self.logger.error(error_msg)
+                model_call_obj.status = "failed"
+                model_call_obj.error_message = error_msg
+                self.db_session.add(model_call_obj)
+                self.db_session.commit()
+                return None
+
+        # Prepare completion arguments
+        completion_args = {
+            "model": model_call_obj.model_name,
+            "messages": messages,
+            "timeout": self.config.openai_timeout,
+        }
+
+        # Use max_completion_tokens for GPT-5 models, max_tokens for others
+        if model_call_obj.model_name.lower().startswith("gpt-5"):
+            completion_args["max_completion_tokens"] = self.config.openai_max_tokens
+        else:
+            completion_args["max_tokens"] = self.config.openai_max_tokens
+
+        return completion_args
 
     def _generate_user_prompt(
         self,
@@ -438,39 +604,10 @@ class AdClassifier:
                 if model_call_obj.status != "pending":
                     model_call_obj.status = "pending"
 
-                # Prepare messages for the API call
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": model_call_obj.prompt},
-                ]
-
-                # Use rate limiter to wait if necessary and track token usage
-                if self.rate_limiter:
-                    self.rate_limiter.wait_if_needed(
-                        messages, model_call_obj.model_name
-                    )
-
-                    # Get usage stats for logging
-                    usage_stats = self.rate_limiter.get_usage_stats()
-                    self.logger.info(
-                        f"Token usage: {usage_stats['current_usage']}/{usage_stats['limit']} "
-                        f"({usage_stats['usage_percentage']:.1f}%) for ModelCall {model_call_obj.id}"
-                    )
-
-                # Prepare completion arguments
-                completion_args = {
-                    "model": model_call_obj.model_name,
-                    "messages": messages,
-                    "timeout": self.config.openai_timeout,
-                }
-
-                # Use max_completion_tokens for GPT-5 models, max_tokens for others
-                if model_call_obj.model_name.lower().startswith("gpt-5"):
-                    completion_args["max_completion_tokens"] = (
-                        self.config.openai_max_tokens
-                    )
-                else:
-                    completion_args["max_tokens"] = self.config.openai_max_tokens
+                # Prepare API call and validate token limits
+                completion_args = self._prepare_api_call(model_call_obj, system_prompt)
+                if completion_args is None:
+                    return None  # Token limit exceeded
 
                 response = litellm.completion(**completion_args)
 
