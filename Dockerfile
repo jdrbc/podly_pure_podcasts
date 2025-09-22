@@ -72,7 +72,11 @@ ENV PIP_RETRIES=3
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV PIP_NO_CACHE_DIR=1
 
-# Install dependencies conditionally based on LITE_BUILD
+# Set pipenv configuration for better CI reliability
+ENV PIPENV_VENV_IN_PROJECT=1
+ENV PIPENV_TIMEOUT=1200
+
+# Install dependencies conditionally based on LITE_BUILD with improved error handling
 RUN set -e && \
     if [ "${LITE_BUILD}" = "true" ]; then \
     echo "Installing lite dependencies (without Whisper)"; \
