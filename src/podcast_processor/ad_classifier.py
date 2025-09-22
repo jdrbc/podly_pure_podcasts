@@ -11,6 +11,11 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
+from podcast_processor.llm_concurrency_limiter import (
+    ConcurrencyContext,
+    LLMConcurrencyLimiter,
+    get_concurrency_limiter,
+)
 from podcast_processor.model_output import (
     AdSegmentPredictionList,
     clean_and_parse_model_output,
@@ -61,6 +66,18 @@ class AdClassifier:
         else:
             self.rate_limiter = None
             self.logger.info("Token rate limiting disabled")
+
+        # Initialize concurrency limiter for LLM API calls
+        self.concurrency_limiter: Optional[LLMConcurrencyLimiter]
+        max_concurrent = getattr(self.config, "llm_max_concurrent_calls", 3)
+        if max_concurrent > 0:
+            self.concurrency_limiter = get_concurrency_limiter(max_concurrent)
+            self.logger.info(
+                f"LLM concurrency limiting enabled: max {max_concurrent} concurrent calls"
+            )
+        else:
+            self.concurrency_limiter = None
+            self.logger.info("LLM concurrency limiting disabled")
 
     def classify(
         self,
@@ -609,7 +626,12 @@ class AdClassifier:
                 if completion_args is None:
                     return None  # Token limit exceeded
 
-                response = litellm.completion(**completion_args)
+                # Use concurrency limiter if available
+                if self.concurrency_limiter:
+                    with ConcurrencyContext(self.concurrency_limiter, timeout=30.0):
+                        response = litellm.completion(**completion_args)
+                else:
+                    response = litellm.completion(**completion_args)
 
                 response_first_choice = response.choices[0]
                 assert isinstance(response_first_choice, Choices)
