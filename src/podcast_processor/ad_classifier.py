@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import litellm
 from jinja2 import Template
@@ -11,11 +11,20 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
+from podcast_processor.llm_concurrency_limiter import (
+    ConcurrencyContext,
+    LLMConcurrencyLimiter,
+    get_concurrency_limiter,
+)
 from podcast_processor.model_output import (
     AdSegmentPredictionList,
     clean_and_parse_model_output,
 )
 from podcast_processor.prompt import transcript_excerpt_for_prompt
+from podcast_processor.token_rate_limiter import (
+    TokenRateLimiter,
+    configure_rate_limiter_for_model,
+)
 from podcast_processor.transcribe import Segment
 from shared.config import Config, TestWhisperConfig
 
@@ -36,6 +45,39 @@ class AdClassifier:
         self.model_call_query = model_call_query or ModelCall.query
         self.identification_query = identification_query or Identification.query
         self.db_session = db_session or db.session
+
+        # Initialize rate limiter for the configured model
+        self.rate_limiter: Optional[TokenRateLimiter]
+        if self.config.llm_enable_token_rate_limiting:
+            tokens_per_minute = self.config.llm_max_input_tokens_per_minute
+            if tokens_per_minute is None:
+                # Use model-specific defaults
+                self.rate_limiter = configure_rate_limiter_for_model(
+                    self.config.llm_model
+                )
+            else:
+                # Use custom limit
+                from podcast_processor.token_rate_limiter import get_rate_limiter
+
+                self.rate_limiter = get_rate_limiter(tokens_per_minute)
+                self.logger.info(
+                    f"Using custom token rate limit: {tokens_per_minute}/min"
+                )
+        else:
+            self.rate_limiter = None
+            self.logger.info("Token rate limiting disabled")
+
+        # Initialize concurrency limiter for LLM API calls
+        self.concurrency_limiter: Optional[LLMConcurrencyLimiter]
+        max_concurrent = getattr(self.config, "llm_max_concurrent_calls", 3)
+        if max_concurrent > 0:
+            self.concurrency_limiter = get_concurrency_limiter(max_concurrent)
+            self.logger.info(
+                f"LLM concurrency limiting enabled: max {max_concurrent} concurrent calls"
+            )
+        else:
+            self.concurrency_limiter = None
+            self.logger.info("LLM concurrency limiting disabled")
 
     def classify(
         self,
@@ -66,14 +108,27 @@ class AdClassifier:
 
         num_segments_per_prompt = self.config.processing.num_segments_to_input_to_prompt
         for i in range(0, len(transcript_segments), num_segments_per_prompt):
-            self._process_segment_chunk(
-                transcript_segments=transcript_segments,
-                start_idx=i,
-                end_idx=min(i + num_segments_per_prompt, len(transcript_segments)),
-                system_prompt=system_prompt,
-                user_prompt_template=user_prompt_template,
-                post=post,
-            )
+            end_idx = min(i + num_segments_per_prompt, len(transcript_segments))
+
+            # If per-call token limiting is enabled, validate and potentially split the chunk
+            if self.config.llm_max_input_tokens_per_call is not None:
+                self._process_segment_chunk_with_token_limit(
+                    transcript_segments=transcript_segments,
+                    start_idx=i,
+                    end_idx=end_idx,
+                    system_prompt=system_prompt,
+                    user_prompt_template=user_prompt_template,
+                    post=post,
+                )
+            else:
+                self._process_segment_chunk(
+                    transcript_segments=transcript_segments,
+                    start_idx=i,
+                    end_idx=end_idx,
+                    system_prompt=system_prompt,
+                    user_prompt_template=user_prompt_template,
+                    post=post,
+                )
 
     def _process_segment_chunk(
         self,
@@ -132,6 +187,159 @@ class AdClassifier:
             self.logger.info(
                 f"LLM call for ModelCall {model_call.id} was not successful (status: {model_call.status}). No identifications to process."
             )
+
+    def _process_segment_chunk_with_token_limit(
+        self,
+        *,
+        transcript_segments: List[TranscriptSegment],
+        start_idx: int,
+        end_idx: int,
+        system_prompt: str,
+        user_prompt_template: Template,
+        post: Post,
+    ) -> None:
+        """Process a chunk of transcript segments with token limit validation."""
+        current_start = start_idx
+
+        while current_start < end_idx:
+            # Try progressively smaller chunks until we find one that fits the token limit
+            for current_end in range(end_idx, current_start, -1):
+                # Generate prompt for this sub-chunk
+                temp_segments = transcript_segments[current_start:current_end]
+                if not temp_segments:
+                    break
+
+                user_prompt_str = self._generate_user_prompt(
+                    current_chunk_db_segments=temp_segments,
+                    post=post,
+                    user_prompt_template=user_prompt_template,
+                    start_idx=current_start,
+                    end_idx=current_end,
+                    total_segments=len(transcript_segments),
+                )
+
+                # Check if this prompt fits within the token limit
+                if self._validate_token_limit(user_prompt_str, system_prompt):
+                    self.logger.info(
+                        f"Processing sub-chunk with {len(temp_segments)} segments "
+                        f"(indices {current_start}-{current_end}) for post {post.id}"
+                    )
+
+                    # Process this valid sub-chunk
+                    self._process_segment_chunk(
+                        transcript_segments=transcript_segments,
+                        start_idx=current_start,
+                        end_idx=current_end,
+                        system_prompt=system_prompt,
+                        user_prompt_template=user_prompt_template,
+                        post=post,
+                    )
+
+                    current_start = current_end
+                    break
+            else:
+                # If we can't find any valid chunk size, try with a single segment
+                if current_start + 1 <= end_idx:
+                    self.logger.warning(
+                        f"Even single segment at index {current_start} exceeds token limit. "
+                        f"Processing anyway for post {post.id}"
+                    )
+                    self._process_segment_chunk(
+                        transcript_segments=transcript_segments,
+                        start_idx=current_start,
+                        end_idx=current_start + 1,
+                        system_prompt=system_prompt,
+                        user_prompt_template=user_prompt_template,
+                        post=post,
+                    )
+                    current_start += 1
+                else:
+                    break
+
+    def _validate_token_limit(self, user_prompt_str: str, system_prompt: str) -> bool:
+        """Validate that the prompt doesn't exceed the configured token limit."""
+        if self.config.llm_max_input_tokens_per_call is None:
+            return True
+
+        # Create messages as they would be sent to the API
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt_str},
+        ]
+
+        # Count tokens (reuse the existing token counting logic from rate limiter)
+        if self.rate_limiter:
+            token_count = self.rate_limiter.count_tokens(
+                messages, self.config.llm_model
+            )
+        else:
+            # Fallback token estimation if no rate limiter
+            total_chars = len(system_prompt) + len(user_prompt_str)
+            token_count = total_chars // 4  # ~4 characters per token
+
+        is_valid = token_count <= self.config.llm_max_input_tokens_per_call
+
+        if not is_valid:
+            self.logger.debug(
+                f"Prompt exceeds token limit: {token_count} > {self.config.llm_max_input_tokens_per_call}"
+            )
+        else:
+            self.logger.debug(
+                f"Prompt within token limit: {token_count} <= {self.config.llm_max_input_tokens_per_call}"
+            )
+
+        return is_valid
+
+    def _prepare_api_call(
+        self, model_call_obj: ModelCall, system_prompt: str
+    ) -> Optional[Dict[str, Any]]:
+        """Prepare API call arguments and validate token limits."""
+        # Prepare messages for the API call
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": model_call_obj.prompt},
+        ]
+
+        # Use rate limiter to wait if necessary and track token usage
+        if self.rate_limiter:
+            self.rate_limiter.wait_if_needed(messages, model_call_obj.model_name)
+
+            # Get usage stats for logging
+            usage_stats = self.rate_limiter.get_usage_stats()
+            self.logger.info(
+                f"Token usage: {usage_stats['current_usage']}/{usage_stats['limit']} "
+                f"({usage_stats['usage_percentage']:.1f}%) for ModelCall {model_call_obj.id}"
+            )
+
+        # Final validation: Check per-call token limit before making API call
+        if self.config.llm_max_input_tokens_per_call is not None:
+            if not self._validate_token_limit(model_call_obj.prompt, system_prompt):
+                error_msg = (
+                    f"Prompt for ModelCall {model_call_obj.id} exceeds configured "
+                    f"token limit of {self.config.llm_max_input_tokens_per_call}. "
+                    f"Consider reducing num_segments_to_input_to_prompt."
+                )
+                self.logger.error(error_msg)
+                model_call_obj.status = "failed"
+                model_call_obj.error_message = error_msg
+                self.db_session.add(model_call_obj)
+                self.db_session.commit()
+                return None
+
+        # Prepare completion arguments
+        completion_args = {
+            "model": model_call_obj.model_name,
+            "messages": messages,
+            "timeout": self.config.openai_timeout,
+        }
+
+        # Use max_completion_tokens for GPT-5 models, max_tokens for others
+        if model_call_obj.model_name.lower().startswith("gpt-5"):
+            completion_args["max_completion_tokens"] = self.config.openai_max_tokens
+        else:
+            completion_args["max_tokens"] = self.config.openai_max_tokens
+
+        return completion_args
 
     def _generate_user_prompt(
         self,
@@ -368,14 +576,31 @@ class AdClassifier:
         if isinstance(error, InternalServerError):
             return True
 
-        # Check for 503 errors in other exception types
+        # Check for retryable HTTP errors in other exception types
         error_str = str(error).lower()
-        return "503" in error_str or "service unavailable" in error_str
+        return (
+            "503" in error_str
+            or "service unavailable" in error_str
+            or "rate_limit_error" in error_str
+            or "ratelimiterror" in error_str
+            or "429" in error_str
+            or "rate limit" in error_str
+        )
 
     def _call_model(
-        self, model_call_obj: ModelCall, system_prompt: str, max_retries: int = 3
+        self,
+        model_call_obj: ModelCall,
+        system_prompt: str,
+        max_retries: Optional[int] = None,
     ) -> Optional[str]:
         """Call the LLM model with retry logic."""
+        # Use configured retry count if not specified
+        retry_count = (
+            max_retries
+            if max_retries is not None
+            else getattr(self.config, "llm_max_retry_attempts", 3)
+        )
+
         last_error: Optional[Exception] = None
         raw_response_content = None
         original_retry_attempts = (
@@ -384,35 +609,29 @@ class AdClassifier:
             else model_call_obj.retry_attempts
         )
 
-        for attempt in range(max_retries):
+        for attempt in range(retry_count):
             model_call_obj.retry_attempts = original_retry_attempts + attempt + 1
             current_attempt_num = attempt + 1
 
             self.logger.info(
-                f"Calling model {model_call_obj.model_name} for ModelCall {model_call_obj.id} (attempt {current_attempt_num}/{max_retries})"
+                f"Calling model {model_call_obj.model_name} for ModelCall {model_call_obj.id} (attempt {current_attempt_num}/{retry_count})"
             )
 
             try:
                 if model_call_obj.status != "pending":
                     model_call_obj.status = "pending"
 
-                # Prepare completion arguments
-                completion_args = {
-                    "model": model_call_obj.model_name,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": model_call_obj.prompt},
-                    ],
-                    "timeout": self.config.openai_timeout,
-                }
-                
-                # Use max_completion_tokens for GPT-5 models, max_tokens for others
-                if model_call_obj.model_name.lower().startswith("gpt-5"):
-                    completion_args["max_completion_tokens"] = self.config.openai_max_tokens
+                # Prepare API call and validate token limits
+                completion_args = self._prepare_api_call(model_call_obj, system_prompt)
+                if completion_args is None:
+                    return None  # Token limit exceeded
+
+                # Use concurrency limiter if available
+                if self.concurrency_limiter:
+                    with ConcurrencyContext(self.concurrency_limiter, timeout=30.0):
+                        response = litellm.completion(**completion_args)
                 else:
-                    completion_args["max_tokens"] = self.config.openai_max_tokens
-                
-                response = litellm.completion(**completion_args)
+                    response = litellm.completion(**completion_args)
 
                 response_first_choice = response.choices[0]
                 assert isinstance(response_first_choice, Choices)
@@ -452,12 +671,12 @@ class AdClassifier:
                     raise  # Re-raise non-retryable exceptions immediately
 
         # If we get here, all retries were exhausted
-        self._handle_retry_exhausted(model_call_obj, max_retries, last_error)
+        self._handle_retry_exhausted(model_call_obj, retry_count, last_error)
 
         if last_error:
             raise last_error
         raise RuntimeError(
-            f"Maximum retries ({max_retries}) exceeded for ModelCall {model_call_obj.id}."
+            f"Maximum retries ({retry_count}) exceeded for ModelCall {model_call_obj.id}."
         )
 
     def _handle_retryable_error(
@@ -470,16 +689,30 @@ class AdClassifier:
     ) -> None:
         """Handle a retryable error during LLM call."""
         self.logger.error(
-            f"LLM InternalServerError for ModelCall {model_call_obj.id} (attempt {current_attempt_num}): {error}"
+            f"LLM retryable error for ModelCall {model_call_obj.id} (attempt {current_attempt_num}): {error}"
         )
         model_call_obj.error_message = str(error)
         self.db_session.add(model_call_obj)
         self.db_session.commit()
 
-        wait_time = (2**attempt) * 1  # Exponential backoff: 1, 2, 4 seconds...
-        self.logger.info(
-            f"Waiting {wait_time}s before next retry for ModelCall {model_call_obj.id}."
-        )
+        # Use longer backoff for rate limiting errors
+        error_str = str(error).lower()
+        if any(
+            term in error_str
+            for term in ["rate_limit_error", "ratelimiterror", "429", "rate limit"]
+        ):
+            # For rate limiting, use longer backoff: 60, 120, 240 seconds
+            wait_time = 60 * (2**attempt)
+            self.logger.info(
+                f"Rate limit detected. Waiting {wait_time}s before retry for ModelCall {model_call_obj.id}."
+            )
+        else:
+            # For other errors, use shorter exponential backoff: 1, 2, 4 seconds
+            wait_time = (2**attempt) * 1
+            self.logger.info(
+                f"Waiting {wait_time}s before next retry for ModelCall {model_call_obj.id}."
+            )
+
         time.sleep(wait_time)
 
     def _handle_retry_exhausted(

@@ -20,6 +20,15 @@ llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
 # llm_model: gemini/gemini-2.5-flash
 # llm_model: gemini/gemini-2.5-pro
 
+# Optional: Rate limiting controls
+# llm_max_concurrent_calls: 3           # Reduce concurrent calls to prevent rate limits (default: 3)
+# llm_max_retry_attempts: 5             # Maximum retry attempts for failed LLM calls (default: 5)
+# llm_max_input_tokens_per_call: 25000  # Maximum input tokens per LLM call to stay under API limits
+
+# Token-based rate limiting (prevents hitting API rate limits)
+# llm_enable_token_rate_limiting: true   # Enable client-side token counting and rate limiting
+# llm_max_input_tokens_per_minute: 25000 # Override default rate limit (detected automatically by model)
+
 # Optional: OpenAI settings (for custom endpoints or local models)
 # openai_base_url: http://127.0.0.1:11434/v1        # For local ollama or other OpenAI-compatible APIs
 # openai_timeout: 300                               # Timeout in seconds

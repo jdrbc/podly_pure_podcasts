@@ -72,16 +72,20 @@ ENV PIP_RETRIES=3
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV PIP_NO_CACHE_DIR=1
 
+# Set pipenv configuration for better CI reliability
+ENV PIPENV_VENV_IN_PROJECT=1
+ENV PIPENV_TIMEOUT=1200
+
 # Install dependencies conditionally based on LITE_BUILD
 RUN set -e && \
     if [ "${LITE_BUILD}" = "true" ]; then \
     echo "Installing lite dependencies (without Whisper)"; \
     echo "Using lite Pipfile:" && \
-    PIPENV_PIPFILE=Pipfile.lite PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system; \
+    PIPENV_PIPFILE=Pipfile.lite pipenv install --deploy --system; \
     else \
     echo "Installing full dependencies (including Whisper)"; \
     echo "Using full Pipfile:" && \
-    PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy --system; \
+    PIPENV_PIPFILE=Pipfile pipenv install --deploy --system; \
     fi
 
 # Install PyTorch with CUDA support if using NVIDIA image (skip if LITE_BUILD)

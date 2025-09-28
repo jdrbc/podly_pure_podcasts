@@ -58,6 +58,25 @@ class Config(BaseModel):
     openai_base_url: Optional[str] = None
     openai_max_tokens: int = 4096
     openai_timeout: int = 300
+    # Optional: Rate limiting controls
+    llm_max_concurrent_calls: int = Field(
+        default=3, description="Maximum concurrent LLM calls to prevent rate limiting"
+    )
+    llm_max_retry_attempts: int = Field(
+        default=5, description="Maximum retry attempts for failed LLM calls"
+    )
+    llm_max_input_tokens_per_call: Optional[int] = Field(
+        default=None,
+        description="Maximum input tokens per LLM call to stay under API limits",
+    )
+    # Token-based rate limiting
+    llm_enable_token_rate_limiting: bool = Field(
+        default=True, description="Enable client-side token-based rate limiting"
+    )
+    llm_max_input_tokens_per_minute: Optional[int] = Field(
+        default=None,
+        description="Override default tokens per minute limit for the model",
+    )
     output: OutputConfig
     processing: ProcessingConfig
     host: str = "0.0.0.0"  # What the application should listen on
