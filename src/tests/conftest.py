@@ -11,14 +11,15 @@ from unittest.mock import MagicMock
 import pytest
 from flask import Flask
 
-from app import db
+from app.extensions import db
 from app.models import ProcessingJob, TranscriptSegment
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.podcast_downloader import PodcastDownloader
 from podcast_processor.processing_status_manager import ProcessingStatusManager
 from podcast_processor.transcription_manager import TranscriptionManager
-from shared.config import Config, get_config
+from shared.config import Config
+from shared.test_utils import create_standard_test_config
 
 # Set up whisper and torch mocks
 whisper_mock = MagicMock()
@@ -56,7 +57,7 @@ def app() -> Generator[Flask, None, None]:
 
 @pytest.fixture
 def test_config() -> Config:
-    return get_config("config/config_test.yml")
+    return create_standard_test_config()
 
 
 @pytest.fixture

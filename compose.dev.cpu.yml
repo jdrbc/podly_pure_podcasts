@@ -3,10 +3,9 @@ services:
     container_name: podly-pure-podcasts
     image: podly-pure-podcasts
     volumes:
-      - ./config:/app/config
-      - ./in:/app/in
-      - ./srv:/app/srv
       - ./src/instance:/app/src/instance
+    env_file:
+      - ./.env.local
     build:
       context: .
       dockerfile: Dockerfile
@@ -18,12 +17,12 @@ services:
         - USE_GPU_AMD=${USE_GPU_AMD:-false}
         - LITE_BUILD=${LITE_BUILD:-false}
     ports:
-      - 5001:5001
+      - "5001:5001"
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
-      - CORS_ORIGINS=*
+      - SERVER_THREADS=${SERVER_THREADS:-1}
     restart: unless-stopped
     healthcheck:
       test:
@@ -31,7 +30,7 @@ services:
           "CMD",
           "python3",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:5001/')",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/')",
         ]
       interval: 30s
       timeout: 10s

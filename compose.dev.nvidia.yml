@@ -3,11 +3,14 @@ services:
     extends:
       file: compose.dev.cpu.yml
       service: podly
+    env_file:
+      - ./.env.local
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - CUDA_VISIBLE_DEVICES=0
       - CORS_ORIGINS=*
+      - SERVER_THREADS=${SERVER_THREADS:-1}
     deploy:
       resources:
         reservations:

@@ -1,4 +1,5 @@
 import datetime
+import logging
 import uuid
 from unittest import mock
 
@@ -6,7 +7,6 @@ import feedparser
 import PyRSS2Gen
 import pytest
 
-from app import logger
 from app.feeds import (
     _get_base_url,
     add_feed,
@@ -18,6 +18,8 @@ from app.feeds import (
     get_guid,
     make_post,
 )
+
+logger = logging.getLogger("global_logger")
 
 
 class MockPost:

@@ -3,7 +3,7 @@ from typing import Any, List, Optional
 
 from sqlalchemy.exc import IntegrityError
 
-from app import db
+from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
 from shared.config import (
     Config,

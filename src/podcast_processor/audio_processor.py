@@ -1,7 +1,7 @@
 import logging
 from typing import Any, List, Optional, Tuple
 
-from app import db
+from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
 from podcast_processor.audio import clip_segments_with_fade, get_audio_duration_ms
 from shared.config import Config

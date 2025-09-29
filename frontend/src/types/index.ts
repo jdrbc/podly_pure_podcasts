@@ -38,3 +38,64 @@ export interface Job {
   completed_at: string | null;
   error_message: string | null;
 }
+
+// ----- Configuration Types -----
+
+export interface LLMConfig {
+  llm_api_key?: string | null;
+  llm_model: string;
+  openai_base_url?: string | null;
+  openai_timeout: number;
+  openai_max_tokens: number;
+  llm_max_concurrent_calls: number;
+  llm_max_retry_attempts: number;
+  llm_max_input_tokens_per_call?: number | null;
+  llm_enable_token_rate_limiting: boolean;
+  llm_max_input_tokens_per_minute?: number | null;
+}
+
+export type WhisperConfig =
+  | { whisper_type: 'local'; model: string }
+  | {
+      whisper_type: 'remote';
+      model: string;
+      api_key?: string | null;
+      base_url?: string;
+      language: string;
+      timeout_sec: number;
+      chunksize_mb: number;
+    }
+  | {
+      whisper_type: 'groq';
+      api_key?: string | null;
+      model: string;
+      language: string;
+      max_retries: number;
+    }
+  | { whisper_type: 'test' };
+
+export interface ProcessingConfigUI {
+  num_segments_to_input_to_prompt: number;
+}
+
+export interface OutputConfigUI {
+  fade_ms: number;
+  // Note the intentional spelling to match backend
+  min_ad_segement_separation_seconds: number;
+  min_ad_segment_length_seconds: number;
+  min_confidence: number;
+}
+
+export interface AppConfigUI {
+  background_update_interval_minute: number | null;
+  automatically_whitelist_new_episodes: boolean;
+  number_of_episodes_to_whitelist_from_archive_of_new_feed: number;
+}
+
+export interface CombinedConfig {
+  llm: LLMConfig;
+  whisper: WhisperConfig;
+  processing: ProcessingConfigUI;
+  output: OutputConfigUI;
+  app: AppConfigUI;
+}

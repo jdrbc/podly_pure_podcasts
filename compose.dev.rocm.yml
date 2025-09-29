@@ -3,6 +3,8 @@ services:
     extends:
       file: compose.dev.cpu.yml
       service: podly
+    env_file:
+      - ./.env.local
     devices:
       - /dev/kfd
       - /dev/dri
@@ -11,6 +13,7 @@ services:
       - PGID=${PGID:-1000}
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
       - CORS_ORIGINS=*
+      - SERVER_THREADS=${SERVER_THREADS:-1}
       # Don't ask me why this is needed for ROCM. See
       # https://github.com/openai/whisper/discussions/55#discussioncomment-3714528
       - HSA_OVERRIDE_GFX_VERSION=10.3.0

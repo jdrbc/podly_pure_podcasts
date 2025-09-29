@@ -2,7 +2,8 @@ import os
 import uuid
 from datetime import datetime
 
-from app import db
+from app.extensions import db
+from shared import defaults as DEFAULTS
 
 
 def generate_job_id() -> str:
@@ -15,7 +16,7 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     alt_id = db.Column(
         db.Text, nullable=True
-    )  # used for backwards compatibility with feeds defined in config.yml
+    )  # used for backwards compatibility with legacy YAML-based feed definitions
     title = db.Column(db.Text, nullable=False)
     description = db.Column(db.Text)
     author = db.Column(db.Text)
@@ -183,3 +184,146 @@ class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
 
     def __repr__(self) -> str:
         return f"<ProcessingJob {self.id} Post:{self.post_guid} Status:{self.status} Step:{self.current_step}/{self.total_steps}>"
+
+
+# ----- Application Settings (Singleton Tables) -----
+
+
+class LLMSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "llm_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    llm_api_key = db.Column(db.Text, nullable=True)
+    llm_model = db.Column(db.Text, nullable=False, default=DEFAULTS.LLM_DEFAULT_MODEL)
+    openai_base_url = db.Column(db.Text, nullable=True)
+    openai_timeout = db.Column(
+        db.Integer, nullable=False, default=DEFAULTS.OPENAI_DEFAULT_TIMEOUT_SEC
+    )
+    openai_max_tokens = db.Column(
+        db.Integer, nullable=False, default=DEFAULTS.OPENAI_DEFAULT_MAX_TOKENS
+    )
+    llm_max_concurrent_calls = db.Column(
+        db.Integer, nullable=False, default=DEFAULTS.LLM_DEFAULT_MAX_CONCURRENT_CALLS
+    )
+    llm_max_retry_attempts = db.Column(
+        db.Integer, nullable=False, default=DEFAULTS.LLM_DEFAULT_MAX_RETRY_ATTEMPTS
+    )
+    llm_max_input_tokens_per_call = db.Column(db.Integer, nullable=True)
+    llm_enable_token_rate_limiting = db.Column(
+        db.Boolean, nullable=False, default=DEFAULTS.LLM_ENABLE_TOKEN_RATE_LIMITING
+    )
+    llm_max_input_tokens_per_minute = db.Column(db.Integer, nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class WhisperSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "whisper_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    whisper_type = db.Column(
+        db.Text, nullable=False, default=DEFAULTS.WHISPER_DEFAULT_TYPE
+    )  # local|remote|groq|test
+
+    # Local
+    local_model = db.Column(
+        db.Text, nullable=False, default=DEFAULTS.WHISPER_LOCAL_MODEL
+    )
+
+    # Remote
+    remote_model = db.Column(
+        db.Text, nullable=False, default=DEFAULTS.WHISPER_REMOTE_MODEL
+    )
+    remote_api_key = db.Column(db.Text, nullable=True)
+    remote_base_url = db.Column(
+        db.Text, nullable=False, default=DEFAULTS.WHISPER_REMOTE_BASE_URL
+    )
+    remote_language = db.Column(
+        db.Text, nullable=False, default=DEFAULTS.WHISPER_REMOTE_LANGUAGE
+    )
+    remote_timeout_sec = db.Column(
+        db.Integer, nullable=False, default=DEFAULTS.WHISPER_REMOTE_TIMEOUT_SEC
+    )
+    remote_chunksize_mb = db.Column(
+        db.Integer, nullable=False, default=DEFAULTS.WHISPER_REMOTE_CHUNKSIZE_MB
+    )
+
+    # Groq
+    groq_api_key = db.Column(db.Text, nullable=True)
+    groq_model = db.Column(db.Text, nullable=False, default=DEFAULTS.WHISPER_GROQ_MODEL)
+    groq_language = db.Column(
+        db.Text, nullable=False, default=DEFAULTS.WHISPER_GROQ_LANGUAGE
+    )
+    groq_max_retries = db.Column(
+        db.Integer, nullable=False, default=DEFAULTS.WHISPER_GROQ_MAX_RETRIES
+    )
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ProcessingSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "processing_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    # Deprecated: paths are now hardcoded; keep columns for migration compatibility
+    system_prompt_path = db.Column(
+        db.Text, nullable=False, default="src/system_prompt.txt"
+    )
+    user_prompt_template_path = db.Column(
+        db.Text, nullable=False, default="src/user_prompt.jinja"
+    )
+    num_segments_to_input_to_prompt = db.Column(
+        db.Integer,
+        nullable=False,
+        default=DEFAULTS.PROCESSING_NUM_SEGMENTS_TO_INPUT_TO_PROMPT,
+    )
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OutputSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "output_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    fade_ms = db.Column(db.Integer, nullable=False, default=DEFAULTS.OUTPUT_FADE_MS)
+    min_ad_segement_separation_seconds = db.Column(
+        db.Integer,
+        nullable=False,
+        default=DEFAULTS.OUTPUT_MIN_AD_SEGMENT_SEPARATION_SECONDS,
+    )
+    min_ad_segment_length_seconds = db.Column(
+        db.Integer,
+        nullable=False,
+        default=DEFAULTS.OUTPUT_MIN_AD_SEGMENT_LENGTH_SECONDS,
+    )
+    min_confidence = db.Column(
+        db.Float, nullable=False, default=DEFAULTS.OUTPUT_MIN_CONFIDENCE
+    )
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AppSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "app_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    background_update_interval_minute = db.Column(
+        db.Integer, nullable=True
+    )  # intentionally nullable; default applied in config store/runtime
+    automatically_whitelist_new_episodes = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=DEFAULTS.APP_AUTOMATICALLY_WHITELIST_NEW_EPISODES,
+    )
+    number_of_episodes_to_whitelist_from_archive_of_new_feed = db.Column(
+        db.Integer,
+        nullable=False,
+        default=DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
+    )
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

@@ -1,12 +1,13 @@
+import logging
 import re
 from pathlib import Path
 
 import flask
 import validators
-from flask import Blueprint, current_app, send_file
+from flask import Blueprint, current_app, send_from_directory
 from flask.typing import ResponseReturnValue
 
-from app import db, logger
+from app.extensions import db
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.models import (
     Feed,
@@ -17,6 +18,10 @@ from app.models import (
     TranscriptSegment,
 )
 from podcast_processor.podcast_downloader import sanitize_title
+from shared.processing_paths import get_in_root, get_srv_root
+
+logger = logging.getLogger("global_logger")
+
 
 feed_bp = Blueprint("feed", __name__)
 
@@ -163,7 +168,7 @@ def _cleanup_feed_directories(feed: Feed) -> None:
     sanitized_feed_title = sanitized_feed_title.rstrip(".")
     sanitized_feed_title = re.sub(r"\s+", "_", sanitized_feed_title)
 
-    srv_feed_dir = Path("srv") / sanitized_feed_title
+    srv_feed_dir = get_srv_root() / sanitized_feed_title
     if srv_feed_dir.exists() and srv_feed_dir.is_dir():
         try:
             # Remove all files in the directory first
@@ -183,7 +188,7 @@ def _cleanup_feed_directories(feed: Feed) -> None:
     # in/{sanitized_post_title}/
     for post in feed.posts:  # type: ignore[attr-defined]
         sanitized_post_title = sanitize_title(post.title)
-        in_post_dir = Path("in") / sanitized_post_title
+        in_post_dir = get_in_root() / sanitized_post_title
         if in_post_dir.exists() and in_post_dir.is_dir():
             try:
                 # Remove all files in the directory first
@@ -204,9 +209,12 @@ def _cleanup_feed_directories(feed: Feed) -> None:
 def get_feed_by_alt_or_url(something_or_rss: str) -> flask.Response:
     # first try to serve ANY static file matching the path
     if current_app.static_folder is not None:
-        static_file_path = Path(current_app.static_folder) / something_or_rss
-        if static_file_path.exists() and static_file_path.is_file():
-            return send_file(static_file_path)
+        # Use Flask's safe helper to prevent directory traversal outside static_folder
+        try:
+            return send_from_directory(current_app.static_folder, something_or_rss)
+        except Exception:
+            # Not a valid static file; fall through to RSS/DB lookup
+            pass
     feed = Feed.query.filter_by(rss_url=something_or_rss).first()
     if feed:
         xml_content = generate_feed_xml(feed)
@@ -215,3 +223,21 @@ def get_feed_by_alt_or_url(something_or_rss: str) -> flask.Response:
         return response
 
     return flask.make_response(("Feed not found", 404))
+
+
+@feed_bp.route("/feeds", methods=["GET"])
+def api_feeds() -> flask.Response:
+    feeds = Feed.query.all()
+    feeds_data = [
+        {
+            "id": feed.id,
+            "title": feed.title,
+            "rss_url": feed.rss_url,
+            "description": feed.description,
+            "author": feed.author,
+            "image_url": feed.image_url,
+            "posts_count": len(feed.posts),
+        }
+        for feed in feeds
+    ]
+    return flask.jsonify(feeds_data)

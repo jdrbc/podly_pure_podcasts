@@ -1,4 +1,5 @@
 import datetime
+import logging
 import uuid
 from typing import Any, Optional
 
@@ -6,9 +7,12 @@ import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
 from flask import request
 
-from app import config, db, logger
+from app import config
+from app.extensions import db
 from app.models import Feed, Post
 from podcast_processor.podcast_downloader import find_audio_link
+
+logger = logging.getLogger("global_logger")
 
 
 def _get_base_url() -> str:
@@ -47,7 +51,7 @@ def _get_base_url() -> str:
         pass
 
     # Use localhost with main app port
-    return f"http://localhost:{config.port}"
+    return "http://localhost:5001"
 
 
 def fetch_feed(url: str) -> feedparser.FeedParserDict:

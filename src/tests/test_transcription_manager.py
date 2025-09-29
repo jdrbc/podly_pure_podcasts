@@ -5,11 +5,12 @@ from unittest.mock import MagicMock
 import pytest
 from flask import Flask
 
-from app import db
+from app.extensions import db
 from app.models import ModelCall, Post, TranscriptSegment
 from podcast_processor.transcribe import Segment, Transcriber
 from podcast_processor.transcription_manager import TranscriptionManager
-from shared.config import Config, TestWhisperConfig, get_config
+from shared.config import Config, TestWhisperConfig
+from shared.test_utils import create_standard_test_config
 
 
 class MockTranscriber(Transcriber):
@@ -46,7 +47,7 @@ def app() -> Generator[Flask, None, None]:
 
 @pytest.fixture
 def test_config() -> Config:
-    config = get_config("config/config_test.yml")
+    config = create_standard_test_config()
     # Override whisper config to use test mode
     config.whisper = TestWhisperConfig()
     return config

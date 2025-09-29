@@ -21,8 +21,6 @@ class TestConfigurationErrorHandling:
                 "min_confidence": 0.8,
             },
             processing={
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
                 "num_segments_to_input_to_prompt": 30,
             },
         )
@@ -44,8 +42,6 @@ class TestConfigurationErrorHandling:
                 "min_confidence": 0.8,
             },
             processing={
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
                 "num_segments_to_input_to_prompt": 30,
             },
         )
@@ -68,8 +64,6 @@ class TestConfigurationErrorHandling:
                 "min_confidence": 0.8,
             },
             processing={
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
                 "num_segments_to_input_to_prompt": 30,
             },
         )
@@ -109,8 +103,6 @@ class TestConfigurationErrorHandling:
                 "min_confidence": 0.8,
             },
             processing={
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
                 "num_segments_to_input_to_prompt": 30,
             },
         )

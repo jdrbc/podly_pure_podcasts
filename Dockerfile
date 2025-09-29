@@ -119,10 +119,8 @@ RUN if [ "${LITE_BUILD}" = "true" ]; then \
 
 # Copy application code
 COPY src/ ./src/
+RUN rm -rf ./src/instance
 COPY scripts/ ./scripts/
-COPY config/config.yml.example ./config/
-COPY config/system_prompt.txt ./config/
-COPY config/user_prompt.jinja ./config/
 
 # Copy built frontend assets to Flask static folder
 COPY --from=frontend-build /app/dist ./src/app/static
@@ -134,7 +132,7 @@ RUN groupadd -r appuser && \
     chown -R appuser:appuser /home/appuser
 
 # Create necessary directories and set permissions
-RUN mkdir -p /app/in /app/srv /app/processing /app/src/instance && \
+RUN mkdir -p /app/processing /app/src/instance /app/src/instance/data /app/src/instance/data/in /app/src/instance/data/srv /app/src/instance/config /app/src/instance/db && \
     chown -R appuser:appuser /app
 
 # Copy entrypoint script

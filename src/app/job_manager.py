@@ -1,3 +1,4 @@
+import logging
 import os
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -5,14 +6,15 @@ from typing import Any, Dict, List
 
 from sqlalchemy import case
 
-from app import config
-from app import db as _db
-from app import logger, scheduler
+from app.extensions import db as _db
+from app.extensions import scheduler
 from app.feeds import refresh_feed
 from app.models import Feed, Post, ProcessingJob
 from app.processor import get_processor
 from podcast_processor.podcast_processor import ProcessorException
 from podcast_processor.processing_status_manager import ProcessingStatusManager
+
+logger = logging.getLogger("global_logger")
 
 
 class JobManager:
@@ -25,8 +27,7 @@ class JobManager:
 
     def __init__(self) -> None:
         # Shared thread pool across all submissions (API and scheduled)
-        max_workers = max(1, int(config.threads))
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._executor = ThreadPoolExecutor(max_workers=1)
 
         # Status manager for DB interactions
         self._status_manager = ProcessingStatusManager(

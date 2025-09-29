@@ -9,7 +9,7 @@ from litellm.types.utils import Choices
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from app import db
+from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
 from podcast_processor.llm_concurrency_limiter import (
     ConcurrencyContext,

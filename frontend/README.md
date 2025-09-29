@@ -8,13 +8,9 @@ The frontend is integrated into the main Podly application and served as static 
 
 ### Development Workflows
 
-1. **Local Development**: Use `./run_podly.sh` (from project root)
+1. **Docker (recommended)**: The Docker build compiles the frontend during image creation and serves static assets from Flask.
 
-   - Always builds frontend fresh at startup
-   - Restart the script after making frontend changes to rebuild assets
-   - Focused on local development only
-
-2. **Direct Frontend Development**: You can still run the frontend development server separately for advanced frontend work:
+2. **Direct Frontend Development**: You can run the frontend development server separately for advanced frontend work:
 
    ```bash
    cd frontend
@@ -24,25 +20,10 @@ The frontend is integrated into the main Podly application and served as static 
 
    This starts the Vite development server on port 5173 with hot reloading and proxies API calls to the backend on port 5001.
 
-### Frontend Changes
+### Build Process
 
-To see frontend changes when using `./run_podly.sh`, restart the application. The script always builds frontend assets fresh on startup.
-
-## Build Process
-
-The frontend build process depends on how you're running the application:
-
-1. **Local Development** (`./run_podly.sh`): Frontend is built fresh using `npm run build` and static files are served by Flask from port 5001
-2. **Direct Development** (`npm run dev`): Vite dev server serves files with hot reloading on port 5173 and proxies API calls to backend on port 5001
-3. **Docker**: Multi-stage build compiles frontend assets during image creation and copies them to the Flask static directory
-
-### Development Asset Rebuilding
-
-The `./run_podly.sh` script always builds frontend assets fresh on startup:
-
-- Runs `npm run build` to compile the latest frontend code
-- Copies the built assets to `src/app/static/` for Flask to serve
-- To see frontend changes, restart the script
+- **Direct Development** (`npm run dev`): Vite dev server serves files with hot reloading on port 5173 and proxies API calls to backend on port 5001
+- **Docker**: Multi-stage build compiles frontend assets during image creation and copies them to the Flask static directory
 
 ## Technology Stack
 

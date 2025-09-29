@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { feedsApi } from '../services/api';
+import { feedsApi, configApi } from '../services/api';
 import FeedList from '../components/FeedList';
 import FeedDetail from '../components/FeedDetail';
 import AddFeedForm from '../components/AddFeedForm';
-import type { Feed } from '../types';
+import type { Feed, CombinedConfig } from '../types';
 
 export default function HomePage() {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -13,6 +13,11 @@ export default function HomePage() {
   const { data: feeds, isLoading, error, refetch } = useQuery({
     queryKey: ['feeds'],
     queryFn: feedsApi.getFeeds,
+  });
+
+  useQuery<CombinedConfig>({
+    queryKey: ['config'],
+    queryFn: configApi.getConfig,
   });
 
   if (isLoading) {

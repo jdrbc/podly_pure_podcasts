@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Feed, Episode, Job } from '../types';
+import type { Feed, Episode, Job, CombinedConfig, LLMConfig, WhisperConfig } from '../types';
 
 const API_BASE_URL = '';
 
@@ -284,6 +284,38 @@ export const feedsApi = {
 
   getEpisodeOriginalDownloadUrl: (guid: string): string => {
     return feedsApi.getPostOriginalDownloadUrl(guid);
+  },
+};
+
+export const configApi = {
+  getConfig: async (): Promise<CombinedConfig> => {
+    const response = await api.get('/api/config');
+    return response.data;
+  },
+  isConfigured: async (): Promise<{ configured: boolean }> => {
+    const response = await api.get('/api/config/api_configured_check');
+    return { configured: !!response.data?.configured };
+  },
+  updateConfig: async (payload: Partial<CombinedConfig>): Promise<CombinedConfig> => {
+    const response = await api.put('/api/config', payload);
+    return response.data;
+  },
+  testLLM: async (
+    payload: Partial<{ llm: LLMConfig }>
+  ): Promise<{ ok: boolean; message?: string; error?: string }> => {
+    const response = await api.post('/api/config/test-llm', payload ?? {});
+    return response.data;
+  },
+  testWhisper: async (
+    payload: Partial<{ whisper: WhisperConfig }>
+  ): Promise<{ ok: boolean; message?: string; error?: string }> => {
+    const response = await api.post('/api/config/test-whisper', payload ?? {});
+    return response.data;
+  },
+  getWhisperCapabilities: async (): Promise<{ local_available: boolean }> => {
+    const response = await api.get('/api/config/whisper-capabilities');
+    const local_available = !!response.data?.local_available;
+    return { local_available };
   },
 };
 
