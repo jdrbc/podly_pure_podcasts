@@ -336,19 +336,20 @@ class AdClassifier:
         # Use max_completion_tokens for newer OpenAI models (o1, gpt-5, gpt-4o variants)
         # OpenAI deprecated max_tokens for these models in favor of max_completion_tokens
         model_lower = model_call_obj.model_name.lower()
-        
+
         # Check if this is a model that requires max_completion_tokens
         # This includes: gpt-5, gpt-4o variants, o1 series, and latest chatgpt models
         uses_max_completion_tokens = any(
-            pattern in model_lower 
+            pattern in model_lower
             for pattern in ["gpt-5", "gpt-4o", "o1-", "o1_", "o1/", "chatgpt-4o-latest"]
         )
-        
+
         # Debug logging to help diagnose model parameter issues
         self.logger.info(
             f"Model: '{model_call_obj.model_name}', using max_completion_tokens: {uses_max_completion_tokens}"
         )
-        
+
+
         if uses_max_completion_tokens:
             completion_args["max_completion_tokens"] = self.config.openai_max_tokens
         else:
