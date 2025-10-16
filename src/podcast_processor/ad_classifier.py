@@ -349,7 +349,6 @@ class AdClassifier:
             f"Model: '{model_call_obj.model_name}', using max_completion_tokens: {uses_max_completion_tokens}"
         )
 
-
         if uses_max_completion_tokens:
             completion_args["max_completion_tokens"] = self.config.openai_max_tokens
         else:
