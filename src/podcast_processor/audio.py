@@ -24,7 +24,6 @@ def clip_segments_with_fade(
     out_path: str,
 ) -> None:
 
-    in_stream = ffmpeg.input(in_path)
     audio_duration_ms = get_audio_duration_ms(in_path)
     assert audio_duration_ms is not None
 
@@ -34,13 +33,13 @@ def clip_segments_with_fade(
     for start_ms, end_ms in ad_segments_ms:
         trimmed_list.extend(
             [
-                in_stream.filter(
+                ffmpeg.input(in_path).filter(
                     "atrim", start=last_end / 1000.0, end=start_ms / 1000.0
                 ),
-                in_stream.filter(
+                ffmpeg.input(in_path).filter(
                     "atrim", start=start_ms / 1000.0, end=(start_ms + fade_ms) / 1000.0
                 ).filter("afade", t="out", ss=0, d=fade_ms / 1000.0),
-                in_stream.filter(
+                ffmpeg.input(in_path).filter(
                     "atrim", start=(end_ms - fade_ms) / 1000.0, end=end_ms / 1000.0
                 ).filter("afade", t="in", ss=0, d=fade_ms / 1000.0),
             ]
@@ -50,7 +49,7 @@ def clip_segments_with_fade(
 
     if last_end != audio_duration_ms:
         trimmed_list.append(
-            in_stream.filter(
+            ffmpeg.input(in_path).filter(
                 "atrim", start=last_end / 1000.0, end=audio_duration_ms / 1000.0
             )
         )
