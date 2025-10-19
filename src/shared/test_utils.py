@@ -31,8 +31,6 @@ def create_standard_test_config(
             min_confidence=0.7,
         ),
         processing=ProcessingConfig(
-            system_prompt_path="config/system_prompt.txt",
-            user_prompt_template_path="config/user_prompt.jinja",
             num_segments_to_input_to_prompt=num_segments_to_input_to_prompt,
         ),
     )

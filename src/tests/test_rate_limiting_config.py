@@ -19,8 +19,6 @@ class TestRateLimitingConfig:
                 "min_confidence": 0.8,
             },
             "processing": {
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
                 "num_segments_to_input_to_prompt": 30,
             },
         }
@@ -31,7 +29,7 @@ class TestRateLimitingConfig:
         assert config.llm_max_concurrent_calls == 3
         assert config.llm_max_retry_attempts == 5
         assert config.llm_max_input_tokens_per_call is None
-        assert config.llm_enable_token_rate_limiting is True
+        assert config.llm_enable_token_rate_limiting is False
         assert config.llm_max_input_tokens_per_minute is None
 
     def test_custom_rate_limiting_config(self):
@@ -50,8 +48,6 @@ class TestRateLimitingConfig:
                 "min_confidence": 0.8,
             },
             "processing": {
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
                 "num_segments_to_input_to_prompt": 30,
             },
         }
@@ -77,8 +73,6 @@ class TestRateLimitingConfig:
                 "min_confidence": 0.8,
             },
             "processing": {
-                "system_prompt_path": "config/system_prompt.txt",
-                "user_prompt_template_path": "config/user_prompt.jinja",
                 "num_segments_to_input_to_prompt": 30,
             },
         }
@@ -91,7 +85,7 @@ class TestRateLimitingConfig:
         # Test that defaults are used for other values
         assert config.llm_max_concurrent_calls == 3
         assert config.llm_max_input_tokens_per_call is None
-        assert config.llm_enable_token_rate_limiting is True
+        assert config.llm_enable_token_rate_limiting is False
         assert config.llm_max_input_tokens_per_minute is None
 
     def test_config_field_descriptions(self):

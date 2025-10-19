@@ -1,10 +1,13 @@
+import logging
 from pathlib import Path
 from typing import Optional
 
-from app import db, logger
+from app.extensions import db
 from app.models import Identification, ModelCall, Post, ProcessingJob, TranscriptSegment
 from podcast_processor.podcast_downloader import get_and_make_download_path
 from podcast_processor.podcast_processor import get_post_processed_audio_path
+
+logger = logging.getLogger("global_logger")
 
 
 def remove_associated_files(post: Post) -> None:

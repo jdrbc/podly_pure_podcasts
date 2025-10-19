@@ -9,10 +9,11 @@ import validators
 from flask import abort
 
 from app.models import Post
+from shared.processing_paths import get_in_root
 
 logger = logging.getLogger(__name__)
 
-DOWNLOAD_DIR = "in"
+DOWNLOAD_DIR = str(get_in_root())
 
 
 class PodcastDownloader:

@@ -36,12 +36,14 @@ def clip_segments_with_fade(
                 ffmpeg.input(in_path).filter(
                     "atrim", start=last_end / 1000.0, end=start_ms / 1000.0
                 ),
-                ffmpeg.input(in_path).filter(
+                ffmpeg.input(in_path)
+                .filter(
                     "atrim", start=start_ms / 1000.0, end=(start_ms + fade_ms) / 1000.0
-                ).filter("afade", t="out", ss=0, d=fade_ms / 1000.0),
-                ffmpeg.input(in_path).filter(
-                    "atrim", start=(end_ms - fade_ms) / 1000.0, end=end_ms / 1000.0
-                ).filter("afade", t="in", ss=0, d=fade_ms / 1000.0),
+                )
+                .filter("afade", t="out", ss=0, d=fade_ms / 1000.0),
+                ffmpeg.input(in_path)
+                .filter("atrim", start=(end_ms - fade_ms) / 1000.0, end=end_ms / 1000.0)
+                .filter("afade", t="in", ss=0, d=fade_ms / 1000.0),
             ]
         )
 

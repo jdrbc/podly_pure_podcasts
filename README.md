@@ -28,199 +28,54 @@ Here's how it works:
 
 For detailed setup instructions, see our [beginner's guide](docs/how_to_run_beginners.md).
 
-### Quick Start - No Docker
+### Quick Start (Docker - recommended)
 
-1. Install dependencies:
+1. Make the script executable and run:
 
-   ```shell
-   # Install ffmpeg
-   sudo apt install ffmpeg  # Ubuntu/Debian
-   # or
-   brew install ffmpeg      # macOS
+```bash
+chmod +x run_podly_docker.sh
+./run_podly_docker.sh --build
+./run_podly_docker.sh # foreground with logs
+# or detached
+./run_podly_docker.sh -d
+```
 
-   # Install Python and Node.js dependencies
-   pip install pipenv
-   ```
+This automatically detects NVIDIA GPUs and uses them if available.
 
-2. Set up configuration:
+After the server starts:
 
-   ```shell
-   # Copy example config and edit
-   cp config/config.yml.example config/config.yml
-   # Edit config.yml and update llm_api_key with your key
-   ```
-
-3. Run Podly:
-
-   ```shell
-   # Make script executable
-   chmod +x run_podly.sh
-
-   # Start Podly (interactive mode)
-   ./run_podly.sh
-
-   # Or start in background mode
-   ./run_podly.sh -b
-   # Alternative: ./run_podly.sh -d
-
-   # Note: For frontend changes, restart the script to rebuild assets
-   ```
-
-The script will automatically:
-
-- Set up Python virtual environment
-- Install and build frontend dependencies
-- Copy frontend assets to backend static folder
-- Configure environment variables from config.yml
-- Start the unified application server on port 5001
-
-### Quick Start - With Docker
-
-1. Set up your configuration:
-
-   ```bash
-   cp config/config.yml.example config/config.yml
-   # Edit config.yml with your settings
-   ```
-
-2. Run Podly with Docker:
-
-   ```bash
-   # Make the script executable first
-   chmod +x run_podly_docker.sh
-
-   # Start Podly (interactive mode)
-   ./run_podly_docker.sh
-
-   # Or start in background mode
-   ./run_podly_docker.sh -d
-   # Alternative: ./run_podly_docker.sh -b
-
-   # For development with container rebuilding
-   ./run_podly_docker.sh --dev
-   ```
-
-   This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
+- Open `http://localhost:5001` in your browser
+- Configure settings at `http://localhost:5001/config`
+- Add podcast feeds and start processing
 
 ## Usage
 
 Once the server is running:
 
-1. Open <http://localhost:5001> in your web browser
-2. Add podcast RSS feeds through the web interface
-3. Open your podcast app and subscribe to the Podly endpoint
-   - For example, `http://localhost:5001/feed/1`
-4. Select an episode & download
-5. Wait patiently 😊 (Transcription takes about 1 minute per 15 minutes of podcast on an M3 MacBook)
+1. Open `http://localhost:5001`
+2. Configure settings in the Config page at `http://localhost:5001/config`
+3. Add podcast RSS feeds through the web interface
+4. Open your podcast app and subscribe to the Podly endpoint (e.g., `http://localhost:5001/feed/1`)
+5. Select an episode and download
 
 ## Transcription Options
 
 Podly supports multiple options for audio transcription:
 
-1. **Local Whisper (Default)** - Uses OpenAI's Whisper model running locally on your machine
+1. **Local Whisper (Default)**
+   - Slower but self-contained
+2. **OpenAI Hosted Whisper**
+   - Fast and accurate; requires API credits
+3. **Groq Hosted Whisper**
+   - Fast and cost-effective
 
-   - See `config/config.yml.example` for configuration (OPTION 1)
-   - Slower but doesn't require an external API (~ 1 minute per 15 minutes of podcast on an M3 MacBook)
-   - **Note**: Not available in lite mode (`--lite` flag)
-
-2. **OpenAI Hosted Whisper** - Uses OpenAI's hosted Whisper service
-
-   - See `config/config.yml.example` for configuration (OPTION 2)
-   - Fast and accurate but requires OpenAI API credits
-
-3. **Groq Hosted Whisper** - Uses Groq's hosted Whisper service
-   - See `config/config.yml.example` for configuration (OPTION 3)
-   - Fast and cost-effective alternative to OpenAI
-
-To use different transcription options, copy `config/config.yml.example` to `config/config.yml` and uncomment the relevant whisper section for your preferred option.
-
-### Lite Mode
-
-For smaller deployments or when you only need remote transcription services, you can use the `--lite` flag with both run scripts:
-
-```bash
-# Docker lite mode (much smaller image, faster builds)
-./run_podly_docker.sh --lite
-
-# Local lite mode (faster setup, fewer dependencies)
-./run_podly.sh --lite
-```
-
-**Lite mode benefits:**
-
-- Significantly smaller Docker images (saves ~1GB)
-- Faster installation and builds
-- Reduced memory usage
-- No PyTorch/CUDA dependencies
-
-**Lite mode limitations:**
-
-- Local Whisper transcription is not available
-- Must use OpenAI, Groq, or other remote transcription services
-
-**Lite mode configuration:**
-
-When using lite mode, you must configure a remote transcription service in your `config/config.yml`. Add one of the following configurations:
-
-#### Option 1: OpenAI Whisper (recommended for accuracy)
-
-```yaml
-whisper:
-  whisper_type: remote
-  model: whisper-1
-  api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX # Your OpenAI API key
-  # Optional settings:
-  # base_url: https://api.openai.com/v1  # Default OpenAI endpoint
-  # language: "en"
-  # timeout_sec: 600
-  # chunksize_mb: 24
-```
-
-#### Option 2: Groq Whisper (recommended for speed and cost)
-
-```yaml
-whisper:
-  whisper_type: groq
-  api_key: gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXX # Your Groq API key
-  model: whisper-large-v3-turbo
-  language: en
-  max_retries: 3
-```
+Select your preferred method in the Config page (`/config`).
 
 ## Remote Setup
 
-Podly works out of the box when running locally (see [Usage](#usage)). For remote deployment, the application automatically detects the requesting domain and generates appropriate URLs through request headers.
+Podly automatically detects reverse proxies and generates appropriate URLs via request headers.
 
-### Configuration Options
-
-Podly provides flexible configuration options for different deployment scenarios:
-
-#### Application Settings
-
-```yaml
-# Application server settings (optional)
-host: 0.0.0.0 # Interface to listen on (default: 0.0.0.0, accepts all requests)
-port: 5001 # Port to listen on (default: 5001)
-```
-
-### Reverse Proxy Setup
-
-Podly automatically detects when it's running behind a reverse proxy and generates feed URLs using the requesting domain. This works seamlessly with most reverse proxy setups without any configuration.
-
-#### How It Works
-
-Podly uses request headers to determine the correct domain and protocol:
-
-1. **X-Forwarded headers** (highest priority): `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Forwarded-Port`
-2. **Host header** (fallback): Uses the `Host` header from the request
-3. **Configuration** (last resort): Falls back to config when no request context
-
-#### Example Results
-
-- Request to `https://my.domain.com/feed/1` → generates URLs like `https://my.domain.com/api/posts/abc123/download`
-- Request to `http://localhost:5001/feed/1` → generates URLs like `http://localhost:5001/api/posts/abc123/download`
-
-#### Reverse Proxy Examples
+### Reverse Proxy Examples
 
 **Nginx:**
 
@@ -312,88 +167,31 @@ sudo systemctl enable podly.service
 
 ## Database Update
 
-The database should automatically configure & upgrade on launch.
+The database auto-migrates on launch.
 
-After data model change run:
+To add a migration after data model change:
 
-```
+```bash
 pipenv run flask --app ./src/main.py db migrate -m "[change description]"
 ```
 
-On next launch the database should update.
+On next launch, the database updates automatically.
 
 ## Docker Support
 
-Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA environments. Use Docker if you prefer containerized deployment or need GPU acceleration.
-
-### Quick Start with Docker
-
-1. Set up your configuration:
-
-   ```bash
-   cp config/config.yml.example config/config.yml
-   # Edit config.yml with your settings
-   ```
-
-2. Run Podly with Docker:
-
-   ```bash
-   # Make the script executable first
-   chmod +x run_podly_docker.sh
-   ./run_podly_docker.sh
-   ```
-
-   This will automatically detect if you have an NVIDIA GPU and use it for acceleration.
-
-### Docker vs Native
-
-- **Use Docker** (`./run_podly_docker.sh`) if you:
-
-  - Want containerized deployment
-  - Need GPU acceleration for Whisper
-  - Prefer isolated environments
-
-- **Use Native** (`./run_podly.sh`) if you:
-  - Want faster development iteration
-  - Prefer direct access to logs and debugging
-  - Don't need GPU acceleration
-
-### Docker Setup Troubleshooting
-
-If you experience Docker build issues, try the test build option to validate your setup:
-
-```bash
-./run_podly_docker.sh --test-build
-```
+Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA environments.
 
 ### Docker Options
 
-You can use these command-line options with the run script:
-
 ```bash
-# Development mode - rebuild containers before starting (use after code changes)
-./run_podly_docker.sh --dev
-
-# Production mode - use published Docker images from GitHub Container Registry
-./run_podly_docker.sh --production
-
-# Lite mode - smaller image without Whisper (remote transcription only)
-./run_podly_docker.sh --lite
-
-# Force CPU mode even if GPU is available
-./run_podly_docker.sh --cpu
-
-# Force GPU mode (will fail if no GPU is available)
-./run_podly_docker.sh --gpu
-
-# Only build the Docker image without starting containers
-./run_podly_docker.sh --build
-
-# Test if the Docker build works (helpful for troubleshooting)
-./run_podly_docker.sh --test-build
-
-# Run in background/detached mode
-./run_podly_docker.sh -d
+./run_podly_docker.sh --dev          # rebuild containers for local changes
+./run_podly_docker.sh --production   # use published images
+./run_podly_docker.sh --lite         # smaller image without local Whisper
+./run_podly_docker.sh --cpu          # force CPU mode
+./run_podly_docker.sh --gpu          # force GPU mode
+./run_podly_docker.sh --build        # build only
+./run_podly_docker.sh --test-build   # test build
+./run_podly_docker.sh -d             # detached
 ```
 
 ### Development vs Production Modes
@@ -425,8 +223,6 @@ You can use these command-line options with the run script:
 
 ### Docker Environment Configuration
 
-The Docker setup uses runtime environment variables that can be configured when starting the container:
-
 **Environment Variables**:
 
 - `PUID`/`PGID`: User/group IDs for file permissions (automatically set by run script)
@@ -437,7 +233,7 @@ The Docker setup uses runtime environment variables that can be configured when 
 
 Q: What does "whitelisted" mean in the UI?
 
-A: It means an episode is eligible for download and ad removal. By default, new episodes are automatically whitelisted (`automatically_whitelist_new_episodes`), and only a limited number of old episodes are auto-whitelisted (`number_of_episodes_to_whitelist_from_archive_of_new_feed`). This helps control costs by limiting how many episodes are processed. You can adjust these settings in your config.yml for more manual control.
+A: It means an episode is eligible for download and ad removal. By default, new episodes are automatically whitelisted (`automatically_whitelist_new_episodes`), and only a limited number of old episodes are auto-whitelisted (`number_of_episodes_to_whitelist_from_archive_of_new_feed`). Adjust these settings in the Config page (/config).
 
 Q: How can I enable whisper GPU acceleration?
 
@@ -474,12 +270,12 @@ We welcome contributions to Podly! Here's how you can help:
 
 Both local and Docker deployments provide a consistent experience:
 
-- **Application**: Runs on port 5001 (configurable via `config.yml`)
+- **Application**: Runs on port 5001 (configurable via web UI at `/config`)
   - Serves both the web interface and API endpoints
   - Frontend is built as static assets and served by the backend
-- **Development**: Both `run_podly.sh` and `run_podly_docker.sh` serve everything on port 5001
+- **Development**: `run_podly_docker.sh` serves everything on port 5001
   - Local script builds frontend to static assets (like Docker)
-  - Restart `./run_podly.sh` after frontend changes to rebuild assets
+  - Restart `./run_podly_docker.sh` after frontend changes to rebuild assets
 
 #### Development Modes
 
@@ -490,10 +286,7 @@ Both scripts provide equivalent core functionality with some unique features:
 - `-b/--background` or `-d/--detach`: Run in background mode
 - `-h/--help`: Show help information
 
-**Local Development** (`./run_podly.sh`):
-
-- **Development mode**: `./run_podly.sh` - always builds frontend fresh, restart after frontend changes
-- Focused on local development only (use Docker script for production)
+**Local Development**
 
 **Docker Development** (`./run_podly_docker.sh`):
 

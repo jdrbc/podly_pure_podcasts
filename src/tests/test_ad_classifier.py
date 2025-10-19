@@ -7,10 +7,11 @@ from jinja2 import Template
 from litellm.exceptions import InternalServerError
 from litellm.types.utils import Choices
 
-from app import db
+from app.extensions import db
 from app.models import ModelCall, Post, TranscriptSegment
 from podcast_processor.ad_classifier import AdClassifier
-from shared.config import Config, get_config
+from shared.config import Config
+from shared.test_utils import create_standard_test_config
 
 
 @pytest.fixture
@@ -28,7 +29,7 @@ def app() -> Generator[Flask, None, None]:
 
 @pytest.fixture
 def test_config() -> Config:
-    return get_config("config/config_test.yml")
+    return create_standard_test_config()
 
 
 @pytest.fixture

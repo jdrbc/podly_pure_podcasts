@@ -1,0 +1,12 @@
+- config audit & testing (advanced and basic)
+- move host/port/threads to docker config
+reaudit security + testing
+ci.sh
+test railway
+login for public facing
+podcast rss search
+
+'basic' config page - just put in groq api key + test + save on populate
+also show if api key is set or blank
+
+test hide 'local' whisper in lite build

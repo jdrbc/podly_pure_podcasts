@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 from typing import Dict
@@ -6,35 +7,22 @@ import flask
 from flask import Blueprint, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
-from app import db, logger
-from app.job_manager import get_job_manager
-from app.models import Feed, Identification, ModelCall, Post, TranscriptSegment
+from app.extensions import db
+from app.jobs_manager import get_jobs_manager
+from app.models import Identification, ModelCall, Post, TranscriptSegment
 from app.posts import clear_post_processing_data
 
-api_bp = Blueprint("api", __name__)
+logger = logging.getLogger("global_logger")
 
 
-@api_bp.route("/feeds", methods=["GET"])
-def api_feeds() -> flask.Response:
-    feeds = Feed.query.all()
-    feeds_data = [
-        {
-            "id": feed.id,
-            "title": feed.title,
-            "rss_url": feed.rss_url,
-            "description": feed.description,
-            "author": feed.author,
-            "image_url": feed.image_url,
-            "posts_count": len(feed.posts),
-        }
-        for feed in feeds
-    ]
-    return flask.jsonify(feeds_data)
+post_bp = Blueprint("post", __name__)
 
 
-@api_bp.route("/api/feeds/<int:feed_id>/posts", methods=["GET"])
+@post_bp.route("/api/feeds/<int:feed_id>/posts", methods=["GET"])
 def api_feed_posts(feed_id: int) -> flask.Response:
     """Returns a JSON list of posts for a specific feed."""
+    from app.models import Feed  # local import to avoid circular in other modules
+
     feed = Feed.query.get_or_404(feed_id)
     posts = [
         {
@@ -57,18 +45,16 @@ def api_feed_posts(feed_id: int) -> flask.Response:
     return flask.jsonify(posts)
 
 
-@api_bp.route("/post/<string:p_guid>/json", methods=["GET"])
+@post_bp.route("/post/<string:p_guid>/json", methods=["GET"])
 def get_post_json(p_guid: str) -> flask.Response:
     logger.info(f"API request for post details with GUID: {p_guid}")
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(jsonify({"error": "Post not found"}), 404)
 
-    # Check how many transcript segments exist
     segment_count = post.segments.count()
     transcript_segments = []
 
-    # Get a sample of segments if they exist (limited to 5 for response size)
     if segment_count > 0:
         sample_segments = post.segments.limit(5).all()
         for segment in sample_segments:
@@ -86,7 +72,6 @@ def get_post_json(p_guid: str) -> flask.Response:
                 }
             )
 
-    # Get Whisper model call information
     whisper_model_calls = []
     for model_call in post.model_calls.filter(
         ModelCall.model_name.like("%whisper%")
@@ -110,7 +95,6 @@ def get_post_json(p_guid: str) -> flask.Response:
             }
         )
 
-    # Prepare response data
     post_data = {
         "id": post.id,
         "guid": post.guid,
@@ -130,24 +114,21 @@ def get_post_json(p_guid: str) -> flask.Response:
     return flask.jsonify(post_data)
 
 
-@api_bp.route("/post/<string:p_guid>/debug", methods=["GET"])
+@post_bp.route("/post/<string:p_guid>/debug", methods=["GET"])
 def post_debug(p_guid: str) -> flask.Response:
     """Debug view for a post, showing model calls, transcript segments, and identifications."""
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(("Post not found", 404))
 
-    # Get model calls for this post
     model_calls = (
         ModelCall.query.filter_by(post_id=post.id)
         .order_by(ModelCall.model_name, ModelCall.first_segment_sequence_num)
         .all()
     )
 
-    # Get transcript segments
     transcript_segments = post.segments.all()
 
-    # Get identifications for this post's segments
     identifications = (
         Identification.query.join(TranscriptSegment)
         .filter(TranscriptSegment.post_id == post.id)
@@ -155,11 +136,9 @@ def post_debug(p_guid: str) -> flask.Response:
         .all()
     )
 
-    # Create dictionaries to track stats
     model_call_statuses: Dict[str, int] = {}
     model_types: Dict[str, int] = {}
 
-    # Count model call statuses
     for call in model_calls:
         if call.status not in model_call_statuses:
             model_call_statuses[call.status] = 0
@@ -169,7 +148,6 @@ def post_debug(p_guid: str) -> flask.Response:
             model_types[call.model_name] = 0
         model_types[call.model_name] += 1
 
-    # Calculate processing efficiency
     content_segments = sum(1 for i in identifications if i.label == "content")
     ad_segments = sum(1 for i in identifications if i.label == "ad")
 
@@ -196,24 +174,21 @@ def post_debug(p_guid: str) -> flask.Response:
     )
 
 
-@api_bp.route("/api/posts/<string:p_guid>/stats", methods=["GET"])
+@post_bp.route("/api/posts/<string:p_guid>/stats", methods=["GET"])
 def api_post_stats(p_guid: str) -> flask.Response:
     """Get processing statistics for a post in JSON format."""
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(flask.jsonify({"error": "Post not found"}), 404)
 
-    # Get model calls for this post
     model_calls = (
         ModelCall.query.filter_by(post_id=post.id)
         .order_by(ModelCall.model_name, ModelCall.first_segment_sequence_num)
         .all()
     )
 
-    # Get transcript segments
     transcript_segments = post.segments.all()
 
-    # Get identifications for this post's segments
     identifications = (
         Identification.query.join(TranscriptSegment)
         .filter(TranscriptSegment.post_id == post.id)
@@ -221,11 +196,9 @@ def api_post_stats(p_guid: str) -> flask.Response:
         .all()
     )
 
-    # Create dictionaries to track stats
     model_call_statuses: Dict[str, int] = {}
     model_types: Dict[str, int] = {}
 
-    # Count model call statuses
     for call in model_calls:
         if call.status not in model_call_statuses:
             model_call_statuses[call.status] = 0
@@ -235,11 +208,9 @@ def api_post_stats(p_guid: str) -> flask.Response:
             model_types[call.model_name] = 0
         model_types[call.model_name] += 1
 
-    # Calculate processing efficiency
     content_segments = sum(1 for i in identifications if i.label == "content")
     ad_segments = sum(1 for i in identifications if i.label == "ad")
 
-    # Prepare detailed model call data
     model_call_details = []
     for call in model_calls:
         model_call_details.append(
@@ -258,15 +229,12 @@ def api_post_stats(p_guid: str) -> flask.Response:
             }
         )
 
-    # Prepare detailed transcript segments data
     transcript_segments_data = []
     for segment in transcript_segments:
-        # Get identifications for this segment
         segment_identifications = [
             i for i in identifications if i.transcript_segment_id == segment.id
         ]
 
-        # Determine primary label (ad vs content)
         has_ad_label = any(i.label == "ad" for i in segment_identifications)
         primary_label = "ad" if has_ad_label else "content"
 
@@ -292,7 +260,6 @@ def api_post_stats(p_guid: str) -> flask.Response:
             }
         )
 
-    # Prepare detailed identifications data
     identifications_data = []
     for identification in identifications:
         segment = identification.transcript_segment
@@ -314,7 +281,6 @@ def api_post_stats(p_guid: str) -> flask.Response:
             }
         )
 
-    # Prepare response data
     stats_data = {
         "post": {
             "guid": post.guid,
@@ -343,7 +309,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
     return flask.jsonify(stats_data)
 
 
-@api_bp.route("/api/posts/<string:p_guid>/whitelist", methods=["POST"])
+@post_bp.route("/api/posts/<string:p_guid>/whitelist", methods=["POST"])
 def api_toggle_whitelist(p_guid: str) -> flask.Response:
     """Toggle whitelist status for a post via API."""
     post = Post.query.filter_by(guid=p_guid).first()
@@ -368,9 +334,11 @@ def api_toggle_whitelist(p_guid: str) -> flask.Response:
     )
 
 
-@api_bp.route("/api/feeds/<int:feed_id>/toggle-whitelist-all", methods=["POST"])
+@post_bp.route("/api/feeds/<int:feed_id>/toggle-whitelist-all", methods=["POST"])
 def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
     """Intelligently toggle whitelist status for all posts in a feed."""
+    from app.models import Feed  # local import to avoid circular in other modules
+
     feed = Feed.query.get_or_404(feed_id)
 
     if not feed.posts:
@@ -382,11 +350,7 @@ def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
             }
         )
 
-    # Check if all posts are currently whitelisted
     all_whitelisted = all(post.whitelisted for post in feed.posts)
-
-    # If all are whitelisted, unwhitelist them all
-    # If any are not whitelisted, whitelist them all
     new_status = not all_whitelisted
 
     for post in feed.posts:
@@ -406,11 +370,9 @@ def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
     )
 
 
-@api_bp.route("/api/posts/<string:p_guid>/process", methods=["POST"])
+@post_bp.route("/api/posts/<string:p_guid>/process", methods=["POST"])
 def api_process_post(p_guid: str) -> ResponseReturnValue:
     """Start processing a post and return immediately."""
-
-    # Get the post
     post = Post.query.filter_by(guid=p_guid).first()
     if not post:
         return (
@@ -436,7 +398,6 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             400,
         )
 
-    # Check if already processed
     if post.processed_audio_path and os.path.exists(post.processed_audio_path):
         return flask.jsonify(
             {
@@ -446,9 +407,10 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             }
         )
 
-    # Delegate to JobManager
     try:
-        result = get_job_manager().start_post_processing(p_guid, priority="interactive")
+        result = get_jobs_manager().start_post_processing(
+            p_guid, priority="interactive"
+        )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
         return flask.jsonify(result), status_code
     except Exception as e:
@@ -465,11 +427,9 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
         )
 
 
-@api_bp.route("/api/posts/<string:p_guid>/reprocess", methods=["POST"])
+@post_bp.route("/api/posts/<string:p_guid>/reprocess", methods=["POST"])
 def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
     """Clear all processing data for a post and start processing from scratch."""
-
-    # Get the post
     post = Post.query.filter_by(guid=p_guid).first()
     if not post:
         return (
@@ -496,22 +456,15 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
         )
 
     try:
-        # First, cancel any active processing jobs for this post
-        get_job_manager().cancel_post_jobs(p_guid)
-
-        # Clear all processing data (files and database entries)
+        get_jobs_manager().cancel_post_jobs(p_guid)
         clear_post_processing_data(post)
-
-        # Start fresh processing
-        result = get_job_manager().start_post_processing(p_guid, priority="interactive")
+        result = get_jobs_manager().start_post_processing(
+            p_guid, priority="interactive"
+        )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
-
-        # Add reprocess indicator to the response
         if result.get("status") == "started":
             result["message"] = "Post cleared and reprocessing started"
-
         return flask.jsonify(result), status_code
-
     except Exception as e:
         logger.error(f"Failed to reprocess post {p_guid}: {e}", exc_info=True)
         return (
@@ -526,10 +479,10 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
         )
 
 
-@api_bp.route("/api/posts/<string:p_guid>/status", methods=["GET"])
+@post_bp.route("/api/posts/<string:p_guid>/status", methods=["GET"])
 def api_post_status(p_guid: str) -> ResponseReturnValue:
-    """Get the current processing status of a post via JobManager."""
-    result = get_job_manager().get_post_status(p_guid)
+    """Get the current processing status of a post via JobsManager."""
+    result = get_jobs_manager().get_post_status(p_guid)
     status_code = (
         200
         if result.get("status") != "error"
@@ -538,58 +491,7 @@ def api_post_status(p_guid: str) -> ResponseReturnValue:
     return flask.jsonify(result), status_code
 
 
-@api_bp.route("/api/jobs/active", methods=["GET"])
-def api_list_active_jobs() -> ResponseReturnValue:
-    """Return only active jobs (pending/running) ordered by priority."""
-    try:
-        limit = int(request.args.get("limit", "100"))
-    except ValueError:
-        limit = 100
-    result = get_job_manager().list_active_jobs(limit=limit)
-    return flask.jsonify(result)
-
-
-@api_bp.route("/api/jobs/all", methods=["GET"])
-def api_list_all_jobs() -> ResponseReturnValue:
-    """Return all jobs ordered by priority."""
-    try:
-        limit = int(request.args.get("limit", "100"))
-    except ValueError:
-        limit = 100
-    result = get_job_manager().list_all_jobs_detailed(limit=limit)
-    return flask.jsonify(result)
-
-
-@api_bp.route("/api/jobs/<string:job_id>/cancel", methods=["POST"])
-def api_cancel_job(job_id: str) -> ResponseReturnValue:
-    """Cancel a specific job by job ID."""
-    try:
-        result = get_job_manager().cancel_job(job_id)
-        status_code = (
-            200
-            if result.get("status") == "cancelled"
-            else (404 if result.get("error_code") == "NOT_FOUND" else 400)
-        )
-
-        # Force a database session refresh to ensure changes are visible
-        db.session.expire_all()
-
-        return flask.jsonify(result), status_code
-    except Exception as e:
-        logger.error(f"Failed to cancel job {job_id}: {e}")
-        return (
-            flask.jsonify(
-                {
-                    "status": "error",
-                    "error_code": "CANCEL_FAILED",
-                    "message": f"Failed to cancel job: {str(e)}",
-                }
-            ),
-            500,
-        )
-
-
-@api_bp.route("/api/posts/<string:p_guid>/audio", methods=["GET"])
+@post_bp.route("/api/posts/<string:p_guid>/audio", methods=["GET"])
 def api_get_post_audio(p_guid: str) -> ResponseReturnValue:
     """API endpoint to serve processed audio files with proper CORS headers."""
     logger.info(f"API request for audio file with GUID: {p_guid}")
@@ -608,7 +510,6 @@ def api_get_post_audio(p_guid: str) -> ResponseReturnValue:
             403,
         )
 
-    # Check if processed audio exists
     if not post.processed_audio_path or not Path(post.processed_audio_path).exists():
         logger.warning(f"Processed audio not found for post: {post.id}")
         return flask.make_response(
@@ -623,21 +524,13 @@ def api_get_post_audio(p_guid: str) -> ResponseReturnValue:
         )
 
     try:
-        # Serve the file with proper headers for audio playback
         response = send_file(
             path_or_file=Path(post.processed_audio_path).resolve(),
             mimetype="audio/mpeg",
-            as_attachment=False,  # Important: don't force download
+            as_attachment=False,
         )
-
-        # Add CORS headers for audio playback
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET"
-        response.headers["Access-Control-Allow-Headers"] = "Range"
         response.headers["Accept-Ranges"] = "bytes"
-
         return response
-
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error serving audio file for {p_guid}: {e}")
         return flask.make_response(
@@ -648,7 +541,7 @@ def api_get_post_audio(p_guid: str) -> ResponseReturnValue:
         )
 
 
-@api_bp.route("/api/posts/<string:p_guid>/download", methods=["GET"])
+@post_bp.route("/api/posts/<string:p_guid>/download", methods=["GET"])
 def api_download_post(p_guid: str) -> flask.Response:
     """API endpoint to download processed audio files."""
     logger.info(f"Request to download post with GUID: {p_guid}")
@@ -661,7 +554,6 @@ def api_download_post(p_guid: str) -> flask.Response:
         logger.warning(f"Post: {post.title} is not whitelisted")
         return flask.make_response(("Post not whitelisted", 403))
 
-    # pylint: disable=protected-access
     if not post.processed_audio_path or not Path(post.processed_audio_path).exists():
         logger.warning(f"Processed audio not found for post: {post.id}")
         return flask.make_response(("Processed audio not found", 404))
@@ -678,7 +570,7 @@ def api_download_post(p_guid: str) -> flask.Response:
         return flask.make_response(("Error serving file", 500))
 
 
-@api_bp.route("/api/posts/<string:p_guid>/download/original", methods=["GET"])
+@post_bp.route("/api/posts/<string:p_guid>/download/original", methods=["GET"])
 def api_download_original_post(p_guid: str) -> flask.Response:
     """API endpoint to download original (unprocessed) audio files."""
     logger.info(f"Request to download original post with GUID: {p_guid}")
@@ -711,13 +603,11 @@ def api_download_original_post(p_guid: str) -> flask.Response:
 
 
 # Legacy endpoints for backward compatibility
-@api_bp.route("/post/<string:p_guid>.mp3", methods=["GET"])
+@post_bp.route("/post/<string:p_guid>.mp3", methods=["GET"])
 def download_post_legacy(p_guid: str) -> flask.Response:
-    """Legacy endpoint for downloading processed audio files."""
     return api_download_post(p_guid)
 
 
-@api_bp.route("/post/<string:p_guid>/original.mp3", methods=["GET"])
+@post_bp.route("/post/<string:p_guid>/original.mp3", methods=["GET"])
 def download_original_post_legacy(p_guid: str) -> flask.Response:
-    """Legacy endpoint for downloading original audio files."""
     return api_download_original_post(p_guid)

@@ -3,7 +3,8 @@ from typing import List
 from podcast_processor.model_output import AdSegmentPrediction, AdSegmentPredictionList
 from podcast_processor.transcribe import Segment
 
-DEFAULT_SYSTEM_PROMPT_PATH = "config/system_prompt.txt"
+DEFAULT_SYSTEM_PROMPT_PATH = "src/system_prompt.txt"
+DEFAULT_USER_PROMPT_TEMPLATE_PATH = "src/user_prompt.jinja"
 
 
 def transcript_excerpt_for_prompt(
@@ -38,6 +39,12 @@ def generate_system_prompt() -> str:
             AdSegmentPrediction(segment_offset=79.8, confidence=0.88),
         ]
     ).model_dump_json()
+
+    example_output_for_prompt = (
+        output_for_one_shot_example[:-1]
+        if output_for_one_shot_example.endswith("}")
+        else output_for_one_shot_example
+    )
 
     one_shot_transcript_example = transcript_excerpt_for_prompt(
         [
@@ -101,4 +108,4 @@ For example, given the transcript excerpt:
 
 {one_shot_transcript_example}
 
-Output: {output_for_one_shot_example}. """
+Output: {example_output_for_prompt}.\n\n"""

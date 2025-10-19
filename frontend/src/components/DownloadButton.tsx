@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { feedsApi } from '../services/api';
 import ReprocessButton from './ReprocessButton';
+import { configApi } from '../services/api';
+import type { CombinedConfig } from '../types';
+import { toast } from 'react-hot-toast';
 
 interface DownloadButtonProps {
   episodeGuid: string;
@@ -32,6 +35,12 @@ export default function DownloadButton({
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  // Keep config in cache for other UI, but do not rely on it for gating
+  useQuery<CombinedConfig>({
+    queryKey: ['config'],
+    queryFn: configApi.getConfig,
+  });
 
   // Check initial status when component mounts
   useEffect(() => {
@@ -65,6 +74,8 @@ export default function DownloadButton({
             if (statusResponse.error) {
               setError(statusResponse.error);
             }
+          } else if (statusResponse.status === 'skipped' || statusResponse.status === 'completed') {
+            setStatus(statusResponse);
           }
           // If status is 'not_started', leave the button in its default state
         } catch (err) {
@@ -87,13 +98,13 @@ export default function DownloadButton({
           const statusResponse = await feedsApi.getPostStatus(episodeGuid);
           setStatus(statusResponse);
 
-          if (statusResponse.status === 'completed' || statusResponse.status === 'error' || statusResponse.status === 'not_started') {
+          if (['completed', 'skipped', 'error', 'not_started'].includes(statusResponse.status)) {
             setIsProcessing(false);
             if (statusResponse.status === 'error') {
               setError(statusResponse.error || 'Processing failed');
             } else if (statusResponse.status === 'not_started') {
               setError('No processing job found');
-            } else if (statusResponse.status === 'completed' && feedId) {
+            } else if ((statusResponse.status === 'completed' || statusResponse.status === 'skipped') && feedId) {
               // Invalidate the episodes query to refresh the parent component's data
               queryClient.invalidateQueries({ queryKey: ['episodes', feedId] });
             }
@@ -119,6 +130,18 @@ export default function DownloadButton({
       return;
     }
 
+    // Guard when LLM API key is not configured - use fresh server check
+    try {
+      const { configured } = await configApi.isConfigured();
+      if (!configured) {
+        toast.error('Add an API key in Config before processing.');
+        return;
+      }
+    } catch {
+      toast.error('Unable to verify configuration. Please try again.');
+      return;
+    }
+
     if (status?.download_url) {
       // Already processed, download directly
       try {
@@ -135,12 +158,12 @@ export default function DownloadButton({
 
       const response = await feedsApi.processPost(episodeGuid);
 
-      if (response.status === 'completed' && response.download_url) {
+      if ((response.status === 'completed' || response.status === 'skipped') && response.download_url) {
         // Already processed
         setStatus({
-          status: 'completed',
+          status: response.status,
           step: 4,
-          step_name: 'Completed',
+          step_name: response.status === 'skipped' ? 'Processing skipped' : 'Completed',
           total_steps: 4,
           message: 'Episode ready for download',
           download_url: response.download_url

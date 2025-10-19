@@ -10,16 +10,16 @@ if [ -n "${PUID}" ] && [ -n "${PGID}" ] && [ "$(id -u)" = "0" ]; then
     groupmod -o -g "$PGID" appuser
     
     # Ensure required directories exist
-    mkdir -p /app/src/instance
+    mkdir -p /app/src/instance /app/src/instance/data /app/src/instance/data/in /app/src/instance/data/srv /app/src/instance/config /app/src/instance/db /app/src/instance/logs
     
     # Set permissions for all application directories
-    APP_DIRS="/home/appuser /app/config /app/in /app/processing /app/srv /app/src/instance /app/scripts"
+    APP_DIRS="/home/appuser /app/processing /app/src/instance /app/src/instance/data /app/src/instance/config /app/src/instance/db /app/src/instance/logs /app/scripts"
     chown -R appuser:appuser $APP_DIRS 2>/dev/null || true
     
-    # Ensure log file exists and has correct permissions
-    touch /app/config/app.log
-    chmod 664 /app/config/app.log
-    chown appuser:appuser /app/config/app.log
+    # Ensure log file exists and has correct permissions in new location
+    touch /app/src/instance/logs/app.log
+    chmod 664 /app/src/instance/logs/app.log
+    chown appuser:appuser /app/src/instance/logs/app.log
 
     # Run as appuser
     export HOME=/home/appuser

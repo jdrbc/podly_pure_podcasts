@@ -16,6 +16,7 @@
     "clsx": "^2.1.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.6.1",
     "tailwind-merge": "^3.3.0"
   },

@@ -1,10 +1,15 @@
+import logging
 import os
 
 import flask
 from flask import Blueprint, current_app, send_from_directory
 
-from app import config, db, logger
+from app import config
+from app.extensions import db
 from app.models import Feed, Post
+
+logger = logging.getLogger("global_logger")
+
 
 main_bp = Blueprint("main", __name__)
 

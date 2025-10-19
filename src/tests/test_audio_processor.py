@@ -6,7 +6,8 @@ from flask import Flask
 
 from app.models import Identification, Post, TranscriptSegment
 from podcast_processor.audio_processor import AudioProcessor
-from shared.config import Config, get_config
+from shared.config import Config
+from shared.test_utils import create_standard_test_config
 
 
 @pytest.fixture
@@ -66,7 +67,7 @@ def test_get_ad_segments(app: Flask) -> None:
 
         # Create processor with mocks
         test_processor = AudioProcessor(
-            config=get_config("config/config_test.yml"),
+            config=create_standard_test_config(),
             identification_query=mock_identification_query,
         )
 

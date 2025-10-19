@@ -24,4 +24,5 @@ For example, given the transcript excerpt:
 [79.8] The Game Where Cards control the conversation.
 [83.8] And welcome back to the show, today we're talking to Professor Hopkins
 
-Output: {"ad_segments":[{"segment_offset":59.8,"confidence":0.9},{"segment_offset":64.8,"confidence":0.8},{"segment_offset":73.8,"confidence":0.9},{"segment_offset":77.8,"confidence":0.98},{"segment_offset":79.8,"confidence":0.88}]}. 
+Output: {"ad_segments":[{"segment_offset":59.8,"confidence":0.9},{"segment_offset":64.8,"confidence":0.8},{"segment_offset":73.8,"confidence":0.9},{"segment_offset":77.8,"confidence":0.98},{"segment_offset":79.8,"confidence":0.88}].
+

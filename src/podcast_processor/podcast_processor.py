@@ -1,26 +1,32 @@
 import logging
 import os
 import threading
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import litellm
 from jinja2 import Template
 from sqlalchemy.orm import object_session
 
-from app import db, logger
+from app.extensions import db
 from app.models import Post, ProcessingJob, TranscriptSegment
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.podcast_downloader import PodcastDownloader, sanitize_title
 from podcast_processor.processing_status_manager import ProcessingStatusManager
+from podcast_processor.prompt import (
+    DEFAULT_SYSTEM_PROMPT_PATH,
+    DEFAULT_USER_PROMPT_TEMPLATE_PATH,
+)
 from podcast_processor.transcription_manager import TranscriptionManager
 from shared.config import Config
 from shared.processing_paths import (
     ProcessingPaths,
     get_job_unprocessed_path,
+    get_srv_root,
     paths_from_unprocessed_path,
 )
+
+logger = logging.getLogger("global_logger")
 
 
 def get_post_processed_audio_path(post: Post) -> Optional[ProcessingPaths]:
@@ -63,7 +69,7 @@ class PodcastProcessor:
     ) -> None:
         super().__init__()
         self.logger = logger or logging.getLogger("global_logger")
-        self.output_dir = "srv"
+        self.output_dir = str(get_srv_root())
         self.config: Config = config
         self.db_session = db_session or db.session
 
@@ -316,11 +322,9 @@ class PodcastProcessor:
             job, "running", 3, "Identifying ads", 75.0
         )
         user_prompt_template = self.get_user_prompt_template(
-            self.config.processing.user_prompt_template_path
+            DEFAULT_USER_PROMPT_TEMPLATE_PATH
         )
-        system_prompt = self.get_system_prompt(
-            self.config.processing.system_prompt_path
-        )
+        system_prompt = self.get_system_prompt(DEFAULT_SYSTEM_PROMPT_PATH)
         self.ad_classifier.classify(
             transcript_segments=transcript_segments,
             system_prompt=system_prompt,
@@ -464,7 +468,7 @@ class PodcastProcessor:
         safe_feed_title = sanitize_title(post.feed.title)
         safe_post_title = sanitize_title(post.title)
         expected_processed_path = (
-            Path("srv") / safe_feed_title / f"{safe_post_title}.mp3"
+            get_srv_root() / safe_feed_title / f"{safe_post_title}.mp3"
         )
 
         if (

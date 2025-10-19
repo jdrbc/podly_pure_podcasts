@@ -33,6 +33,10 @@ build/
 in/
 processing/
 
+# App instance data
+src/app/instance/
+src/instance/
+
 # Logs
 *.log
 

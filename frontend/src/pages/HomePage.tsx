@@ -1,10 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { feedsApi } from '../services/api';
+import { feedsApi, configApi } from '../services/api';
 import FeedList from '../components/FeedList';
 import FeedDetail from '../components/FeedDetail';
 import AddFeedForm from '../components/AddFeedForm';
-import type { Feed } from '../types';
+import type { Feed, CombinedConfig } from '../types';
+import { toast } from 'react-hot-toast';
 
 export default function HomePage() {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -13,6 +14,24 @@ export default function HomePage() {
   const { data: feeds, isLoading, error, refetch } = useQuery({
     queryKey: ['feeds'],
     queryFn: feedsApi.getFeeds,
+  });
+
+  useQuery<CombinedConfig>({
+    queryKey: ['config'],
+    queryFn: configApi.getConfig,
+  });
+  const refreshAllMutation = useMutation({
+    mutationFn: () => feedsApi.refreshAllFeeds(),
+    onSuccess: (data) => {
+      toast.success(
+        `Refreshed ${data.feeds_refreshed} feeds and enqueued ${data.jobs_enqueued} jobs`
+      );
+      refetch();
+    },
+    onError: (err) => {
+      console.error('Failed to refresh all feeds', err);
+      toast.error('Failed to refresh all feeds');
+    },
   });
 
   if (isLoading) {
@@ -31,20 +50,39 @@ export default function HomePage() {
     );
   }
 
+
   return (
     <div className="h-full flex flex-col lg:flex-row gap-6">
       {/* Left Panel - Feed List (hidden on mobile when feed is selected) */}
       <div className={`flex-1 lg:max-w-md xl:max-w-lg flex flex-col ${
         selectedFeed ? 'hidden lg:flex' : 'flex'
       }`}>
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-6 gap-3">
           <h2 className="text-2xl font-bold text-gray-900">Podcast Feeds</h2>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
-          >
-            {showAddForm ? 'Cancel' : 'Add Feed'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => refreshAllMutation.mutate()}
+              disabled={refreshAllMutation.isPending}
+              title="Refresh all feeds"
+              className={`flex items-center justify-center px-3 py-2 rounded-md border transition-colors ${
+                refreshAllMutation.isPending
+                  ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <img
+                src="/reload-icon.svg"
+                alt="Refresh all"
+                className={`w-4 h-4 ${refreshAllMutation.isPending ? 'animate-spin' : ''}`}
+              />
+            </button>
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
+            >
+              {showAddForm ? 'Cancel' : 'Add Feed'}
+            </button>
+          </div>
         </div>
 
         {showAddForm && (

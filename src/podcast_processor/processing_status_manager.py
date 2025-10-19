@@ -1,10 +1,11 @@
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy.orm import object_session
 
+from app.jobs_manager_run_service import recalculate_run_counts
 from app.models import ProcessingJob
 
 
@@ -22,22 +23,14 @@ class ProcessingStatusManager:
         """Generate a unique job ID."""
         return str(uuid.uuid4())
 
-    def create_job(self, post_guid: str, job_id: str) -> ProcessingJob:
-        """Create new job, cleaning up old jobs."""
-        # Clean up old jobs (older than 1 day)
-        cutoff_date = datetime.utcnow() - timedelta(days=1)
-        old_jobs = ProcessingJob.query.filter(
-            ProcessingJob.created_at < cutoff_date
-        ).all()
-
-        for old_job in old_jobs:
-            self.db_session.delete(old_job)
-
-        self.db_session.commit()
-
+    def create_job(
+        self, post_guid: str, job_id: str, run_id: Optional[str] = None
+    ) -> ProcessingJob:
+        """Create a new pending job record for the provided post."""
         # Create new job
         job = ProcessingJob(
             id=job_id,
+            jobs_manager_run_id=run_id,
             post_guid=post_guid,
             status="pending",
             current_step=0,
@@ -46,6 +39,8 @@ class ProcessingStatusManager:
             created_at=datetime.utcnow(),
         )
         self.db_session.add(job)
+        if run_id:
+            recalculate_run_counts(self.db_session)
         self.db_session.commit()
         return job
 
@@ -63,6 +58,8 @@ class ProcessingStatusManager:
         for existing_job in existing_jobs:
             self.db_session.delete(existing_job)
 
+        self.db_session.flush()
+        recalculate_run_counts(self.db_session)
         self.db_session.commit()
 
     def update_job_status(
@@ -93,10 +90,12 @@ class ProcessingStatusManager:
 
         if status == "running" and not job.started_at:
             job.started_at = datetime.utcnow()
-        elif status in ["completed", "failed"]:
+        elif status in ["completed", "failed", "skipped", "cancelled"]:
             job.completed_at = datetime.utcnow()
 
         try:
+            if job.jobs_manager_run_id:
+                recalculate_run_counts(self.db_session)
             self.db_session.commit()
             if self.logger:
                 self.logger.debug(
@@ -128,7 +127,10 @@ class ProcessingStatusManager:
         job.error_message = error_message
         job.completed_at = datetime.utcnow()
 
+        run_id = job.jobs_manager_run_id
         try:
+            if run_id:
+                recalculate_run_counts(self.db_session)
             self.db_session.commit()
             self.logger.info(f"Successfully cancelled job {job_id}")
         except Exception as e:

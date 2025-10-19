@@ -1,25 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { jobsApi } from '../services/api';
-import type { Job } from '../types';
+import type { Job, JobManagerRun, JobManagerStatus } from '../types';
+
+function getStatusColor(status: string) {
+  switch (status) {
+    case 'running':
+      return 'bg-green-100 text-green-800';
+    case 'pending':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'failed':
+      return 'bg-red-100 text-red-800';
+    case 'completed':
+      return 'bg-blue-100 text-blue-800';
+    case 'skipped':
+      return 'bg-purple-100 text-purple-800';
+    case 'cancelled':
+      return 'bg-gray-100 text-gray-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
 
 function StatusBadge({ status }: { status: string }) {
-  const color = useMemo(() => {
-    switch (status) {
-      case 'running':
-        return 'bg-green-100 text-green-800';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      case 'completed':
-        return 'bg-blue-100 text-blue-800';
-      case 'cancelled':
-        return 'bg-gray-100 text-gray-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  }, [status]);
-
+  const color = getStatusColor(status);
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`}>
       {status}
@@ -39,14 +42,49 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
+function RunStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wide text-gray-500">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-gray-900">{value}</div>
+    </div>
+  );
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) {
+    return '—';
+  }
+  try {
+    return new Date(value).toLocaleString();
+  } catch (err) {
+    console.error('Failed to format date', err);
+    return value;
+  }
+}
+
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [managerStatus, setManagerStatus] = useState<JobManagerStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'active' | 'all'>('active');
   const [cancellingJobs, setCancellingJobs] = useState<Set<string>>(new Set());
+  const previousHasActiveWork = useRef<boolean>(false);
 
-  const loadActive = async () => {
+  const loadStatus = useCallback(async () => {
+    try {
+      const data = await jobsApi.getJobManagerStatus();
+      setManagerStatus(data);
+      setStatusError(null);
+    } catch (e) {
+      console.error('Failed to load job manager status:', e);
+      setStatusError('Failed to load manager status');
+    }
+  }, []);
+
+  const loadActive = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -58,9 +96,9 @@ export default function JobsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -72,42 +110,126 @@ export default function JobsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
+    await loadStatus();
     if (mode === 'active') {
       await loadActive();
     } else {
       await loadAll();
     }
-  };
+  }, [mode, loadActive, loadAll, loadStatus]);
 
-  const cancelJob = async (jobId: string) => {
-    setCancellingJobs(prev => new Set(prev).add(jobId));
-    try {
-      await jobsApi.cancelJob(jobId);
-      // Refresh the jobs list to show the updated status
-      await refresh();
-    } catch (e) {
-      setError(`Failed to cancel job: ${e instanceof Error ? e.message : 'Unknown error'}`);
-    } finally {
-      setCancellingJobs(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(jobId);
-        return newSet;
-      });
-    }
-  };
+  const cancelJob = useCallback(
+    async (jobId: string) => {
+      setCancellingJobs(prev => new Set(prev).add(jobId));
+      try {
+        await jobsApi.cancelJob(jobId);
+        await refresh();
+      } catch (e) {
+        setError(`Failed to cancel job: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      } finally {
+        setCancellingJobs(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(jobId);
+          return newSet;
+        });
+      }
+    },
+    [refresh]
+  );
 
   useEffect(() => {
-    loadActive();
-  }, []);
+    void loadStatus();
+    void loadActive();
+  }, [loadActive, loadStatus]);
+
+  useEffect(() => {
+    const queued = managerStatus?.run?.queued_jobs ?? 0;
+    const running = managerStatus?.run?.running_jobs ?? 0;
+    const hasActiveWork = queued + running > 0;
+    if (!hasActiveWork) {
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
+      void loadStatus();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [managerStatus?.run?.queued_jobs, managerStatus?.run?.running_jobs, loadStatus]);
+
+  useEffect(() => {
+    const queued = managerStatus?.run?.queued_jobs ?? 0;
+    const running = managerStatus?.run?.running_jobs ?? 0;
+    const hasActiveWork = queued + running > 0;
+    if (!hasActiveWork && previousHasActiveWork.current) {
+      void refresh();
+    }
+    previousHasActiveWork.current = hasActiveWork;
+  }, [managerStatus?.run?.queued_jobs, managerStatus?.run?.running_jobs, refresh]);
+
+  const run: JobManagerRun | null = managerStatus?.run ?? null;
+  const hasActiveWork = run ? run.queued_jobs + run.running_jobs > 0 : false;
 
   return (
     <div className="space-y-4">
+      <div className="rounded border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Jobs Manager</h2>
+            <p className="text-xs text-gray-600">
+              {run
+                ? hasActiveWork
+                  ? `Processing · Last update ${formatDateTime(run.updated_at)}`
+                  : `Idle · Last activity ${formatDateTime(run.updated_at)}`
+                : 'Jobs Manager has not started yet.'}
+            </p>
+          </div>
+          {run ? (
+            <StatusBadge status={run.status} />
+          ) : (
+            <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800">
+              idle
+            </span>
+          )}
+        </div>
+
+        {statusError && (
+          <div className="mt-2 text-xs text-red-600">{statusError}</div>
+        )}
+
+        {run ? (
+          <>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <RunStat label="Queued" value={run.queued_jobs} />
+              <RunStat label="Running" value={run.running_jobs} />
+              <RunStat label="Completed" value={run.completed_jobs} />
+              <RunStat label="Skipped" value={run.skipped_jobs} />
+              <RunStat label="Failed" value={run.failed_jobs} />
+            </div>
+            <div className="mt-4 space-y-1">
+              <ProgressBar value={run.progress_percentage} />
+              <div className="text-xs text-gray-500">
+                {run.completed_jobs} completed · {run.skipped_jobs} skipped · {run.failed_jobs} failed of {run.total_jobs} jobs
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-gray-500">
+              Trigger: <span className="font-medium text-gray-700">{run.trigger}</span>
+            </div>
+            {run.counters_reset_at ? (
+              <div className="mt-1 text-xs text-gray-500">
+                Stats since {formatDateTime(run.counters_reset_at)}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">{mode === 'active' ? 'Active Jobs' : 'All Jobs'}</h2>
+          <h3 className="text-xl font-semibold text-gray-900">{mode === 'active' ? 'Active Jobs' : 'All Jobs'}</h3>
           <p className="text-sm text-gray-600">
             {mode === 'active'
               ? 'Queued and running jobs, ordered by priority.'
@@ -116,7 +238,7 @@ export default function JobsPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={refresh}
+            onClick={() => { void refresh(); }}
             className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             disabled={loading}
           >
@@ -124,7 +246,7 @@ export default function JobsPage() {
           </button>
           {mode === 'active' ? (
             <button
-              onClick={async () => { setMode('all'); await loadAll(); }}
+              onClick={async () => { setMode('all'); await loadStatus(); await loadAll(); }}
               className="inline-flex items-center rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400"
               disabled={loading}
             >
@@ -132,7 +254,7 @@ export default function JobsPage() {
             </button>
           ) : (
             <button
-              onClick={async () => { setMode('active'); await loadActive(); }}
+              onClick={async () => { setMode('active'); await loadStatus(); await loadActive(); }}
               className="inline-flex items-center rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400"
               disabled={loading}
             >
@@ -147,7 +269,7 @@ export default function JobsPage() {
       )}
 
       {jobs.length === 0 && !loading ? (
-        <div className="text-sm text-gray-600">No active jobs.</div>
+        <div className="text-sm text-gray-600">No jobs to display.</div>
       ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -190,11 +312,11 @@ export default function JobsPage() {
               </div>
               <div>
                 <div className="text-gray-500">Created</div>
-                <div>{job.created_at ? new Date(job.created_at).toLocaleString() : '—'}</div>
+                <div>{job.created_at ? formatDateTime(job.created_at) : '—'}</div>
               </div>
               <div>
                 <div className="text-gray-500">Started</div>
-                <div>{job.started_at ? new Date(job.started_at).toLocaleString() : '—'}</div>
+                <div>{job.started_at ? formatDateTime(job.started_at) : '—'}</div>
               </div>
               {job.error_message ? (
                 <div className="col-span-2">
@@ -204,11 +326,10 @@ export default function JobsPage() {
               ) : null}
             </div>
 
-            {/* Cancel button for cancellable jobs */}
             {(job.status === 'pending' || job.status === 'running') && (
               <div className="mt-3 pt-3 border-t border-gray-200">
                 <button
-                  onClick={() => cancelJob(job.job_id)}
+                  onClick={() => { void cancelJob(job.job_id); }}
                   disabled={cancellingJobs.has(job.job_id)}
                   className="w-full inline-flex items-center justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
@@ -222,5 +343,3 @@ export default function JobsPage() {
     </div>
   );
 }
-
-

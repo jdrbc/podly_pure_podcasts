@@ -1,5 +1,13 @@
 import axios from 'axios';
-import type { Feed, Episode, Job } from '../types';
+import type {
+  Feed,
+  Episode,
+  Job,
+  JobManagerStatus,
+  CombinedConfig,
+  LLMConfig,
+  WhisperConfig,
+} from '../types';
 
 const API_BASE_URL = '';
 
@@ -26,6 +34,22 @@ export const feedsApi = {
 
   deleteFeed: async (feedId: number): Promise<void> => {
     await api.delete(`/feed/${feedId}`);
+  },
+
+  refreshFeed: async (
+    feedId: number
+  ): Promise<{ status: string; message?: string }> => {
+    const response = await api.post(`/api/feeds/${feedId}/refresh`);
+    return response.data;
+  },
+
+  refreshAllFeeds: async (): Promise<{
+    status: string;
+    feeds_refreshed: number;
+    jobs_enqueued: number;
+  }> => {
+    const response = await api.post('/api/feeds/refresh-all');
+    return response.data;
   },
 
   togglePostWhitelist: async (guid: string, whitelisted: boolean): Promise<void> => {
@@ -287,6 +311,38 @@ export const feedsApi = {
   },
 };
 
+export const configApi = {
+  getConfig: async (): Promise<CombinedConfig> => {
+    const response = await api.get('/api/config');
+    return response.data;
+  },
+  isConfigured: async (): Promise<{ configured: boolean }> => {
+    const response = await api.get('/api/config/api_configured_check');
+    return { configured: !!response.data?.configured };
+  },
+  updateConfig: async (payload: Partial<CombinedConfig>): Promise<CombinedConfig> => {
+    const response = await api.put('/api/config', payload);
+    return response.data;
+  },
+  testLLM: async (
+    payload: Partial<{ llm: LLMConfig }>
+  ): Promise<{ ok: boolean; message?: string; error?: string }> => {
+    const response = await api.post('/api/config/test-llm', payload ?? {});
+    return response.data;
+  },
+  testWhisper: async (
+    payload: Partial<{ whisper: WhisperConfig }>
+  ): Promise<{ ok: boolean; message?: string; error?: string }> => {
+    const response = await api.post('/api/config/test-whisper', payload ?? {});
+    return response.data;
+  },
+  getWhisperCapabilities: async (): Promise<{ local_available: boolean }> => {
+    const response = await api.get('/api/config/whisper-capabilities');
+    const local_available = !!response.data?.local_available;
+    return { local_available };
+  },
+};
+
 export const jobsApi = {
   getActiveJobs: async (limit: number = 100): Promise<Job[]> => {
     const response = await api.get('/api/jobs/active', { params: { limit } });
@@ -300,4 +356,8 @@ export const jobsApi = {
     const response = await api.post(`/api/jobs/${jobId}/cancel`);
     return response.data;
   },
+  getJobManagerStatus: async (): Promise<JobManagerStatus> => {
+    const response = await api.get('/api/job-manager/status');
+    return response.data;
+  }
 };

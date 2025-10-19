@@ -1,6 +1,6 @@
 # How To Run: Ultimate Beginner's Guide
 
-This guide will walk you through setting up Podly from scratch, even if you've never used Docker before. Podly creates ad-free RSS feeds for podcasts by automatically detecting and removing advertisement segments.
+This guide will walk you through setting up Podly from scratch using Docker. Podly creates ad-free RSS feeds for podcasts by automatically detecting and removing advertisement segments.
 
 ## Highly Recommend!
 
@@ -10,53 +10,41 @@ Most IDEs have a free tier you can use to get started. Alternatively, you can us
 
 Open the AI chat in the IDE. Enable 'Agent' mode if available, which will allow the IDE to help you run commands, view the output, and debug or take corrective steps if necessary.
 
-Paste the one of the prompts below into the chat box.
+Paste one of the prompts below into the chat box.
 
 If you don't have the repo downloaded:
 
 ```
-Help me install git, and run podly https://github.com/jdrbc/podly_pure_podcasts
-After the project is cloned, follow the 'podly_pure_podcasts/docs/how_to_run_beginners.md' guide to run podly. Briefly, help me:
+Help me install docker and run Podly https://github.com/jdrbc/podly_pure_podcasts
+After the project is cloned, help me:
 - install docker & docker compose
-- get an OpenAI API key, and configure config/config.yml
-- run the `./run-podly-docker.sh --build` and then `./run-podly-docker.sh -d` scripts
+- run `./run_podly_docker.sh --build` then `./run_podly_docker.sh -d`
+- configure the app via the web UI at http://localhost:5001/config
 Be sure to check if a dependency is already installed before downloading.
-We recommend docker because installing ffmpeg & local whisper can be difficult.
-The docker image have both ffmpeg & local whisper preconfigured.
-Help me setup config/config.yml
-Podly works with many different LLMs, it does not require an open-ai key.
+We recommend Docker because installing ffmpeg & local whisper can be difficult.
+The Docker image has both ffmpeg & local whisper preconfigured.
+Podly works with many different LLMs, it does not require an OpenAI key.
 Check your work by retrieving the index page from localhost:5001 at the end.
-
-💡 **Tip**: For faster setup and smaller images, consider using the `--lite` flag which skips local Whisper installation and uses remote transcription services only:
-```
-
-./run-podly-docker.sh --lite --build
-./run-podly-docker.sh --lite -d
-
-```
-
 ```
 
 If you do have the repo pulled, open this file and prompt:
 
 ```
-Review this project, follow this guide and start podly on my computer.
+Review this project, follow this guide and start Podly on my computer.
 Briefly, help me:
 - install docker & docker compose
-- get an OpenAI API key, and configure config/config.yml
-- run the `./run-podly-docker.sh --build` and then `./run-podly-docker.sh -d` scripts
+- run `./run_podly_docker.sh --build` and then `./run_podly_docker.sh -d`
+- configure the app via the web UI at http://localhost:5001/config
 Be sure to check if a dependency is already installed before downloading.
 We recommend docker because installing ffmpeg & local whisper can be difficult.
-The docker image have both ffmpeg & local whisper preconfigured.
-Podly works with many different LLMs, it does not need to work with open-ai.
+The docker image has both ffmpeg & local whisper preconfigured.
+Podly works with many different LLMs; it does not need to work with OpenAI.
 Check your work by retrieving the index page from localhost:5001 at the end.
 ```
 
-Follow along as the agent sets up Podly for you!
-
 ## Prerequisites
 
-### 1. Install Docker and Docker Compose
+### Install Docker and Docker Compose
 
 #### On Windows:
 
@@ -112,79 +100,33 @@ You should see version information for both commands.
 
 ## Setup Podly
 
-### 1. Download the Project
+### Download the Project
 
 ```bash
 git clone https://github.com/normand1/podly_pure_podcasts.git
 cd podly_pure_podcasts
 ```
 
-### 2. Configure the Application
-
-1. Navigate to the `config` folder in your Podly directory
-2. Find the file named `config.yml.example`
-3. **Copy** this file and rename the copy to `config.yml`
-
-   - On Windows: Right-click → Copy, then right-click → Paste, rename to `config.yml`
-   - On macOS/Linux: `cp config.yml.example config.yml`
-
-4. Open `config.yml` in a text editor (Notepad, TextEdit, VS Code, etc.)
-5. Find the line that says:
-   ```yaml
-   llm_api_key: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX
-   ```
-6. Replace `sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX` with your actual OpenAI API key
-7. Save the file
-
-> **Important**: Keep your API key secure! Never share it publicly or commit it to version control.
-
 ## Running Podly
 
-### 1. Open Terminal/Command Prompt
-
-Navigate to your Podly directory:
+### Run the Application via Docker
 
 ```bash
-cd path/to/your/podly_pure_podcasts
-```
-
-### 2. Run the Application
-
-Podly includes a convenient script that handles all the Docker complexity for you:
-
-**For most users (auto-detects GPU if available):**
-
-```bash
+chmod +x run_podly_docker.sh
 ./run_podly_docker.sh --build
-./run_podly_docker.sh # to easily view logs and debug issues
-./run_podly_docker.sh -d # to run in background so you don't need to leave a terminal window open
+./run_podly_docker.sh            # foreground
+./run_podly_docker.sh -d         # detached
 ```
 
-**On Windows, if the above doesn't work:**
-
-```cmd
-bash run_podly_docker.sh --build
-bash run_podly_docker.sh
-```
-
-### 3. First Run
-
-The first time you run Podly:
+### First Run
 
 1. Docker will download and build the necessary image (this may take 5-15 minutes)
-2. You'll see lots of text scrolling by - this is normal!
-3. Look for a message like: "Running on <http://0.0.0.0:5001>"
-4. The application is now ready!
-
-### 4. Access the Web Interface
-
-1. Open your web browser
-2. Go to: `http://localhost:5001`
-3. You should see the Podly web interface
+2. Look for "Running on http://0.0.0.0:5001"
+3. Open your browser to `http://localhost:5001`
+4. Configure settings at `http://localhost:5001/config`
+   - Alternatively, set secrets via Docker env file `.env.local` in the project root and restart the container. See .env.local.example
 
 ## Advanced Options
-
-The run script supports several options:
 
 ```bash
 # Force CPU-only processing (if you have GPU issues)
@@ -234,7 +176,7 @@ The run script supports several options:
 
 ### OpenAI API errors
 
-- Double-check your API key is correct in `config.yml`
+- Double-check your API key in the Config page at `/config`
 - Make sure you have billing set up in your OpenAI account
 - Check your usage limits haven't been exceeded
 
@@ -242,7 +184,7 @@ The run script supports several options:
 
 - Another application is using port 5001
 - **Docker users**: Either stop that application or modify the port in `compose.dev.cpu.yml` and `compose.yml`
-- **Native users**: Change the `port` setting in your `config.yml` to use a different port (e.g., `port: 5002`)
+- **Native users**: Change the port in the Config page under App settings
 - To kill processes on that port run `lsof -i :5001 | grep LISTEN | awk '{print $2}' | xargs kill -9`
 
 ### Out of memory errors
@@ -261,13 +203,13 @@ To stop the application:
 
 If you encounter issues ask in our discord, we're friendly!
 
-<https://discord.gg/FRB98GtF6N>
+https://discord.gg/FRB98GtF6N
 
 ## What's Next?
 
 Once you have Podly running:
 
 - Explore the web interface to add more podcasts
-- Check the configuration file for advanced settings
+- Configure settings in the Config page
 - Consider setting up automatic background processing
 - Enjoy your ad-free podcasts!

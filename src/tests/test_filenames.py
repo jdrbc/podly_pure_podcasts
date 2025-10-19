@@ -1,6 +1,8 @@
-from pathlib import Path
-
-from shared.processing_paths import ProcessingPaths, paths_from_unprocessed_path
+from shared.processing_paths import (
+    ProcessingPaths,
+    get_srv_root,
+    paths_from_unprocessed_path,
+)
 
 
 def test_filenames() -> None:
@@ -10,7 +12,7 @@ def test_filenames() -> None:
     )
     # Expect sanitized directory name with special characters removed and spaces replaced with underscores
     assert work_paths == ProcessingPaths(
-        post_processed_audio_path=Path(
-            "srv/fix_buzz_bang_a_show_about_stuff/unprocessed.mp3"
-        )
+        post_processed_audio_path=get_srv_root()
+        / "fix_buzz_bang_a_show_about_stuff"
+        / "unprocessed.mp3",
     )

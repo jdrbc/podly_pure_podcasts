@@ -179,9 +179,6 @@ else
     CUDA_VISIBLE_DEVICES=-1
 fi
 
-# Ensure directories exist
-mkdir -p config in srv scripts
-
 # Get current user's UID and GID
 export PUID=$(id -u)
 export PGID=$(id -g)

@@ -2,7 +2,6 @@ import logging
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pytest_mock import MockerFixture
 
@@ -15,8 +14,9 @@ def test_remote_transcribe() -> None:
     )
 
     logger = logging.getLogger("global_logger")
-    with open("config/config_test.yml", "r") as f:
-        config = yaml.safe_load(f)
+    from shared.test_utils import create_standard_test_config
+
+    config = create_standard_test_config().model_dump()
 
     transcriber = OpenAIWhisperTranscriber(logger, config)
 
@@ -32,7 +32,7 @@ def test_local_transcribe() -> None:
     )
 
     logger = logging.getLogger("global_logger")
-    transcriber = LocalWhisperTranscriber(logger, "base")
+    transcriber = LocalWhisperTranscriber(logger, "base.en")
     transcription = transcriber.transcribe("src/tests/file.mp3")
     assert transcription == []
 

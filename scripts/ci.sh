@@ -5,6 +5,7 @@ pipenv run black .
 pipenv run isort .
 
 pipenv run mypy . \
+    --explicit-package-bases \
     --exclude 'migrations' \
     --exclude 'build' \
     --exclude 'scripts' \

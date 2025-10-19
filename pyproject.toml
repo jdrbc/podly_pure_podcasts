@@ -16,6 +16,7 @@ disable = [
 [tool.mypy]
 warn_unused_ignores = true
 strict = true
+mypy_path = "src"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -26,3 +27,4 @@ line-length = 88
 [tool.isort]
 profile = "black"
 line_length = 88
+float_to_top = true

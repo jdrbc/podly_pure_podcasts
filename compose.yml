@@ -2,18 +2,17 @@ services:
   podly:
     container_name: podly-pure-podcasts
     ports:
-      - 5001:5001
+      - "5001:5001"
     image: ghcr.io/${REPO_OWNER:-jdrbc}/podly-pure-podcasts:${BRANCH:-main-latest}
     volumes:
-      - ./config:/app/config
-      - ./in:/app/in
-      - ./srv:/app/srv
       - ./src/instance:/app/src/instance
+    env_file:
+      - ./.env.local
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:--1}
-      - CORS_ORIGINS=*
+      - SERVER_THREADS=${SERVER_THREADS:-1}
     restart: unless-stopped
     healthcheck:
       test:
@@ -21,7 +20,7 @@ services:
           "CMD",
           "python3",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:5001/')",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/')",
         ]
       interval: 30s
       timeout: 10s

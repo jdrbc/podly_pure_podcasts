@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import os
 from typing import Literal, Optional
 
-import yaml
 from pydantic import BaseModel, Field, model_validator
+
+from shared import defaults as DEFAULTS
 
 
 class ProcessingConfig(BaseModel):
-    system_prompt_path: str
-    user_prompt_template_path: str
     num_segments_to_input_to_prompt: int
 
 
@@ -29,76 +27,66 @@ class TestWhisperConfig(BaseModel):
 
 class RemoteWhisperConfig(BaseModel):
     whisper_type: Literal["remote"] = "remote"
-    base_url: str = "https://api.openai.com/v1"
+    base_url: str = DEFAULTS.WHISPER_REMOTE_BASE_URL
     api_key: str
-    language: str = "en"
-    model: str = "whisper-1"  # openai model, use your own maybe
-    timeout_sec: int = 600
-    chunksize_mb: int = 24
+    language: str = DEFAULTS.WHISPER_REMOTE_LANGUAGE
+    model: str = DEFAULTS.WHISPER_REMOTE_MODEL
+    timeout_sec: int = DEFAULTS.WHISPER_REMOTE_TIMEOUT_SEC
+    chunksize_mb: int = DEFAULTS.WHISPER_REMOTE_CHUNKSIZE_MB
 
 
 class GroqWhisperConfig(BaseModel):
     whisper_type: Literal["groq"] = "groq"
     api_key: str
-    language: str = "en"
-    model: str = "whisper-large-v3-turbo"
-    max_retries: int = 3
-    initial_backoff: float = 1.0
-    backoff_factor: float = 2.0
+    language: str = DEFAULTS.WHISPER_GROQ_LANGUAGE
+    model: str = DEFAULTS.WHISPER_GROQ_MODEL
+    max_retries: int = DEFAULTS.WHISPER_GROQ_MAX_RETRIES
 
 
 class LocalWhisperConfig(BaseModel):
     whisper_type: Literal["local"] = "local"
-    model: str = "base"
+    model: str = DEFAULTS.WHISPER_LOCAL_MODEL
 
 
 class Config(BaseModel):
     llm_api_key: Optional[str] = Field(default=None)
-    llm_model: str = Field(default="gpt-4o")
+    llm_model: str = Field(default=DEFAULTS.LLM_DEFAULT_MODEL)
     openai_base_url: Optional[str] = None
-    openai_max_tokens: int = 4096
-    openai_timeout: int = 300
+    openai_max_tokens: int = DEFAULTS.OPENAI_DEFAULT_MAX_TOKENS
+    openai_timeout: int = DEFAULTS.OPENAI_DEFAULT_TIMEOUT_SEC
     # Optional: Rate limiting controls
     llm_max_concurrent_calls: int = Field(
-        default=3, description="Maximum concurrent LLM calls to prevent rate limiting"
+        default=DEFAULTS.LLM_DEFAULT_MAX_CONCURRENT_CALLS,
+        description="Maximum concurrent LLM calls to prevent rate limiting",
     )
     llm_max_retry_attempts: int = Field(
-        default=5, description="Maximum retry attempts for failed LLM calls"
+        default=DEFAULTS.LLM_DEFAULT_MAX_RETRY_ATTEMPTS,
+        description="Maximum retry attempts for failed LLM calls",
     )
     llm_max_input_tokens_per_call: Optional[int] = Field(
-        default=None,
+        default=DEFAULTS.LLM_MAX_INPUT_TOKENS_PER_CALL,
         description="Maximum input tokens per LLM call to stay under API limits",
     )
     # Token-based rate limiting
     llm_enable_token_rate_limiting: bool = Field(
-        default=True, description="Enable client-side token-based rate limiting"
+        default=DEFAULTS.LLM_ENABLE_TOKEN_RATE_LIMITING,
+        description="Enable client-side token-based rate limiting",
     )
     llm_max_input_tokens_per_minute: Optional[int] = Field(
-        default=None,
+        default=DEFAULTS.LLM_MAX_INPUT_TOKENS_PER_MINUTE,
         description="Override default tokens per minute limit for the model",
     )
     output: OutputConfig
     processing: ProcessingConfig
-    host: str = "0.0.0.0"  # What the application should listen on
-    port: int = 5001  # Port the application should listen on
     server: Optional[str] = Field(
         default=None,
         deprecated=True,
         description="deprecated in favor of request-aware URL generation",
     )
-    backend_server_port: int = Field(
-        default=5001,
-        deprecated=True,
-        description="deprecated in favor of unified 'port' setting",
+    background_update_interval_minute: Optional[int] = (
+        DEFAULTS.APP_BACKGROUND_UPDATE_INTERVAL_MINUTE
     )
-    frontend_server_port: int = Field(
-        default=5001,
-        deprecated=True,
-        description="deprecated in favor of unified 'port' setting",
-    )
-    background_update_interval_minute: Optional[int] = None
-    job_timeout: int = 10800  # Default to 3 hours if not set
-    threads: int = 1
+    # removed job_timeout
     whisper: Optional[
         LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig | GroqWhisperConfig
     ] = Field(
@@ -111,12 +99,16 @@ class Config(BaseModel):
         description="deprecated in favor of [Remote|Local]WhisperConfig",
     )
     whisper_model: Optional[str] = Field(
-        default="base",
+        default=DEFAULTS.WHISPER_LOCAL_MODEL,
         deprecated=True,
         description="deprecated in favor of [Remote|Local]WhisperConfig",
     )
-    automatically_whitelist_new_episodes: bool = True
-    number_of_episodes_to_whitelist_from_archive_of_new_feed: int = 1
+    automatically_whitelist_new_episodes: bool = (
+        DEFAULTS.APP_AUTOMATICALLY_WHITELIST_NEW_EPISODES
+    )
+    number_of_episodes_to_whitelist_from_archive_of_new_feed: int = (
+        DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED
+    )
 
     def redacted(self) -> Config:
         return self.model_copy(
@@ -154,27 +146,3 @@ class Config(BaseModel):
         self.remote_whisper = None
 
         return self
-
-
-def get_config(path: str) -> Config:
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"No config file found at {path}. Please copy from config/config.yml.example"
-        )
-
-    with open(path, "r") as f:
-        config_str = f.read()
-
-    return get_config_from_str(config_str)
-
-
-def get_config_from_str(config_str: str) -> Config:
-    config_dict = yaml.safe_load(config_str)
-
-    # translate old open ai values to agnostic values for backwards compatibility
-    if "llm_api_key" not in config_dict and "openai_api_key" in config_dict:
-        config_dict["llm_api_key"] = config_dict["openai_api_key"]
-    if "llm_model" not in config_dict and "openai_model" in config_dict:
-        config_dict["llm_model"] = config_dict["openai_model"]
-
-    return Config(**config_dict)
