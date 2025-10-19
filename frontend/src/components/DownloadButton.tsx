@@ -74,6 +74,8 @@ export default function DownloadButton({
             if (statusResponse.error) {
               setError(statusResponse.error);
             }
+          } else if (statusResponse.status === 'skipped' || statusResponse.status === 'completed') {
+            setStatus(statusResponse);
           }
           // If status is 'not_started', leave the button in its default state
         } catch (err) {
@@ -96,13 +98,13 @@ export default function DownloadButton({
           const statusResponse = await feedsApi.getPostStatus(episodeGuid);
           setStatus(statusResponse);
 
-          if (statusResponse.status === 'completed' || statusResponse.status === 'error' || statusResponse.status === 'not_started') {
+          if (['completed', 'skipped', 'error', 'not_started'].includes(statusResponse.status)) {
             setIsProcessing(false);
             if (statusResponse.status === 'error') {
               setError(statusResponse.error || 'Processing failed');
             } else if (statusResponse.status === 'not_started') {
               setError('No processing job found');
-            } else if (statusResponse.status === 'completed' && feedId) {
+            } else if ((statusResponse.status === 'completed' || statusResponse.status === 'skipped') && feedId) {
               // Invalidate the episodes query to refresh the parent component's data
               queryClient.invalidateQueries({ queryKey: ['episodes', feedId] });
             }
@@ -156,12 +158,12 @@ export default function DownloadButton({
 
       const response = await feedsApi.processPost(episodeGuid);
 
-      if (response.status === 'completed' && response.download_url) {
+      if ((response.status === 'completed' || response.status === 'skipped') && response.download_url) {
         // Already processed
         setStatus({
-          status: 'completed',
+          status: response.status,
           step: 4,
-          step_name: 'Completed',
+          step_name: response.status === 'skipped' ? 'Processing skipped' : 'Completed',
           total_steps: 4,
           message: 'Episode ready for download',
           download_url: response.download_url

@@ -2,11 +2,15 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
+from typing import Any
 
 import click
 from flask import Flask
 from flask_cors import CORS
 from flask_migrate import upgrade
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 from app.background import add_background_job
 from app.extensions import db, migrate, scheduler
@@ -71,6 +75,22 @@ class SchedulerConfig:
     SCHEDULER_JOB_DEFAULTS = {"coalesce": False, "max_instances": 1}
 
 
+@event.listens_for(Engine, "connect", once=False)
+def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:
+    module = getattr(dbapi_connection.__class__, "__module__", "")
+    if not module.startswith(("sqlite3", "pysqlite2")):
+        return
+
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+        # Keep busy timeout low so our explicit retry logic can respond quickly.
+        cursor.execute("PRAGMA busy_timeout=2000;")
+    finally:
+        cursor.close()
+
+
 def setup_scheduler(app: Flask) -> None:
     """Initialize and start the scheduler."""
     if not is_test:
@@ -102,6 +122,12 @@ def create_app() -> Flask:
 
     # Configure the database URI (SQLite with a 90-second timeout)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db?timeout=90"
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "connect_args": {
+            "timeout": 90,
+            "check_same_thread": False,
+        },
+    }
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     # Groq's client logs the entire binary input file when set to DEBUG, which we never want to do.
@@ -142,37 +168,63 @@ def create_app() -> Flask:
     _validate_env_key_conflicts()
 
     # Always start the scheduler for on-demand jobs
+    _clear_scheduler_jobstore()
     setup_scheduler(app)
 
     # Clear all jobs on startup to ensure clean state
-    from app.job_manager import (  # pylint: disable=import-outside-toplevel
-        get_job_manager,
+    from app.jobs_manager import (  # pylint: disable=import-outside-toplevel
+        get_jobs_manager,
     )
 
-    job_manager = get_job_manager()
-    clear_result = job_manager.clear_all_jobs()
+    jobs_manager = get_jobs_manager()
+    clear_result = jobs_manager.clear_all_jobs()
     if clear_result["status"] == "success":
         logger.info(f"Startup: {clear_result['message']}")
     else:
         logger.warning(f"Startup job clearing failed: {clear_result['message']}")
 
-    # Only add the recurring background job if enabled
-    if config.background_update_interval_minute is not None:
-        logger.info(
-            f"Background scheduler is enabled with interval of {config.background_update_interval_minute} minutes."
-        )
-        add_background_job(int(config.background_update_interval_minute))
-    else:
-        logger.info(
-            "Background scheduler is disabled by configuration, but scheduler is available for on-demand jobs."
-        )
-
+    add_background_job(
+        10
+        if config.background_update_interval_minute is None
+        else int(config.background_update_interval_minute)
+    )
     return app
 
 
 if not is_test:
     setup_dirs()
 print("Config:\n", json.dumps(config.model_dump(), indent=2))
+
+
+def _clear_scheduler_jobstore() -> None:
+    """Remove persisted APScheduler jobs so startup adds a clean schedule."""
+    jobstore_config = SchedulerConfig.SCHEDULER_JOBSTORES.get("default")
+    if not isinstance(jobstore_config, dict):
+        return
+
+    url = jobstore_config.get("url")
+    if not isinstance(url, str):
+        return
+
+    prefix = "sqlite:///"
+    if not url.startswith(prefix):
+        return
+
+    relative_path = url[len(prefix) :]
+    project_root = Path(__file__).resolve().parents[2]
+    jobstore_path = (project_root / Path(relative_path)).resolve()
+    jobstore_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if jobstore_path.exists():
+            jobstore_path.unlink()
+            logger.info(
+                "Startup: cleared persisted APScheduler jobs at %s", jobstore_path
+            )
+    except OSError as exc:
+        logger.warning(
+            "Startup: failed to clear APScheduler jobs at %s: %s", jobstore_path, exc
+        )
 
 
 def _validate_env_key_conflicts() -> None:

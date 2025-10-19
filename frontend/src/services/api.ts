@@ -1,5 +1,13 @@
 import axios from 'axios';
-import type { Feed, Episode, Job, CombinedConfig, LLMConfig, WhisperConfig } from '../types';
+import type {
+  Feed,
+  Episode,
+  Job,
+  JobManagerStatus,
+  CombinedConfig,
+  LLMConfig,
+  WhisperConfig,
+} from '../types';
 
 const API_BASE_URL = '';
 
@@ -26,6 +34,22 @@ export const feedsApi = {
 
   deleteFeed: async (feedId: number): Promise<void> => {
     await api.delete(`/feed/${feedId}`);
+  },
+
+  refreshFeed: async (
+    feedId: number
+  ): Promise<{ status: string; message?: string }> => {
+    const response = await api.post(`/api/feeds/${feedId}/refresh`);
+    return response.data;
+  },
+
+  refreshAllFeeds: async (): Promise<{
+    status: string;
+    feeds_refreshed: number;
+    jobs_enqueued: number;
+  }> => {
+    const response = await api.post('/api/feeds/refresh-all');
+    return response.data;
   },
 
   togglePostWhitelist: async (guid: string, whitelisted: boolean): Promise<void> => {
@@ -332,4 +356,8 @@ export const jobsApi = {
     const response = await api.post(`/api/jobs/${jobId}/cancel`);
     return response.data;
   },
+  getJobManagerStatus: async (): Promise<JobManagerStatus> => {
+    const response = await api.get('/api/job-manager/status');
+    return response.data;
+  }
 };

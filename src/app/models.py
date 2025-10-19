@@ -6,9 +6,14 @@ from app.extensions import db
 from shared import defaults as DEFAULTS
 
 
+def generate_uuid() -> str:
+    """Generate a UUID4 string."""
+    return str(uuid.uuid4())
+
+
 def generate_job_id() -> str:
     """Generate a unique job ID."""
-    return str(uuid.uuid4())
+    return generate_uuid()
 
 
 # mypy typing issue https://github.com/python/mypy/issues/17918
@@ -156,14 +161,49 @@ class Identification(db.Model):  # type: ignore[name-defined, misc]
         return f"<Identification {self.id} TS:{self.transcript_segment_id} MC:{self.model_call_id} L:{self.label} C:{confidence_str}>"
 
 
+class JobsManagerRun(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "jobs_manager_run"
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    status = db.Column(db.String(50), nullable=False, default="pending", index=True)
+    trigger = db.Column(db.String(100), nullable=False)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    total_jobs = db.Column(db.Integer, nullable=False, default=0)
+    queued_jobs = db.Column(db.Integer, nullable=False, default=0)
+    running_jobs = db.Column(db.Integer, nullable=False, default=0)
+    completed_jobs = db.Column(db.Integer, nullable=False, default=0)
+    failed_jobs = db.Column(db.Integer, nullable=False, default=0)
+    skipped_jobs = db.Column(db.Integer, nullable=False, default=0)
+    context_json = db.Column(db.JSON, nullable=True)
+    counters_reset_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    processing_jobs = db.relationship(
+        "ProcessingJob", back_populates="run", lazy="dynamic"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<JobsManagerRun {self.id} status={self.status} "
+            f"trigger={self.trigger} total={self.total_jobs}>"
+        )
+
+
 class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
     __tablename__ = "processing_job"
 
     id = db.Column(db.String(36), primary_key=True, default=generate_job_id)
+    jobs_manager_run_id = db.Column(
+        db.String(36), db.ForeignKey("jobs_manager_run.id"), index=True
+    )
     post_guid = db.Column(db.String(255), nullable=False, index=True)
     status = db.Column(
         db.String(50), nullable=False
-    )  # pending, running, completed, failed, cancelled
+    )  # pending, running, completed, failed, cancelled, skipped
     current_step = db.Column(db.Integer, default=0)  # 0-4 (0=not started, 4=completed)
     step_name = db.Column(db.String(100))
     total_steps = db.Column(db.Integer, default=4)
@@ -181,6 +221,7 @@ class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
         primaryjoin="ProcessingJob.post_guid == Post.guid",
         foreign_keys=[post_guid],
     )
+    run = db.relationship("JobsManagerRun", back_populates="processing_jobs")
 
     def __repr__(self) -> str:
         return f"<ProcessingJob {self.id} Post:{self.post_guid} Status:{self.status} Step:{self.current_step}/{self.total_steps}>"

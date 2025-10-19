@@ -47,8 +47,9 @@ srv/**/*.mp3
 config/config.yml
 *.db
 *.sqlite
+**/sqlite3.db-*
+**/*.sqlite-*
 .DS_Store
-src/instance/sqlite3.db-journal
 src/instance/data/*
 
 # Frontend build logs

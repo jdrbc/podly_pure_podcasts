@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
 from app.extensions import db
-from app.job_manager import get_job_manager
+from app.jobs_manager import get_jobs_manager
 from app.models import Identification, ModelCall, Post, TranscriptSegment
 from app.posts import clear_post_processing_data
 
@@ -408,7 +408,9 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
         )
 
     try:
-        result = get_job_manager().start_post_processing(p_guid, priority="interactive")
+        result = get_jobs_manager().start_post_processing(
+            p_guid, priority="interactive"
+        )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
         return flask.jsonify(result), status_code
     except Exception as e:
@@ -454,9 +456,11 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
         )
 
     try:
-        get_job_manager().cancel_post_jobs(p_guid)
+        get_jobs_manager().cancel_post_jobs(p_guid)
         clear_post_processing_data(post)
-        result = get_job_manager().start_post_processing(p_guid, priority="interactive")
+        result = get_jobs_manager().start_post_processing(
+            p_guid, priority="interactive"
+        )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
         if result.get("status") == "started":
             result["message"] = "Post cleared and reprocessing started"
@@ -477,8 +481,8 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
 
 @post_bp.route("/api/posts/<string:p_guid>/status", methods=["GET"])
 def api_post_status(p_guid: str) -> ResponseReturnValue:
-    """Get the current processing status of a post via JobManager."""
-    result = get_job_manager().get_post_status(p_guid)
+    """Get the current processing status of a post via JobsManager."""
+    result = get_jobs_manager().get_post_status(p_guid)
     status_code = (
         200
         if result.get("status") != "error"

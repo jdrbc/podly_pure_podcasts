@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useRef } from 'react';
+import { toast } from 'react-hot-toast';
 import type { Feed, Episode } from '../types';
 import { feedsApi } from '../services/api';
 import DownloadButton from './DownloadButton';
@@ -40,6 +41,19 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     mutationFn: () => feedsApi.toggleAllPostsWhitelist(feed.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['episodes', feed.id] });
+    },
+  });
+
+  const refreshFeedMutation = useMutation({
+    mutationFn: () => feedsApi.refreshFeed(feed.id),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['feeds'] });
+      queryClient.invalidateQueries({ queryKey: ['episodes', feed.id] });
+      toast.success(data?.message ?? 'Feed refreshed');
+    },
+    onError: (err) => {
+      console.error('Failed to refresh feed', err);
+      toast.error('Failed to refresh feed');
     },
   });
 
@@ -138,6 +152,61 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     return `${minutes}m`;
   };
 
+  const handleCopyRssToClipboard = async () => {
+    const rssUrl = `${window.location.origin}/feed/${feed.id}`;
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(rssUrl);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = rssUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (!successful) {
+          throw new Error('Copy command failed');
+        }
+      }
+      toast.success('Feed URL copied to clipboard');
+    } catch (err) {
+      console.error('Failed to copy feed URL', err);
+      toast.error('Failed to copy feed URL');
+    }
+  };
+
+  const handleCopyOriginalRssToClipboard = async () => {
+    try {
+      const rssUrl = feed.rss_url || '';
+      if (!rssUrl) throw new Error('No RSS URL');
+
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(rssUrl);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = rssUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (!successful) {
+          throw new Error('Copy command failed');
+        }
+      }
+      toast.success('Original RSS URL copied to clipboard');
+    } catch (err) {
+      console.error('Failed to copy original RSS URL', err);
+      toast.error('Failed to copy original RSS URL');
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-white relative">
       {/* Mobile Header */}
@@ -229,13 +298,36 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             <div className="flex items-center gap-3">
               {/* Podly RSS Subscribe Button */}
               <button
-                onClick={() => window.open(`${window.location.origin}/feed/${feed.id}`, '_blank')}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
+                onClick={handleCopyRssToClipboard}
+                title="Copy Podly RSS feed URL"
+                className="flex items-center gap-3 px-5 py-2 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition-colors"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6.503 20.752c0 1.794-1.456 3.248-3.251 3.248S0 22.546 0 20.752s1.456-3.248 3.252-3.248 3.251 1.454 3.251 3.248zM1.677 6.082v4.15c6.988 0 12.65 5.662 12.65 12.65h4.15c0-9.271-7.529-16.8-16.8-16.8zM1.677.014v4.151C14.44 4.165 24.836 14.561 24.85 27.324H29c-.014-15.344-12.342-27.672-27.323-27.31z"/>
-                </svg>
-                Subscribe to Podly RSS
+                <img
+                  src="/rss-round-color-icon.svg"
+                  alt="Podly RSS"
+                  className="w-6 h-6"
+                  aria-hidden="true"
+                />
+                <span className="text-white">Subscribe to Podly RSS</span>
+              </button>
+
+              <button
+                onClick={() => refreshFeedMutation.mutate()}
+                disabled={refreshFeedMutation.isPending}
+                title="Refresh feed from source"
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                  refreshFeedMutation.isPending
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <img
+                  className={`w-4 h-4 ${refreshFeedMutation.isPending ? 'animate-spin' : ''}`}
+                  src="/reload-icon.svg"
+                  alt="Refresh feed"
+                  aria-hidden="true"
+                />
+                <span>Refresh Feed</span>
               </button>
 
               {/* Ellipsis Menu */}
@@ -293,14 +385,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
                     <button
                       onClick={() => {
-                        window.open(feed.rss_url, '_blank');
+                        handleCopyOriginalRssToClipboard();
                         setShowMenu(false);
                       }}
                       className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                     >
-                      <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M6.503 20.752c0 1.794-1.456 3.248-3.251 3.248S0 22.546 0 20.752s1.456-3.248 3.252-3.248 3.251 1.454 3.251 3.248zM1.677 6.082v4.15c6.988 0 12.65 5.662 12.65 12.65h4.15c0-9.271-7.529-16.8-16.8-16.8zM1.677.014v4.151C14.44 4.165 24.836 14.561 24.85 27.324H29c-.014-15.344-12.342-27.672-27.323-27.31z"/>
-                      </svg>
+                      <img src="/rss-round-color-icon.svg" alt="Original RSS" className="w-4 h-4" />
                       Original RSS feed
                     </button>
 

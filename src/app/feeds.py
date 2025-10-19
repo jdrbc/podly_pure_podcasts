@@ -9,8 +9,9 @@ from flask import request
 
 from app import config
 from app.extensions import db
-from app.models import Feed, Post
+from app.models import Feed, Post, ProcessingJob
 from podcast_processor.podcast_downloader import find_audio_link
+from podcast_processor.processing_status_manager import ProcessingStatusManager
 
 logger = logging.getLogger("global_logger")
 
@@ -65,6 +66,7 @@ def fetch_feed(url: str) -> feedparser.FeedParserDict:
 def refresh_feed(feed: Feed) -> None:
     logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
+    status_manager = ProcessingStatusManager(db_session=db.session, logger=logger)
 
     image_info = feed_data.feed.get("image")
     if image_info and "href" in image_info:
@@ -95,8 +97,12 @@ number_of_episodes_to_whitelist_from_archive_of_new_feed setting: {entry.title}"
                 )
             else:
                 p.whitelisted = config.automatically_whitelist_new_episodes
+            _ensure_job_for_post_guid(p.guid, status_manager)
             db.session.add(p)
     db.session.commit()
+
+    for post in feed.posts:  # type: ignore[attr-defined]
+        _ensure_job_for_post_guid(post.guid, status_manager)
     logger.info(f"Feed with ID: {feed.id} refreshed")
 
 
@@ -127,6 +133,7 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
         db.session.add(feed)
         db.session.commit()
 
+        status_manager = ProcessingStatusManager(db_session=db.session, logger=logger)
         num_posts_added = 0
         for entry in feed_data.entries:
             p = make_post(feed, entry)
@@ -144,6 +151,7 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
                 num_posts_added += 1
                 p.whitelisted = config.automatically_whitelist_new_episodes
             db.session.add(p)
+            _ensure_job_for_post_guid(p.guid, status_manager)
         db.session.commit()
         logger.info(f"Feed stored with ID: {feed.id}")
         return feed
@@ -266,3 +274,21 @@ def get_duration(entry: feedparser.FeedParserDict) -> Optional[int]:
     except Exception:  # pylint: disable=broad-except
         logger.error("Failed to get duration")
         return None
+
+
+def _ensure_job_for_post_guid(
+    post_guid: str, status_manager: ProcessingStatusManager
+) -> None:
+    """Ensure there's a ProcessingJob record for the provided post GUID."""
+    post = Post.query.filter_by(guid=post_guid).first()
+    if not post or not post.whitelisted:
+        return
+    existing_job = (
+        ProcessingJob.query.filter_by(post_guid=post_guid)
+        .order_by(ProcessingJob.created_at.desc())
+        .first()
+    )
+    if existing_job:
+        return
+    job_id = status_manager.generate_job_id()
+    status_manager.create_job(post_guid, job_id)

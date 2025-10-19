@@ -27,7 +27,7 @@ export interface Job {
   post_guid: string;
   post_title: string | null;
   feed_title: string | null;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped' | string;
   priority: number;
   step: number;
   step_name: string | null;
@@ -37,6 +37,28 @@ export interface Job {
   started_at: string | null;
   completed_at: string | null;
   error_message: string | null;
+}
+
+export interface JobManagerRun {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | string;
+  trigger: string;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
+  total_jobs: number;
+  queued_jobs: number;
+  running_jobs: number;
+  completed_jobs: number;
+  failed_jobs: number;
+  skipped_jobs: number;
+  context?: Record<string, unknown> | null;
+  counters_reset_at: string | null;
+  progress_percentage: number;
+}
+
+export interface JobManagerStatus {
+  run: JobManagerRun | null;
 }
 
 // ----- Configuration Types -----

@@ -5,7 +5,12 @@ from flask import Blueprint, request
 from flask.typing import ResponseReturnValue
 
 from app.extensions import db
-from app.job_manager import get_job_manager
+from app.jobs_manager import get_jobs_manager
+from app.jobs_manager_run_service import (
+    get_active_run,
+    recalculate_run_counts,
+    serialize_run,
+)
 
 logger = logging.getLogger("global_logger")
 
@@ -19,7 +24,7 @@ def api_list_active_jobs() -> ResponseReturnValue:
         limit = int(request.args.get("limit", "100"))
     except ValueError:
         limit = 100
-    result = get_job_manager().list_active_jobs(limit=limit)
+    result = get_jobs_manager().list_active_jobs(limit=limit)
     return flask.jsonify(result)
 
 
@@ -29,14 +34,26 @@ def api_list_all_jobs() -> ResponseReturnValue:
         limit = int(request.args.get("limit", "100"))
     except ValueError:
         limit = 100
-    result = get_job_manager().list_all_jobs_detailed(limit=limit)
+    result = get_jobs_manager().list_all_jobs_detailed(limit=limit)
     return flask.jsonify(result)
+
+
+@jobs_bp.route("/api/job-manager/status", methods=["GET"])
+def api_job_manager_status() -> ResponseReturnValue:
+    run = get_active_run(db.session)
+    if run:
+        recalculate_run_counts(db.session)
+
+    # Persist any aggregate updates performed above
+    db.session.commit()
+
+    return flask.jsonify({"run": serialize_run(run) if run else None})
 
 
 @jobs_bp.route("/api/jobs/<string:job_id>/cancel", methods=["POST"])
 def api_cancel_job(job_id: str) -> ResponseReturnValue:
     try:
-        result = get_job_manager().cancel_job(job_id)
+        result = get_jobs_manager().cancel_job(job_id)
         status_code = (
             200
             if result.get("status") == "cancelled"

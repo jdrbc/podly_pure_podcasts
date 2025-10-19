@@ -6,7 +6,7 @@ def add_background_job(minutes: int) -> None:
 
     minutes: interval in minutes; must be a positive integer.
     """
-    from app.job_manager import (  # pylint: disable=import-outside-toplevel
+    from app.jobs_manager import (  # pylint: disable=import-outside-toplevel
         scheduled_refresh_all_feeds,
     )
 
