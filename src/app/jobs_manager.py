@@ -127,10 +127,11 @@ class JobsManager:
 
         created = 0
         for post in posts_without_jobs:
-            SingleJobManager(
-                post.guid, self._status_manager, logger, run_id
-            ).ensure_job()
-            created += 1
+            if post.whitelisted:
+                SingleJobManager(
+                    post.guid, self._status_manager, logger, run_id
+                ).ensure_job()
+                created += 1
         return created
 
     def get_post_status(self, post_guid: str) -> Dict[str, Any]:
