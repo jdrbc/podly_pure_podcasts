@@ -20,15 +20,18 @@ Here's how it works:
 - You request an episode
 - Podly downloads the requested episode
 - Whisper transcribes the episode
-- Chat GPT labels ad segments
+- LLM labels ad segments
 - Podly removes the ad segments
 - Podly delivers the ad-free version of the podcast to you
 
 ## How To Run
 
-For detailed setup instructions, see our [beginner's guide](docs/how_to_run_beginners.md).
+You have two options to get started:
 
-### Quick Start (Docker - recommended)
+- **Deploy on Railway**: For a quick and easy setup in the cloud, follow our [Railway deployment guide](docs/how_to_run_railway.md). Use this if you want to share your Podly server with others.
+- **Run Locally**: For local development and customization, see our [beginner's guide for running locally](docs/how_to_run_beginners.md). Use this for the most cost-optimal & private setup.
+
+### Quick Start (Docker - recommended for local setup)
 
 1. Make the script executable and run:
 

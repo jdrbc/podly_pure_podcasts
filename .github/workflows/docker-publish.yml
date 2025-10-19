@@ -53,8 +53,41 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Fetch all history for git diff
+          fetch-depth: 0
+
+      - name: Check for documentation-only changes
+        id: check_files
+        run: |
+          # For PRs, compare against the base branch. For pushes, compare against the previous commit.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA=$(git rev-parse ${{ github.event.pull_request.base.ref }})
+            HEAD_SHA=$(git rev-parse ${{ github.sha }})
+            echo "Comparing PR commits: $BASE_SHA...$HEAD_SHA"
+            files_changed=$(git diff --name-only $BASE_SHA...$HEAD_SHA)
+          else
+            echo "Comparing push commits: HEAD~1...HEAD"
+            files_changed=$(git diff --name-only HEAD~1 HEAD)
+          fi
+
+          echo "Files changed:"
+          echo "$files_changed"
+
+          # If no files are documentation, then we should continue
+          non_doc_files=$(echo "$files_changed" | grep -v -E '(\.md$|^docs/|LICENCE)')
+
+          if [ -z "$non_doc_files" ]; then
+            echo "Only documentation files were changed. Skipping build and publish."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Code files were changed. Proceeding with build and publish."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
 
       - name: Free up disk space
+        if: steps.check_files.outputs.skip == 'false'
         run: |
           echo "Available disk space before cleanup:"
           df -h
@@ -66,12 +99,14 @@ jobs:
           df -h
 
       - name: Set up Docker Buildx
+        if: steps.check_files.outputs.skip == 'false'
         uses: docker/setup-buildx-action@v3
         with:
           driver-opts: |
             image=moby/buildkit:v0.12.0
 
       - name: Log in to Container Registry
+        if: steps.check_files.outputs.skip == 'false'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -79,6 +114,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
+        if: steps.check_files.outputs.skip == 'false'
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -90,6 +126,7 @@ jobs:
             type=raw,value=${{ matrix.variant.name }},enable={{is_default_branch}}
 
       - name: Build and push
+        if: steps.check_files.outputs.skip == 'false'
         uses: docker/build-push-action@v5
         with:
           context: .
