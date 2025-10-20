@@ -101,9 +101,7 @@ def split_audio(
         raise ValueError("Cannot split zero-byte audio file")
 
     chunk_ratio = chunk_size_bytes / file_size_bytes
-    chunk_duration_ms = max(
-        1, math.ceil(duration_ms * chunk_ratio)
-    )
+    chunk_duration_ms = max(1, math.ceil(duration_ms * chunk_ratio))
 
     num_chunks = max(1, math.ceil(duration_ms / chunk_duration_ms))
 

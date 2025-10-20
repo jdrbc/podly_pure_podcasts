@@ -4,8 +4,8 @@ from pathlib import Path
 from threading import Thread
 from typing import Any, cast
 
-import validators
 import requests
+import validators
 from flask import (
     Blueprint,
     Flask,
@@ -78,7 +78,7 @@ def search_feeds() -> ResponseReturnValue:
     term = (request.args.get("term") or "").strip()
     if not term:
         return jsonify({"error": "term parameter is required"}), 400
-    
+
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"

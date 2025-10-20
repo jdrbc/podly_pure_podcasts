@@ -6,6 +6,7 @@ import { feedsApi } from '../services/api';
 import DownloadButton from './DownloadButton';
 import PlayButton from './PlayButton';
 import ProcessingStatsButton from './ProcessingStatsButton';
+import { useAuth } from '../contexts/AuthContext';
 
 interface FeedDetailProps {
   feed: Feed;
@@ -16,6 +17,7 @@ interface FeedDetailProps {
 type SortOption = 'newest' | 'oldest' | 'title';
 
 export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailProps) {
+  const { requireAuth, credentials } = useAuth();
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [showStickyHeader, setShowStickyHeader] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -153,7 +155,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   };
 
   const handleCopyRssToClipboard = async () => {
-    const rssUrl = `${window.location.origin}/feed/${feed.id}`;
+    if (requireAuth && !credentials) {
+      toast.error('Please sign in to copy a protected RSS URL.');
+      return;
+    }
+
+    const rssUrl = feedsApi.buildProtectedFeedUrl(feed.id);
 
     try {
       if (navigator.clipboard && window.isSecureContext) {

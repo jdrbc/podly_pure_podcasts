@@ -130,3 +130,14 @@ export interface PodcastSearchResult {
   description: string;
   genres: string[];
 }
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  role: 'admin' | 'user' | string;
+}
+
+export interface ManagedUser extends AuthUser {
+  created_at: string;
+  updated_at: string;
+}

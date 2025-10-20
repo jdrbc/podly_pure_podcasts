@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 import re
@@ -8,7 +10,7 @@ import requests
 import validators
 from flask import abort
 
-from app.models import Post
+from shared.interfaces import Post
 from shared.processing_paths import get_in_root
 
 logger = logging.getLogger(__name__)

@@ -6,10 +6,12 @@ import FeedDetail from '../components/FeedDetail';
 import AddFeedForm from '../components/AddFeedForm';
 import type { Feed, CombinedConfig } from '../types';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function HomePage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedFeed, setSelectedFeed] = useState<Feed | null>(null);
+  const { requireAuth, user } = useAuth();
 
   const { data: feeds, isLoading, error, refetch } = useQuery({
     queryKey: ['feeds'],
@@ -19,6 +21,7 @@ export default function HomePage() {
   useQuery<CombinedConfig>({
     queryKey: ['config'],
     queryFn: configApi.getConfig,
+    enabled: !requireAuth || user?.role === 'admin',
   });
   const refreshAllMutation = useMutation({
     mutationFn: () => feedsApi.refreshAllFeeds(),

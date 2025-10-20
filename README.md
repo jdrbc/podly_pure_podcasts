@@ -110,36 +110,18 @@ labels:
 
 > **Note**: Most modern reverse proxies automatically set the required headers. No manual configuration is needed in most cases.
 
-### Basic Authentication
+### Built-in Authentication
 
-Podly supports basic authentication. See below for example setup for `httpd.conf`.
+Podly now ships with first-class HTTP Basic authentication so you can secure feeds without relying on a reverse proxy.
 
-```
-LoadModule proxy_module modules/mod_proxy.so
-LoadModule proxy_http_module modules/mod_proxy_http.so
+- Set `REQUIRE_AUTH=true` to enable protection. By default it is `false`, preserving existing behaviour.
+- When auth is enabled, Podly fails fast on startup unless `PODLY_ADMIN_PASSWORD` is supplied and meets the strength policy (≥12 characters with upper, lower, digit, symbol). Override the initial username with `PODLY_ADMIN_USERNAME` (default `podly_admin`).
+- On first boot with an empty database, Podly seeds an admin user using the supplied credentials. **If you are enabling auth on an existing install, start from a fresh data volume.**
+- After signing in, open the Config page to rotate your password and manage additional users. When you change the admin password, update the corresponding environment variable in your deployment platform so restarts continue to succeed.
+- The web UI copies RSS subscription URLs that already include `username:password@host` segments so podcast apps can fetch feeds and downloads without extra prompts.
+- All API, feed, and download endpoints require Basic Auth while static assets and the login screen remain public. Rate limiting is applied to repeated failures.
 
-ProxyPass / http://127.0.0.1:5001/
-RequestHeader set X-Forwarded-Proto http
-RequestHeader set X-Forwarded-Prefix /
-
-SetEnv proxy-chain-auth On
-
-# auth
-<Location />
-    AuthName "Registered User"
-    AuthType Basic
-    AuthUserFile /lib/protected.users
-    require valid-user
-</Location>
-```
-
-Add users by running:
-
-```
-sudo htpasswd -c /lib/protected.users [username]
-```
-
-Some apps will support basic auth in the URL like http://[username]:[pass]@my.domain.com
+Because credentials are embedded in URLs for RSS clients, share links only with trusted listeners and rotate passwords when access should be revoked.
 
 ## Ubuntu Service
 
