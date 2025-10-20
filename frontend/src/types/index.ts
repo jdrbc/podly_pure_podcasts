@@ -121,3 +121,12 @@ export interface CombinedConfig {
   output: OutputConfigUI;
   app: AppConfigUI;
 }
+
+export interface PodcastSearchResult {
+  title: string;
+  author: string;
+  feedUrl: string;
+  artworkUrl: string;
+  description: string;
+  genres: string[];
+}

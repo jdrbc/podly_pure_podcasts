@@ -7,6 +7,7 @@ import type {
   CombinedConfig,
   LLMConfig,
   WhisperConfig,
+  PodcastSearchResult,
 } from '../types';
 
 const API_BASE_URL = '';
@@ -58,6 +59,18 @@ export const feedsApi = {
 
   toggleAllPostsWhitelist: async (feedId: number): Promise<{ message: string; whitelisted_count: number; total_count: number; all_whitelisted: boolean }> => {
     const response = await api.post(`/api/feeds/${feedId}/toggle-whitelist-all`);
+    return response.data;
+  },
+
+  searchFeeds: async (
+    term: string
+  ): Promise<{
+    results: PodcastSearchResult[];
+    total: number;
+  }> => {
+    const response = await api.get('/api/feeds/search', {
+      params: { term },
+    });
     return response.data;
   },
 

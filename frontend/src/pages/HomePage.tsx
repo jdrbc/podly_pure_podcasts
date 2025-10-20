@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { feedsApi, configApi } from '../services/api';
 import FeedList from '../components/FeedList';
 import FeedDetail from '../components/FeedDetail';
@@ -33,6 +33,18 @@ export default function HomePage() {
       toast.error('Failed to refresh all feeds');
     },
   });
+
+  useEffect(() => {
+    if (!showAddForm || typeof document === 'undefined') {
+      return;
+    }
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [showAddForm]);
 
   if (isLoading) {
     return (
@@ -77,24 +89,13 @@ export default function HomePage() {
               />
             </button>
             <button
-              onClick={() => setShowAddForm(!showAddForm)}
+              onClick={() => setShowAddForm((prev) => !prev)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
             >
-              {showAddForm ? 'Cancel' : 'Add Feed'}
+              {showAddForm ? 'Close' : 'Add Feed'}
             </button>
           </div>
         </div>
-
-        {showAddForm && (
-          <div className="mb-6">
-            <AddFeedForm 
-              onSuccess={() => {
-                setShowAddForm(false);
-                refetch();
-              }}
-            />
-          </div>
-        )}
 
         <div className="flex-1 min-h-0 overflow-hidden">
           <FeedList 
@@ -131,6 +132,45 @@ export default function HomePage() {
             </svg>
             <h3 className="mt-2 text-sm font-medium text-gray-900">No podcast selected</h3>
             <p className="mt-1 text-sm text-gray-500">Select a podcast from the list to view details and episodes.</p>
+          </div>
+        </div>
+      )}
+
+      {showAddForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6"
+          onClick={() => setShowAddForm(false)}
+        >
+          <div
+            className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col max-h-[90vh]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 sm:px-6 py-4">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">Add a Podcast Feed</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Paste an RSS URL or search the catalog to find shows to follow.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAddForm(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                aria-label="Close add feed modal"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto px-4 sm:px-6 py-4">
+              <AddFeedForm
+                onSuccess={() => {
+                  setShowAddForm(false);
+                  refetch();
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

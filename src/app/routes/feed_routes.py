@@ -5,6 +5,7 @@ from threading import Thread
 from typing import Any, cast
 
 import validators
+import requests
 from flask import (
     Blueprint,
     Flask,
@@ -70,6 +71,71 @@ def add_feed() -> ResponseReturnValue:
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error adding feed: {e}")
         return make_response((f"Error adding feed: {e}", 500))
+
+
+@feed_bp.route("/api/feeds/search", methods=["GET"])
+def search_feeds() -> ResponseReturnValue:
+    term = (request.args.get("term") or "").strip()
+    if not term:
+        return jsonify({"error": "term parameter is required"}), 400
+    
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"
+        }
+        response = requests.get(
+            "http://api.podcastindex.org/search",
+            headers=headers,
+            params={"term": term},
+            timeout=10,
+        )
+        response.raise_for_status()
+        upstream_data = response.json()
+    except requests.exceptions.RequestException as exc:
+        logger.error("Podcast search request failed: %s", exc)
+        return jsonify({"error": "Search request failed"}), 502
+    except ValueError:
+        logger.error("Podcast search returned non-JSON response")
+        return (
+            jsonify({"error": "Unexpected response from search provider"}),
+            502,
+        )
+
+    results = upstream_data.get("results") or []
+    transformed_results = []
+
+    for item in results:
+        feed_url = item.get("feedUrl")
+        if not feed_url:
+            continue
+
+        transformed_results.append(
+            {
+                "title": item.get("collectionName")
+                or item.get("trackName")
+                or "Unknown title",
+                "author": item.get("artistName") or "",
+                "feedUrl": feed_url,
+                "artworkUrl": item.get("artworkUrl100")
+                or item.get("artworkUrl600")
+                or "",
+                "description": item.get("collectionCensoredName")
+                or item.get("trackCensoredName")
+                or "",
+                "genres": item.get("genres") or [],
+            }
+        )
+
+    total = upstream_data.get("resultCount")
+    if not isinstance(total, int) or total == 0:
+        total = len(transformed_results)
+
+    return jsonify(
+        {
+            "results": transformed_results,
+            "total": total,
+        }
+    )
 
 
 @feed_bp.route("/feed/<int:f_id>", methods=["GET"])
