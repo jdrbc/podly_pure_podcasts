@@ -21,6 +21,10 @@ Click the button below to deploy Podly to Railway. This is a sponsored link that
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/deploy?template=https://github.com/jdrbc/podly_pure_podcasts&referralCode=NMdeg5)
 
+If you want to be a beta-tester, you can deploy the preview branch instead:
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/sXaSI2?referralCode=NMdeg5&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
 ## 3. Configure Networking
 
 After the deployment is complete, you need to expose the service to the internet.
