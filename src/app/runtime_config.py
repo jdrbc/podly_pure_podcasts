@@ -32,6 +32,7 @@ else:
         ),
         processing=ProcessingConfig(
             num_segments_to_input_to_prompt=DEFAULTS.PROCESSING_NUM_SEGMENTS_TO_INPUT_TO_PROMPT,
+            max_overlap_segments=DEFAULTS.PROCESSING_MAX_OVERLAP_SEGMENTS,
         ),
         background_update_interval_minute=DEFAULTS.APP_BACKGROUND_UPDATE_INTERVAL_MINUTE,
         llm_max_concurrent_calls=DEFAULTS.LLM_DEFAULT_MAX_CONCURRENT_CALLS,

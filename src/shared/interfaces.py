@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Optional, Protocol, runtime_checkable
 
 
+@runtime_checkable
 class Post(Protocol):
     """Interface for post objects to break cyclic dependencies."""
 
