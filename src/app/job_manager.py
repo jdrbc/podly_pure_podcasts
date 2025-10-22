@@ -209,12 +209,3 @@ class JobManager:
             "message": "Job queued for processing",
             "job_id": job.id,
         }
-
-
-def scheduled_refresh_all_feeds() -> None:
-    """Backward-compatible wrapper for APScheduler job references."""
-    from app.jobs_manager import (
-        scheduled_refresh_all_feeds as _scheduled_refresh_all_feeds,
-    )
-
-    _scheduled_refresh_all_feeds()

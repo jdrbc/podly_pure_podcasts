@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { configApi } from '../services/api';
+import axios from 'axios';
+import { configApi, authApi } from '../services/api';
 import { toast } from 'react-hot-toast';
-import type { CombinedConfig, LLMConfig, WhisperConfig } from '../types';
+import type { CombinedConfig, LLMConfig, ManagedUser, WhisperConfig } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ConfigPage() {
   const { data, isLoading, refetch } = useQuery<CombinedConfig>({
@@ -11,8 +13,32 @@ export default function ConfigPage() {
     queryFn: configApi.getConfig,
   });
 
+  const { changePassword, refreshUser, user, logout } = useAuth();
+
+  const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' });
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+
+  const [newUser, setNewUser] = useState({ username: '', password: '', confirm: '', role: 'user' });
+  const [activeResetUser, setActiveResetUser] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
+
+  const {
+    data: managedUsers,
+    isLoading: usersLoading,
+    refetch: refetchUsers,
+  } = useQuery<ManagedUser[]>({
+    queryKey: ['auth-users'],
+    queryFn: async () => {
+      const response = await authApi.listUsers();
+      return response.users;
+    },
+    enabled: !!user && user.role === 'admin',
+  });
+
   const [pending, setPending] = useState<CombinedConfig | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showUserManagement, setShowUserManagement] = useState(false);
   const [showGroqHelp, setShowGroqHelp] = useState(false);
   const [showGroqPricing, setShowGroqPricing] = useState(false);
   const [localWhisperAvailable, setLocalWhisperAvailable] = useState<boolean | null>(null);
@@ -25,6 +51,114 @@ export default function ConfigPage() {
   const initialProbeDone = useRef(false);
   const groqRecommendedModel = useMemo(() => 'groq/openai/gpt-oss-120b', []);
   const groqRecommendedWhisper = useMemo(() => 'whisper-large-v3-turbo', []);
+
+  const getErrorMessage = (error: unknown, fallback = 'Request failed.') => {
+    if (axios.isAxiosError(error)) {
+      return error.response?.data?.error || error.response?.data?.message || error.message || fallback;
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return fallback;
+  };
+
+  const handlePasswordSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (passwordForm.next !== passwordForm.confirm) {
+      toast.error('New passwords do not match.');
+      return;
+    }
+
+    setPasswordSubmitting(true);
+    try {
+      await changePassword(passwordForm.current, passwordForm.next);
+      toast.success('Password updated. Update PODLY_ADMIN_PASSWORD to match.');
+      setPasswordForm({ current: '', next: '', confirm: '' });
+      await refreshUser();
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update password.'));
+    } finally {
+      setPasswordSubmitting(false);
+    }
+  };
+
+  const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const username = newUser.username.trim();
+    if (!username) {
+      toast.error('Username is required.');
+      return;
+    }
+    if (newUser.password !== newUser.confirm) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+
+    try {
+      await authApi.createUser({
+        username,
+        password: newUser.password,
+        role: newUser.role,
+      });
+      toast.success(`User '${username}' created.`);
+      setNewUser({ username: '', password: '', confirm: '', role: 'user' });
+      await refetchUsers();
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to create user.'));
+    }
+  };
+
+  const handleRoleChange = async (username: string, role: string) => {
+    try {
+      await authApi.updateUser(username, { role });
+      toast.success(`Updated role for ${username}.`);
+      await refetchUsers();
+      if (user && user.username === username) {
+        await refreshUser();
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update role.'));
+    }
+  };
+
+  const handleResetPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!activeResetUser) {
+      return;
+    }
+    if (resetPassword !== resetConfirm) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+
+    try {
+      await authApi.updateUser(activeResetUser, { password: resetPassword });
+      toast.success(`Password updated for ${activeResetUser}.`);
+      setActiveResetUser(null);
+      setResetPassword('');
+      setResetConfirm('');
+      await refetchUsers();
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update password.'));
+    }
+  };
+
+  const handleDeleteUser = async (username: string) => {
+    const confirmed = window.confirm(`Delete user '${username}'? This action cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await authApi.deleteUser(username);
+      toast.success(`Deleted user '${username}'.`);
+      await refetchUsers();
+      if (user && user.username === username) {
+        logout();
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to delete user.'));
+    }
+  };
 
   const getWhisperApiKey = (w: WhisperConfig | undefined): string => {
     if (!w) return '';
@@ -245,6 +379,53 @@ export default function ConfigPage() {
         <h2 className="text-lg font-semibold text-gray-900">Configuration</h2>
       </div>
 
+      <Section title="Account Security">
+        <form className="grid gap-3 max-w-md" onSubmit={handlePasswordSubmit}>
+          <Field label="Current password">
+            <input
+              className="input"
+              type="password"
+              autoComplete="current-password"
+              value={passwordForm.current}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, current: event.target.value }))}
+              required
+            />
+          </Field>
+          <Field label="New password">
+            <input
+              className="input"
+              type="password"
+              autoComplete="new-password"
+              value={passwordForm.next}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, next: event.target.value }))}
+              required
+            />
+          </Field>
+          <Field label="Confirm new password">
+            <input
+              className="input"
+              type="password"
+              autoComplete="new-password"
+              value={passwordForm.confirm}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirm: event.target.value }))}
+              required
+            />
+          </Field>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              className="px-4 py-2 rounded bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
+              disabled={passwordSubmitting}
+            >
+              {passwordSubmitting ? 'Updating…' : 'Update password'}
+            </button>
+            <p className="text-xs text-gray-500">
+              After updating, rotate <code className="font-mono">PODLY_ADMIN_PASSWORD</code> to match.
+            </p>
+          </div>
+        </form>
+      </Section>
+
       <Section title="Connection Status">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="flex items-start justify-between border rounded p-3">
@@ -462,7 +643,13 @@ export default function ConfigPage() {
         </Field>
       </Section>
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-3">
+        <button
+          onClick={() => setShowUserManagement((v) => !v)}
+          className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+        >
+          {showUserManagement ? 'Hide User Management' : 'Show User Management'}
+        </button>
         <button
           onClick={() => setShowAdvanced((v) => !v)}
           className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -470,6 +657,170 @@ export default function ConfigPage() {
           {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings'}
         </button>
       </div>
+
+      {showUserManagement && (
+        <Section title="User Management">
+          <div className="space-y-4">
+            <form className="grid gap-3 md:grid-cols-2" onSubmit={handleCreateUser}>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  className="input"
+                  type="text"
+                  value={newUser.username}
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, username: event.target.value }))}
+                  placeholder="new_user"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={newUser.password}
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, password: event.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={newUser.confirm}
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, confirm: event.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  className="input"
+                  value={newUser.role}
+                  onChange={(event) => setNewUser((prev) => ({ ...prev, role: event.target.value }))}
+                >
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </select>
+              </div>
+              <div className="md:col-span-2 flex items-center justify-start">
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded bg-green-600 text-white text-sm font-medium hover:bg-green-700"
+                >
+                  Add user
+                </button>
+              </div>
+            </form>
+
+            <div className="space-y-3">
+              {usersLoading && <div className="text-sm text-gray-600">Loading users…</div>}
+              {!usersLoading && (!managedUsers || managedUsers.length === 0) && (
+                <div className="text-sm text-gray-600">No additional users configured.</div>
+              )}
+              {!usersLoading && managedUsers && managedUsers.length > 0 && (
+                <div className="space-y-3">
+                  {managedUsers.map((managed) => {
+                    const adminCount = managedUsers.filter((u) => u.role === 'admin').length;
+                    const disableDemotion = managed.role === 'admin' && adminCount <= 1;
+                    const disableDelete = disableDemotion;
+                    const isActive = activeResetUser === managed.username;
+
+                    return (
+                      <div key={managed.id} className="border border-gray-200 rounded-lg p-3 space-y-3 bg-white">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">{managed.username}</div>
+                            <div className="text-xs text-gray-500">
+                              Added {new Date(managed.created_at).toLocaleString()} • Role {managed.role}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              className="input text-sm"
+                              value={managed.role}
+                              onChange={(event) => {
+                                const nextRole = event.target.value;
+                                if (nextRole !== managed.role) {
+                                  void handleRoleChange(managed.username, nextRole);
+                                }
+                              }}
+                              disabled={disableDemotion && managed.role === 'admin'}
+                            >
+                              <option value="user">user</option>
+                              <option value="admin">admin</option>
+                            </select>
+                            <button
+                              type="button"
+                              className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50"
+                              onClick={() => {
+                                if (isActive) {
+                                  setActiveResetUser(null);
+                                  setResetPassword('');
+                                  setResetConfirm('');
+                                } else {
+                                  setActiveResetUser(managed.username);
+                                  setResetPassword('');
+                                  setResetConfirm('');
+                                }
+                              }}
+                            >
+                              {isActive ? 'Cancel' : 'Set password'}
+                            </button>
+                            <button
+                              type="button"
+                              className="px-3 py-1 border border-red-300 text-red-600 rounded-md text-sm hover:bg-red-50 disabled:opacity-50"
+                              onClick={() => void handleDeleteUser(managed.username)}
+                              disabled={disableDelete}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+
+                        {isActive && (
+                          <form className="grid gap-2 md:grid-cols-3" onSubmit={handleResetPassword}>
+                            <div className="md:col-span-1">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">New password</label>
+                              <input
+                                className="input"
+                                type="password"
+                                value={resetPassword}
+                                onChange={(event) => setResetPassword(event.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="md:col-span-1">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Confirm password</label>
+                              <input
+                                className="input"
+                                type="password"
+                                value={resetConfirm}
+                                onChange={(event) => setResetConfirm(event.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="md:col-span-1 flex items-end gap-2">
+                              <button
+                                type="submit"
+                                className="px-4 py-2 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700"
+                              >
+                                Update
+                              </button>
+                              <p className="text-xs text-gray-500">Share new credentials securely.</p>
+                            </div>
+                          </form>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </Section>
+      )}
 
       {showAdvanced && (
         <div className="space-y-6">

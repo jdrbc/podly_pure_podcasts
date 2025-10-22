@@ -2,14 +2,15 @@ import datetime
 import logging
 import uuid
 from typing import Any, Optional
+from urllib.parse import quote, urlparse, urlunparse
 
 import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
-from flask import request
+from flask import current_app, g, request
 
-from app import config
 from app.extensions import db
 from app.models import Feed, Post, ProcessingJob
+from app.runtime_config import config
 from podcast_processor.podcast_downloader import find_audio_link
 from podcast_processor.processing_status_manager import ProcessingStatusManager
 
@@ -170,8 +171,8 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     base_url = _get_base_url()
 
     # Generate URLs that will be proxied by the frontend to the backend
-    audio_url = f"{base_url}/api/posts/{post.guid}/download"
-    post_details_url = f"{base_url}/api/posts/{post.guid}"
+    audio_url = _with_basic_auth(f"{base_url}/api/posts/{post.guid}/download")
+    post_details_url = _with_basic_auth(f"{base_url}/api/posts/{post.guid}")
 
     description = (
         f'{post.description}\n<p><a href="{post_details_url}">Podly Post Page</a></p>'
@@ -201,7 +202,7 @@ def generate_feed_xml(feed: Feed) -> Any:
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
 
     base_url = _get_base_url()
-    link = f"{base_url}/feed/{feed.id}"
+    link = _with_basic_auth(f"{base_url}/feed/{feed.id}")
 
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
@@ -213,6 +214,30 @@ def generate_feed_xml(feed: Feed) -> Any:
     )
     logger.info(f"XML generated for feed with ID: {feed.id}")
     return rss_feed.to_xml("utf-8")
+
+
+def _with_basic_auth(url: str) -> str:
+    if not current_app.config.get("REQUIRE_AUTH"):
+        return url
+
+    credentials = getattr(g, "basic_auth_credentials", None)
+    if not credentials:
+        return url
+
+    username, password = credentials
+    parsed = urlparse(url)
+    if not parsed.netloc:
+        return url
+
+    if parsed.username or parsed.password:
+        return url
+
+    safe_username = quote(username, safe="")
+    safe_password = quote(password, safe="")
+    userinfo = f"{safe_username}:{safe_password}"
+    netloc_with_credentials = f"{userinfo}@{parsed.netloc}"
+
+    return urlunparse(parsed._replace(netloc=netloc_with_credentials))
 
 
 def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:

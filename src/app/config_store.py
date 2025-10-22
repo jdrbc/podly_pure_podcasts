@@ -4,7 +4,6 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from app import config as runtime_config
 from app.background import add_background_job
 from app.extensions import db, scheduler
 from app.models import (
@@ -14,6 +13,7 @@ from app.models import (
     ProcessingSettings,
     WhisperSettings,
 )
+from app.runtime_config import config as runtime_config
 from shared import defaults as DEFAULTS
 from shared.config import Config as PydanticConfig
 from shared.config import (

@@ -27,13 +27,15 @@ flask-sqlalchemy = "*"
 flask-migrate = "*"
 Flask-APScheduler = "*"
 ffmpeg-python = "*"
-litellm = ">=1.59.8,<1.75.0"  # Pin to avoid fastuuid dependency
+litellm = "*"  # Pin to avoid fastuuid dependency
 bleach = "*"
 types-bleach = "*"
 groq = "*"
 async_timeout = "*"
 pytest-cov = "*"
 flask-cors = "*"
+bcrypt = "*"
+httpx-aiohttp = "*"
 
 [dev-packages]
 black = "*"
@@ -49,7 +51,6 @@ types-flask-migrate = "*"
 pytest-mock = "*"
 watchdog = "*"
 requests = "*"
-types-flask-cors = "*"
 
 [requires]
 python_version = "3.11"

@@ -33,6 +33,7 @@ groq = "*"
 async_timeout = "*"
 pytest-cov = "*"
 flask-cors = "*"
+bcrypt = "*"
 
 [dev-packages]
 black = "*"

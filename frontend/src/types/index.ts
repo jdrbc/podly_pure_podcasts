@@ -121,3 +121,23 @@ export interface CombinedConfig {
   output: OutputConfigUI;
   app: AppConfigUI;
 }
+
+export interface PodcastSearchResult {
+  title: string;
+  author: string;
+  feedUrl: string;
+  artworkUrl: string;
+  description: string;
+  genres: string[];
+}
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  role: 'admin' | 'user' | string;
+}
+
+export interface ManagedUser extends AuthUser {
+  created_at: string;
+  updated_at: string;
+}

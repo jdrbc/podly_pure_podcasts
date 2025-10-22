@@ -2,6 +2,9 @@ import os
 import uuid
 from datetime import datetime
 
+from sqlalchemy.orm import validates
+
+from app.auth.passwords import hash_password, verify_password
 from app.extensions import db
 from shared import defaults as DEFAULTS
 
@@ -93,6 +96,32 @@ class TranscriptSegment(db.Model):  # type: ignore[name-defined, misc]
 
     def __repr__(self) -> str:
         return f"<TranscriptSegment {self.id} P:{self.post_id} S:{self.sequence_num} T:{self.start_time:.1f}-{self.end_time:.1f}>"
+
+
+class User(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "users"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(50), nullable=False, default="user")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    @validates("username")
+    def _normalize_username(self, key: str, value: str) -> str:
+        del key
+        return value.strip().lower()
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = hash_password(password)
+
+    def verify_password(self, password: str) -> bool:
+        return verify_password(password, self.password_hash)
+
+    def __repr__(self) -> str:
+        return f"<User {self.username} role={self.role}>"
 
 
 class ModelCall(db.Model):  # type: ignore[name-defined, misc]

@@ -118,6 +118,23 @@ chmod +x run_podly_docker.sh
 ./run_podly_docker.sh -d         # detached
 ```
 
+### Optional: Enable Authentication
+
+The Docker image reads environment variables from `.env` files or your shell. To require login:
+
+1. Export the variables before running Podly, or add them to `config/.env`:
+
+```bash
+export REQUIRE_AUTH=true
+export PODLY_ADMIN_PASSWORD='SuperSecurePass!2024'
+# Optional
+export PODLY_ADMIN_USERNAME='podly_admin'
+```
+
+2. Start Podly as usual. On first boot with auth enabled and an empty database, the admin account is created automatically. If you are turning auth on for an existing volume, clear the `sqlite3.db` file so the bootstrap can succeed.
+
+3. Sign in at `http://localhost:5001`, then visit the Config page to change your password, add users, and copy RSS URLs that already include credentials. Remember to update your environment variables whenever you rotate the admin password.
+
 ### First Run
 
 1. Docker will download and build the necessary image (this may take 5-15 minutes)

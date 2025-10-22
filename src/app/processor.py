@@ -1,4 +1,4 @@
-from app import config
+from app.runtime_config import config
 from podcast_processor.podcast_processor import PodcastProcessor
 
 

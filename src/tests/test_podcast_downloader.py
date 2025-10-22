@@ -112,14 +112,18 @@ def test_download_episode_new_file(mock_get, test_post, downloader, app):
         # Setup mock response
         mock_response = mock.MagicMock()
         mock_response.status_code = 200
-        mock_response.content = b"podcast audio content"
+        mock_response.iter_content.return_value = [b"podcast audio content"]
+        mock_response.__enter__.return_value = mock_response
+        mock_response.__exit__.return_value = None
         mock_get.return_value = mock_response
 
         expected_path = downloader.get_and_make_download_path(test_post.title)
         result = downloader.download_episode(test_post, dest_path=str(expected_path))
 
         # Check that we tried to download the file
-        mock_get.assert_called_once_with("https://example.com/podcast.mp3")
+        mock_get.assert_called_once_with(
+            "https://example.com/podcast.mp3", stream=True, timeout=60
+        )
 
         # Check that the file was created with the correct content
         expected_path = downloader.get_and_make_download_path(test_post.title)
@@ -136,13 +140,17 @@ def test_download_episode_download_failed(mock_get, test_post, downloader, app):
         # Setup mock response
         mock_response = mock.MagicMock()
         mock_response.status_code = 404
+        mock_response.__enter__.return_value = mock_response
+        mock_response.__exit__.return_value = None
         mock_get.return_value = mock_response
 
         expected_path = downloader.get_and_make_download_path(test_post.title)
         result = downloader.download_episode(test_post, dest_path=str(expected_path))
 
         # Check that we tried to download the file
-        mock_get.assert_called_once_with("https://example.com/podcast.mp3")
+        mock_get.assert_called_once_with(
+            "https://example.com/podcast.mp3", stream=True, timeout=60
+        )
 
         # Check that no file was created
         expected_path = downloader.get_and_make_download_path(test_post.title)

@@ -9,6 +9,18 @@ from shared import defaults as DEFAULTS
 
 class ProcessingConfig(BaseModel):
     num_segments_to_input_to_prompt: int
+    max_overlap_segments: int = Field(
+        default=DEFAULTS.PROCESSING_MAX_OVERLAP_SEGMENTS,
+        ge=0,
+        description="Maximum number of previously identified segments carried into the next prompt.",
+    )
+
+    @model_validator(mode="after")
+    def validate_overlap_limits(self) -> "ProcessingConfig":
+        assert (
+            self.max_overlap_segments <= self.num_segments_to_input_to_prompt
+        ), "max_overlap_segments must be <= num_segments_to_input_to_prompt"
+        return self
 
 
 class OutputConfig(BaseModel):

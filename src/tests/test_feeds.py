@@ -240,7 +240,7 @@ def test_add_feed(mock_post_class, mock_feed_data, mock_db_session):
         assert result == mock_feed
 
 
-def test_feed_item(mock_post):
+def test_feed_item(mock_post, app):
     # Mock request context with Host header
     headers_dict = {"Host": "podly.com:5001"}
 
@@ -255,8 +255,9 @@ def test_feed_item(mock_post):
     mock_request.environ = mock_environ
     mock_request.is_secure = False
 
-    with mock.patch("app.feeds.request", mock_request):
-        result = feed_item(mock_post)
+    with app.app_context():
+        with mock.patch("app.feeds.request", mock_request):
+            result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
@@ -269,7 +270,7 @@ def test_feed_item(mock_post):
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
-def test_feed_item_with_reverse_proxy(mock_post):
+def test_feed_item_with_reverse_proxy(mock_post, app):
     # Test with HTTP/2 pseudo-headers (modern reverse proxy)
     headers_dict = {
         ":scheme": "http",
@@ -287,8 +288,9 @@ def test_feed_item_with_reverse_proxy(mock_post):
     mock_request.headers = mock_headers
     mock_request.environ = mock_environ
 
-    with mock.patch("app.feeds.request", mock_request):
-        result = feed_item(mock_post)
+    with app.app_context():
+        with mock.patch("app.feeds.request", mock_request):
+            result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
@@ -301,7 +303,7 @@ def test_feed_item_with_reverse_proxy(mock_post):
     assert result.enclosure.length == mock_post._audio_len_bytes
 
 
-def test_feed_item_with_reverse_proxy_custom_port(mock_post):
+def test_feed_item_with_reverse_proxy_custom_port(mock_post, app):
     # Test with HTTPS and custom port via request headers
     headers_dict = {
         ":scheme": "https",
@@ -319,8 +321,9 @@ def test_feed_item_with_reverse_proxy_custom_port(mock_post):
     mock_request.headers = mock_headers
     mock_request.environ = mock_environ
 
-    with mock.patch("app.feeds.request", mock_request):
-        result = feed_item(mock_post)
+    with app.app_context():
+        with mock.patch("app.feeds.request", mock_request):
+            result = feed_item(mock_post)
 
     # Verify the result
     assert isinstance(result, PyRSS2Gen.RSSItem)
@@ -400,7 +403,7 @@ def test_get_base_url_localhost():
 
 
 @mock.patch("app.feeds.feed_item")
-def test_generate_feed_xml(mock_feed_item, mock_feed, mock_post):
+def test_generate_feed_xml(mock_feed_item, mock_feed, mock_post, app):
     # Set up mocks
     mock_feed.posts = [mock_post]
 
@@ -409,6 +412,7 @@ def test_generate_feed_xml(mock_feed_item, mock_feed, mock_post):
 
     # Mock PyRSS2Gen.RSS2
     with (
+        app.app_context(),
         mock.patch("app.feeds.PyRSS2Gen.RSS2") as mock_rss_2,
         mock.patch("app.feeds.PyRSS2Gen.Image"),
     ):

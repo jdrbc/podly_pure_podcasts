@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import litellm
 from jinja2 import Template
@@ -27,6 +27,26 @@ from podcast_processor.token_rate_limiter import (
 )
 from podcast_processor.transcribe import Segment
 from shared.config import Config, TestWhisperConfig
+
+
+class ClassifyParams:
+    def __init__(
+        self,
+        system_prompt: str,
+        user_prompt_template: Template,
+        post: Post,
+        num_segments_per_prompt: int,
+        max_overlap_segments: int,
+    ):
+        self.system_prompt = system_prompt
+        self.user_prompt_template = user_prompt_template
+        self.post = post
+        self.num_segments_per_prompt = num_segments_per_prompt
+        self.max_overlap_segments = max_overlap_segments
+
+
+class ClassifyException(Exception):
+    """Custom exception for classification errors."""
 
 
 class AdClassifier:
@@ -106,59 +126,127 @@ class AdClassifier:
             )
             return
 
-        num_segments_per_prompt = self.config.processing.num_segments_to_input_to_prompt
-        for i in range(0, len(transcript_segments), num_segments_per_prompt):
-            end_idx = min(i + num_segments_per_prompt, len(transcript_segments))
+        classify_params = ClassifyParams(
+            system_prompt=system_prompt,
+            user_prompt_template=user_prompt_template,
+            post=post,
+            num_segments_per_prompt=self.config.processing.num_segments_to_input_to_prompt,
+            max_overlap_segments=self.config.processing.max_overlap_segments,
+        )
 
-            # If per-call token limiting is enabled, validate and potentially split the chunk
-            if self.config.llm_max_input_tokens_per_call is not None:
-                self._process_segment_chunk_with_token_limit(
-                    transcript_segments=transcript_segments,
-                    start_idx=i,
-                    end_idx=end_idx,
-                    system_prompt=system_prompt,
-                    user_prompt_template=user_prompt_template,
-                    post=post,
-                )
-            else:
-                self._process_segment_chunk(
-                    transcript_segments=transcript_segments,
-                    start_idx=i,
-                    end_idx=end_idx,
-                    system_prompt=system_prompt,
-                    user_prompt_template=user_prompt_template,
-                    post=post,
-                )
+        total_segments = len(transcript_segments)
 
-    def _process_segment_chunk(
-        self,
-        *,
-        transcript_segments: List[TranscriptSegment],
-        start_idx: int,
-        end_idx: int,
-        system_prompt: str,
-        user_prompt_template: Template,
-        post: Post,
-    ) -> None:
-        """Process a chunk of transcript segments for classification."""
-        current_chunk_db_segments = transcript_segments[start_idx:end_idx]
-        if not current_chunk_db_segments:
+        try:
+            current_index = 0
+            next_overlap_segments: List[TranscriptSegment] = []
+            max_iterations = (
+                total_segments + 10
+            )  # Safety limit to prevent infinite loops
+            iteration_count = 0
+            while current_index < total_segments and iteration_count < max_iterations:
+                consumed_segments, next_overlap_segments = self._step(
+                    classify_params,
+                    next_overlap_segments,
+                    current_index,
+                    transcript_segments,
+                )
+                current_index += consumed_segments
+                iteration_count += 1
+                if consumed_segments == 0:
+                    self.logger.error(
+                        f"No progress made in iteration {iteration_count} for post {post.id}. "
+                        "Breaking to avoid infinite loop."
+                    )
+                    break
+        except ClassifyException as e:
+            self.logger.error(f"Classification failed for post {post.id}: {e}")
             return
 
-        first_seq_num = current_chunk_db_segments[0].sequence_num
-        last_seq_num = current_chunk_db_segments[-1].sequence_num
+    def _step(
+        self,
+        classify_params: ClassifyParams,
+        prev_overlap_segments: List[TranscriptSegment],
+        current_index: int,
+        transcript_segments: List[TranscriptSegment],
+    ) -> Tuple[int, List[TranscriptSegment]]:
+        overlap_segments = self._apply_overlap_cap(prev_overlap_segments)
+        remaining_segments = transcript_segments[current_index:]
+
+        (
+            chunk_segments,
+            user_prompt_str,
+            consumed_segments,
+            token_limit_trimmed,
+        ) = self._build_chunk_payload(
+            overlap_segments=overlap_segments,
+            remaining_segments=remaining_segments,
+            total_segments=transcript_segments,
+            post=classify_params.post,
+            system_prompt=classify_params.system_prompt,
+            user_prompt_template=classify_params.user_prompt_template,
+            max_new_segments=classify_params.num_segments_per_prompt,
+        )
+
+        if not chunk_segments or consumed_segments <= 0:
+            self.logger.error(
+                "No progress made while building classification chunk for post %s. "
+                "Stopping to avoid infinite loop.",
+                classify_params.post.id,
+            )
+            raise ClassifyException(
+                "No progress made while building classification chunk."
+            )
+
+        if token_limit_trimmed:
+            self.logger.debug(
+                "Token limit trimming applied for post %s at transcript index %s. "
+                "Processing chunk with %s new segments across %s total segments.",
+                classify_params.post.id,
+                current_index,
+                consumed_segments,
+                len(chunk_segments),
+            )
+
+        identified_segments = self._process_chunk(
+            chunk_segments=chunk_segments,
+            system_prompt=classify_params.system_prompt,
+            user_prompt_str=user_prompt_str,
+            post=classify_params.post,
+        )
+
+        next_overlap_segments = self._compute_next_overlap_segments(
+            chunk_segments=chunk_segments,
+            identified_segments=identified_segments,
+            max_overlap_segments=classify_params.max_overlap_segments,
+        )
+
+        if next_overlap_segments:
+            self.logger.debug(
+                "Carrying forward %s overlap segments for post %s: %s",
+                len(next_overlap_segments),
+                classify_params.post.id,
+                [seg.sequence_num for seg in next_overlap_segments],
+            )
+
+        return consumed_segments, next_overlap_segments
+
+    def _process_chunk(
+        self,
+        *,
+        chunk_segments: List[TranscriptSegment],
+        system_prompt: str,
+        post: Post,
+        user_prompt_str: str,
+    ) -> List[TranscriptSegment]:
+        """Process a chunk of transcript segments for classification."""
+        if not chunk_segments:
+            return []
+
+        first_seq_num = chunk_segments[0].sequence_num
+        last_seq_num = chunk_segments[-1].sequence_num
 
         self.logger.info(
             f"Processing classification for post {post.id}, segments {first_seq_num}-{last_seq_num}."
-        )
-
-        user_prompt_str = self._generate_user_prompt(
-            current_chunk_db_segments=current_chunk_db_segments,
-            post=post,
-            user_prompt_template=user_prompt_template,
-            start_idx=start_idx,
-            end_idx=end_idx,
-            total_segments=len(transcript_segments),
         )
 
         model_call = self._get_or_create_model_call(
@@ -170,7 +258,7 @@ class AdClassifier:
 
         if not model_call:
             self.logger.error("ModelCall object is unexpectedly None. Skipping chunk.")
-            return
+            return []
 
         if self._should_call_llm(model_call):
             self._perform_llm_call(
@@ -179,82 +267,219 @@ class AdClassifier:
             )
 
         if model_call.status == "success" and model_call.response:
-            self._process_successful_response(
+            return self._process_successful_response(
                 model_call=model_call,
-                current_chunk_db_segments=current_chunk_db_segments,
+                current_chunk_db_segments=chunk_segments,
             )
-        elif model_call.status != "success":
+        if model_call.status != "success":
             self.logger.info(
                 f"LLM call for ModelCall {model_call.id} was not successful (status: {model_call.status}). No identifications to process."
             )
+        return []
 
-    def _process_segment_chunk_with_token_limit(
+    def _build_chunk_payload(
         self,
         *,
-        transcript_segments: List[TranscriptSegment],
-        start_idx: int,
-        end_idx: int,
+        overlap_segments: List[TranscriptSegment],
+        remaining_segments: List[TranscriptSegment],
+        total_segments: List[TranscriptSegment],
+        post: Post,
         system_prompt: str,
         user_prompt_template: Template,
-        post: Post,
-    ) -> None:
-        """Process a chunk of transcript segments with token limit validation."""
-        current_start = start_idx
+        max_new_segments: int,
+    ) -> Tuple[List[TranscriptSegment], str, int, bool]:
+        """Construct chunk data while enforcing overlap and token constraints."""
+        if not remaining_segments:
+            return ([], "", 0, False)
 
-        while current_start < end_idx:
-            # Try progressively smaller chunks until we find one that fits the token limit
-            for current_end in range(end_idx, current_start, -1):
-                # Generate prompt for this sub-chunk
-                temp_segments = transcript_segments[current_start:current_end]
-                if not temp_segments:
-                    break
+        capped_overlap = self._apply_overlap_cap(overlap_segments)
+        new_segment_count = min(max_new_segments, len(remaining_segments))
+        token_limit_trimmed = False
 
-                user_prompt_str = self._generate_user_prompt(
-                    current_chunk_db_segments=temp_segments,
-                    post=post,
-                    user_prompt_template=user_prompt_template,
-                    start_idx=current_start,
-                    end_idx=current_end,
-                    total_segments=len(transcript_segments),
-                )
+        while new_segment_count > 0:
+            base_segments = remaining_segments[:new_segment_count]
+            chunk_segments = self._combine_overlap_segments(
+                overlap_segments=capped_overlap,
+                base_segments=base_segments,
+            )
 
-                # Check if this prompt fits within the token limit
-                if self._validate_token_limit(user_prompt_str, system_prompt):
-                    self.logger.info(
-                        f"Processing sub-chunk with {len(temp_segments)} segments "
-                        f"(indices {current_start}-{current_end}) for post {post.id}"
-                    )
+            if not chunk_segments:
+                return ([], "", 0, token_limit_trimmed)
 
-                    # Process this valid sub-chunk
-                    self._process_segment_chunk(
-                        transcript_segments=transcript_segments,
-                        start_idx=current_start,
-                        end_idx=current_end,
-                        system_prompt=system_prompt,
-                        user_prompt_template=user_prompt_template,
-                        post=post,
-                    )
+            includes_start = (
+                chunk_segments[0].id == total_segments[0].id
+                if total_segments
+                else False
+            )
+            includes_end = (
+                chunk_segments[-1].id == total_segments[-1].id
+                if total_segments
+                else False
+            )
 
-                    current_start = current_end
-                    break
-            else:
-                # If we can't find any valid chunk size, try with a single segment
-                if current_start + 1 <= end_idx:
+            user_prompt_str = self._generate_user_prompt(
+                current_chunk_db_segments=chunk_segments,
+                post=post,
+                user_prompt_template=user_prompt_template,
+                includes_start=includes_start,
+                includes_end=includes_end,
+            )
+
+            if (
+                self.config.llm_max_input_tokens_per_call is not None
+                and not self._validate_token_limit(user_prompt_str, system_prompt)
+            ):
+                token_limit_trimmed = True
+                if new_segment_count == 1:
                     self.logger.warning(
-                        f"Even single segment at index {current_start} exceeds token limit. "
-                        f"Processing anyway for post {post.id}"
+                        "Even single segment at transcript index %s exceeds token limit "
+                        "for post %s. Proceeding with minimal chunk.",
+                        base_segments[0].sequence_num,
+                        post.id,
                     )
-                    self._process_segment_chunk(
-                        transcript_segments=transcript_segments,
-                        start_idx=current_start,
-                        end_idx=current_start + 1,
-                        system_prompt=system_prompt,
-                        user_prompt_template=user_prompt_template,
-                        post=post,
-                    )
-                    current_start += 1
-                else:
-                    break
+                    return (chunk_segments, user_prompt_str, new_segment_count, True)
+                new_segment_count -= 1
+                continue
+
+            return (
+                chunk_segments,
+                user_prompt_str,
+                new_segment_count,
+                token_limit_trimmed,
+            )
+
+        return ([], "", 0, token_limit_trimmed)
+
+    def _combine_overlap_segments(
+        self,
+        *,
+        overlap_segments: List[TranscriptSegment],
+        base_segments: List[TranscriptSegment],
+    ) -> List[TranscriptSegment]:
+        """Combine overlap and new segments while preserving order and removing duplicates."""
+        combined: List[TranscriptSegment] = []
+        seen_ids: Set[int] = set()
+
+        for segment in overlap_segments:
+            if segment.id not in seen_ids:
+                combined.append(segment)
+                seen_ids.add(segment.id)
+
+        for segment in base_segments:
+            if segment.id not in seen_ids:
+                combined.append(segment)
+                seen_ids.add(segment.id)
+
+        self.logger.debug(
+            "Combined overlap (%s segments) and base (%s segments) into %s total segments. "
+            "Overlap seq nums: %s, Base seq nums: %s",
+            len(overlap_segments),
+            len(base_segments),
+            len(combined),
+            [seg.sequence_num for seg in overlap_segments],
+            [seg.sequence_num for seg in base_segments],
+        )
+
+        return combined
+
+    def _compute_next_overlap_segments(
+        self,
+        *,
+        chunk_segments: List[TranscriptSegment],
+        identified_segments: List[TranscriptSegment],
+        max_overlap_segments: int,
+    ) -> List[TranscriptSegment]:
+        """Determine which segments should be carried forward to the next chunk."""
+        if not identified_segments or max_overlap_segments <= 0:
+            self.logger.debug(
+                "Skipping overlap computation: identified_segments=%s, max_overlap=%s",
+                len(identified_segments) if identified_segments else 0,
+                max_overlap_segments,
+            )
+            return []
+
+        # Find the earliest identified ad segment in the chunk
+        identified_ids = {seg.id for seg in identified_segments}
+        earliest_index = None
+        for i, seg in enumerate(chunk_segments):
+            if seg.id in identified_ids:
+                earliest_index = i
+                break
+
+        if earliest_index is None:
+            self.logger.debug(
+                "No ad segments found in chunk; no overlap to carry forward"
+            )
+            return []
+
+        self.logger.debug(
+            "Found earliest ad segment at index %s (seq_num %s)",
+            earliest_index,
+            chunk_segments[earliest_index].sequence_num,
+        )
+
+        # Take from earliest ad to end of chunk
+        overlap_segments = chunk_segments[earliest_index:]
+
+        self.logger.debug(
+            "Taking from earliest ad to end: %s segments (seq_nums %s-%s)",
+            len(overlap_segments),
+            overlap_segments[0].sequence_num,
+            overlap_segments[-1].sequence_num,
+        )
+
+        # Cap at max_overlap_segments from the end
+        if len(overlap_segments) > max_overlap_segments:
+            trimmed = overlap_segments[-max_overlap_segments:]
+            self.logger.debug(
+                "Trimming overlap from %s to %s segments (max=%s). "
+                "Keeping seq_nums: %s",
+                len(overlap_segments),
+                len(trimmed),
+                max_overlap_segments,
+                [seg.sequence_num for seg in trimmed],
+            )
+            return trimmed
+
+        self.logger.debug(
+            "Carrying forward %s overlap segments: seq_nums %s",
+            len(overlap_segments),
+            [seg.sequence_num for seg in overlap_segments],
+        )
+        return overlap_segments
+
+    def _apply_overlap_cap(
+        self, overlap_segments: List[TranscriptSegment]
+    ) -> List[TranscriptSegment]:
+        """Ensure stored overlap obeys configured limits."""
+        max_overlap = self.config.processing.max_overlap_segments
+        if max_overlap <= 0 or not overlap_segments:
+            if max_overlap <= 0 and overlap_segments:
+                self.logger.debug(
+                    "Discarding %s overlap segments because max_overlap_segments is %s.",
+                    len(overlap_segments),
+                    max_overlap,
+                )
+            return [] if max_overlap <= 0 else list(overlap_segments)
+
+        if len(overlap_segments) <= max_overlap:
+            self.logger.debug(
+                "Overlap cap check: %s segments within limit of %s, no trimming needed",
+                len(overlap_segments),
+                max_overlap,
+            )
+            return list(overlap_segments)
+
+        trimmed = overlap_segments[-max_overlap:]
+        self.logger.debug(
+            "Overlap cap enforcement: trimming from %s to %s segments (max=%s). "
+            "Keeping seq_nums: %s",
+            len(overlap_segments),
+            len(trimmed),
+            max_overlap,
+            [seg.sequence_num for seg in trimmed],
+        )
+        return trimmed
 
     def _validate_token_limit(self, user_prompt_str: str, system_prompt: str) -> bool:
         """Validate that the prompt doesn't exceed the configured token limit."""
@@ -363,9 +588,8 @@ class AdClassifier:
         current_chunk_db_segments: List[TranscriptSegment],
         post: Post,
         user_prompt_template: Template,
-        start_idx: int,
-        end_idx: int,
-        total_segments: int,
+        includes_start: bool,
+        includes_end: bool,
     ) -> str:
         """Generate the user prompt string for the LLM."""
         temp_pydantic_segments_for_prompt = [
@@ -378,8 +602,8 @@ class AdClassifier:
             podcast_topic=post.description if post.description else "",
             transcript=transcript_excerpt_for_prompt(
                 segments=temp_pydantic_segments_for_prompt,
-                includes_start=(start_idx == 0),
-                includes_end=(end_idx == total_segments),
+                includes_start=includes_start,
+                includes_end=includes_end,
             ),
         )
 
@@ -491,17 +715,19 @@ class AdClassifier:
         *,
         model_call: ModelCall,
         current_chunk_db_segments: List[TranscriptSegment],
-    ) -> None:
+    ) -> List[TranscriptSegment]:
         """Process a successful LLM response and create Identification records."""
         self.logger.info(
             f"LLM call for ModelCall {model_call.id} was successful. Parsing response."
         )
         try:
             prediction_list = clean_and_parse_model_output(model_call.response)
-            created_identification_count = self._create_identifications(
-                prediction_list=prediction_list,
-                current_chunk_db_segments=current_chunk_db_segments,
-                model_call=model_call,
+            created_identification_count, matched_segments = (
+                self._create_identifications(
+                    prediction_list=prediction_list,
+                    current_chunk_db_segments=current_chunk_db_segments,
+                    model_call=model_call,
+                )
             )
 
             if created_identification_count > 0:
@@ -509,11 +735,13 @@ class AdClassifier:
                     f"Created {created_identification_count} new Identification records for ModelCall {model_call.id}."
                 )
             self.db_session.commit()
+            return matched_segments
         except (ValidationError, AssertionError) as e:
             self.logger.error(
                 f"Error processing LLM response for ModelCall {model_call.id}: {e}",
                 exc_info=True,
             )
+        return []
 
     def _create_identifications(
         self,
@@ -521,9 +749,12 @@ class AdClassifier:
         prediction_list: AdSegmentPredictionList,
         current_chunk_db_segments: List[TranscriptSegment],
         model_call: ModelCall,
-    ) -> int:
+    ) -> Tuple[int, List[TranscriptSegment]]:
         """Create Identification records from the prediction list."""
         created_count = 0
+        matched_segments: List[TranscriptSegment] = []
+        processed_segment_ids: Set[int] = set()
+
         for pred in prediction_list.ad_segments:
             if pred.confidence < self.config.output.min_confidence:
                 self.logger.info(
@@ -542,21 +773,30 @@ class AdClassifier:
                 )
                 continue
 
-            if not self._identification_exists(matched_segment.id, model_call.id):
-                identification = Identification(
-                    transcript_segment_id=matched_segment.id,
-                    model_call_id=model_call.id,
-                    label="ad",
-                    confidence=pred.confidence,
-                )
-                self.db_session.add(identification)
-                created_count += 1
-            else:
-                self.logger.info(
-                    f"Identification for segment {matched_segment.id} from ModelCall {model_call.id} already exists. Skipping."
-                )
+            if matched_segment.id in processed_segment_ids:
+                continue
 
-        return created_count
+            processed_segment_ids.add(matched_segment.id)
+            matched_segments.append(matched_segment)
+
+            if self._segment_has_ad_identification(matched_segment.id):
+                self.logger.debug(
+                    "Segment %s for post %s already has an ad identification; skipping new record.",
+                    matched_segment.id,
+                    model_call.post_id,
+                )
+                continue
+
+            identification = Identification(
+                transcript_segment_id=matched_segment.id,
+                model_call_id=model_call.id,
+                label="ad",
+                confidence=pred.confidence,
+            )
+            self.db_session.add(identification)
+            created_count += 1
+
+        return created_count, matched_segments
 
     def _find_matching_segment(
         self,
@@ -574,14 +814,11 @@ class AdClassifier:
                 min_diff = diff
         return matched_segment
 
-    def _identification_exists(
-        self, transcript_segment_id: int, model_call_id: int
-    ) -> bool:
-        """Check if an Identification already exists."""
+    def _segment_has_ad_identification(self, transcript_segment_id: int) -> bool:
+        """Check if a transcript segment already has an ad identification."""
         return (
             self.identification_query.filter_by(
                 transcript_segment_id=transcript_segment_id,
-                model_call_id=model_call_id,
                 label="ad",
             ).first()
             is not None

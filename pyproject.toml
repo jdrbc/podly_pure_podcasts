@@ -10,7 +10,8 @@ disable = [
     "too-many-arguments",
     "too-many-locals",
     "unspecified-encoding",
-    "line-too-long"
+    "line-too-long",
+    "too-many-return-statements"
 ]
 
 [tool.mypy]

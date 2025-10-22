@@ -3,18 +3,46 @@ from typing import Any, Dict
 
 import flask
 import litellm
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 from groq import Groq
 from openai import OpenAI
 
-from app import config as runtime_config
 from app.config_store import read_combined, to_pydantic_config, update_combined
+from app.models import User
 from app.processor import ProcessorSingleton
+from app.runtime_config import config as runtime_config
 
 logger = logging.getLogger("global_logger")
 
 
 config_bp = Blueprint("config", __name__)
+
+
+def _require_admin() -> tuple[User | None, flask.Response | None]:
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if not settings or not settings.require_auth:
+        return None, flask.make_response(
+            jsonify({"error": "Authentication is disabled."}),
+            404,
+        )
+
+    current = getattr(g, "current_user", None)
+    if current is None:
+        response = flask.make_response(
+            jsonify({"error": "Authentication required."}),
+            401,
+        )
+        response.headers["WWW-Authenticate"] = 'Basic realm="Podly"'
+        return None, response
+
+    user = User.query.get(current.id)
+    if user is None or user.role != "admin":
+        return None, flask.make_response(
+            jsonify({"error": "Admin privileges required."}),
+            403,
+        )
+
+    return user, None
 
 
 def _sanitize_config_for_client(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -37,6 +65,10 @@ def _sanitize_config_for_client(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 @config_bp.route("/api/config", methods=["GET"])
 def api_get_config() -> flask.Response:
+    _, error_response = _require_admin()
+    if error_response:
+        return error_response
+
     try:
         data = read_combined()
 
@@ -181,6 +213,10 @@ def _hydrate_runtime_config(data: Dict[str, Any]) -> None:
 
 @config_bp.route("/api/config", methods=["PUT"])
 def api_put_config() -> flask.Response:
+    _, error_response = _require_admin()
+    if error_response:
+        return error_response
+
     payload = request.get_json(silent=True) or {}
     try:
         data = update_combined(payload)
@@ -210,6 +246,10 @@ def api_put_config() -> flask.Response:
 
 @config_bp.route("/api/config/test-llm", methods=["POST"])
 def api_test_llm() -> flask.Response:
+    _, error_response = _require_admin()
+    if error_response:
+        return error_response
+
     payload: Dict[str, Any] = request.get_json(silent=True) or {}
     llm: Dict[str, Any] = dict(payload.get("llm", {}))
 
@@ -370,6 +410,11 @@ def _test_groq_whisper(whisper_cfg: Dict[str, Any]) -> flask.Response:
 @config_bp.route("/api/config/test-whisper", methods=["POST"])
 def api_test_whisper() -> flask.Response:
     """Test whisper configuration based on whisper_type."""
+    # pylint: disable=too-many-return-statements
+    _, error_response = _require_admin()
+    if error_response:
+        return error_response
+
     payload: Dict[str, Any] = request.get_json(silent=True) or {}
     whisper_cfg: Dict[str, Any] = dict(payload.get("whisper", {}))
 
@@ -397,6 +442,10 @@ def api_get_whisper_capabilities() -> flask.Response:
     Currently returns a boolean indicating whether local Whisper is importable.
     This enables the frontend to hide the 'local' option when unavailable.
     """
+    _, error_response = _require_admin()
+    if error_response:
+        return error_response
+
     local_available = False
     try:  # pragma: no cover - simple import feature check
         import whisper
@@ -421,6 +470,10 @@ def api_configured_check() -> flask.Response:
     For our purposes, this means an LLM API key is present either in the
     persisted config or the runtime overlay.
     """
+    _, error_response = _require_admin()
+    if error_response:
+        return error_response
+
     try:
         data = read_combined()
         _hydrate_runtime_config(data)
