@@ -11,6 +11,7 @@ from app.config_store import read_combined, to_pydantic_config, update_combined
 from app.models import User
 from app.processor import ProcessorSingleton
 from app.runtime_config import config as runtime_config
+from shared.llm_utils import model_uses_max_completion_tokens
 
 logger = logging.getLogger("global_logger")
 
@@ -288,15 +289,23 @@ def api_test_llm() -> flask.Response:
             litellm.api_base = base_url
 
         # Minimal completion to validate connectivity and credentials
-        _ = litellm.completion(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a healthcheck probe."},
-                {"role": "user", "content": "ping"},
-            ],
-            max_tokens=1,
-            timeout=timeout,
-        )
+        messages = [
+            {"role": "system", "content": "You are a healthcheck probe."},
+            {"role": "user", "content": "ping"},
+        ]
+
+        completion_kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "timeout": timeout,
+        }
+
+        if model_uses_max_completion_tokens(model):
+            completion_kwargs["max_completion_tokens"] = 1
+        else:
+            completion_kwargs["max_tokens"] = 1
+
+        _ = litellm.completion(**completion_kwargs)
 
         return flask.jsonify(
             {
