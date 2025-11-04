@@ -6,6 +6,8 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  release:
+    types: [published]
 
 env:
   REGISTRY: ghcr.io
@@ -69,6 +71,14 @@ jobs:
             HEAD_SHA=$(git rev-parse "${{ github.sha }}")
             echo "Comparing PR commits: $BASE_SHA...$HEAD_SHA"
             files_changed=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA")
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            echo "Release event detected; building images for release tag"
+            TARGET_REF="${{ github.event.release.target_commitish }}"
+            echo "Fetching release target origin/$TARGET_REF"
+            git fetch --no-tags --depth=1 origin "$TARGET_REF" || true
+            HEAD_SHA=$(git rev-parse "${{ github.sha }}")
+            BASE_SHA=$(git rev-parse "origin/$TARGET_REF" 2>/dev/null || git rev-parse "$TARGET_REF" 2>/dev/null || echo "$HEAD_SHA")
+            files_changed=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" 2>/dev/null || echo "release-trigger")
           else
             echo "Comparing push commits: HEAD~1...HEAD"
             if git rev-parse HEAD~1 >/dev/null 2>&1; then
@@ -85,7 +95,10 @@ jobs:
           # If no files are documentation, then we should continue
           non_doc_files=$(echo "$files_changed" | grep -v -E '(\.md$|^docs/|LICENCE)')
 
-          if [ -z "$non_doc_files" ]; then
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "Release build detected. Skipping documentation-only shortcut."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          elif [ -z "$non_doc_files" ]; then
             echo "Only documentation files were changed. Skipping build and publish."
             echo "skip=true" >> $GITHUB_OUTPUT
           else
