@@ -1,4 +1,5 @@
 """Shared helpers for working with LLM provider quirks."""
+
 from __future__ import annotations
 
 from typing import Final
