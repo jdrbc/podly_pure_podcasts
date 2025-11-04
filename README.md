@@ -47,6 +47,7 @@ You have two options to get started:
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
 | **$10** | public (railway)  | remote        | remote |
+| **$6** | [zeroads](https://zeroads.ai/)  | for-profit fork of Podly | remote |
 
 
 ## Contributing
