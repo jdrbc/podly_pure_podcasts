@@ -62,13 +62,21 @@ jobs:
         run: |
           # For PRs, compare against the base branch. For pushes, compare against the previous commit.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE_SHA=$(git rev-parse ${{ github.event.pull_request.base.ref }})
-            HEAD_SHA=$(git rev-parse ${{ github.sha }})
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            echo "Fetching base branch origin/$BASE_REF"
+            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            BASE_SHA=$(git rev-parse "origin/$BASE_REF")
+            HEAD_SHA=$(git rev-parse "${{ github.sha }}")
             echo "Comparing PR commits: $BASE_SHA...$HEAD_SHA"
-            files_changed=$(git diff --name-only $BASE_SHA...$HEAD_SHA)
+            files_changed=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA")
           else
             echo "Comparing push commits: HEAD~1...HEAD"
-            files_changed=$(git diff --name-only HEAD~1 HEAD)
+            if git rev-parse HEAD~1 >/dev/null 2>&1; then
+              files_changed=$(git diff --name-only HEAD~1 HEAD)
+            else
+              echo "Single commit push detected; using initial commit diff"
+              files_changed=$(git diff-tree --no-commit-id --name-only -r HEAD)
+            fi
           fi
 
           echo "Files changed:"

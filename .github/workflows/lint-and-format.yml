@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: pipenv install --dev
 
+      - name: Install dependencies for mypy
+        run: pipenv run mypy --install-types
+
       - name: Run mypy
         run: >
           pipenv run mypy .
