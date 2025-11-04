@@ -14,7 +14,7 @@ from sqlalchemy.engine import Engine
 from app.auth import AuthSettings, load_auth_settings
 from app.auth.bootstrap import bootstrap_admin_user
 from app.auth.middleware import init_auth_middleware
-from app.background import add_background_job
+from app.background import add_background_job, schedule_cleanup_job
 from app.extensions import db, migrate, scheduler
 from app.logger import setup_logger
 from app.runtime_config import config, is_test
@@ -168,6 +168,7 @@ def create_app() -> Flask:
         if config.background_update_interval_minute is None
         else int(config.background_update_interval_minute)
     )
+    schedule_cleanup_job(getattr(config, "post_cleanup_retention_days", None))
     return app
 
 

@@ -389,6 +389,11 @@ class AppSettings(db.Model):  # type: ignore[name-defined, misc]
         nullable=False,
         default=DEFAULTS.APP_AUTOMATICALLY_WHITELIST_NEW_EPISODES,
     )
+    post_cleanup_retention_days = db.Column(
+        db.Integer,
+        nullable=True,
+        default=DEFAULTS.APP_POST_CLEANUP_RETENTION_DAYS,
+    )
     number_of_episodes_to_whitelist_from_archive_of_new_feed = db.Column(
         db.Integer,
         nullable=False,

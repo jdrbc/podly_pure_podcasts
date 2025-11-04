@@ -111,6 +111,7 @@ export interface OutputConfigUI {
 export interface AppConfigUI {
   background_update_interval_minute: number | null;
   automatically_whitelist_new_episodes: boolean;
+  post_cleanup_retention_days: number | null;
   number_of_episodes_to_whitelist_from_archive_of_new_feed: number;
 }
 

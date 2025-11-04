@@ -46,7 +46,7 @@ You have two options to get started:
 | **free**| local    | local         | local  |
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
-| **$10** | railway  | remote        | remote |
+| **$10** | public (railway)  | remote        | remote |
 
 
 ## Contributing

@@ -30,7 +30,7 @@ function AppShell() {
     return <LoginPage />;
   }
 
-  const showConfigLink = requireAuth ? user?.role === 'admin' : false;
+  const showConfigLink = !requireAuth || user?.role === 'admin';
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">

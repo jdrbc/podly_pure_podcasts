@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
-from app.background import add_background_job
+from app.background import add_background_job, schedule_cleanup_job
 from app.extensions import db, scheduler
 from app.models import (
     AppSettings,
@@ -126,6 +126,7 @@ def ensure_defaults() -> None:
         {
             "background_update_interval_minute": DEFAULTS.APP_BACKGROUND_UPDATE_INTERVAL_MINUTE,
             "automatically_whitelist_new_episodes": DEFAULTS.APP_AUTOMATICALLY_WHITELIST_NEW_EPISODES,
+            "post_cleanup_retention_days": DEFAULTS.APP_POST_CLEANUP_RETENTION_DAYS,
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
         },
     )
@@ -427,6 +428,7 @@ def read_combined() -> Dict[str, Any]:
         "app": {
             "background_update_interval_minute": app_s.background_update_interval_minute,
             "automatically_whitelist_new_episodes": app_s.automatically_whitelist_new_episodes,
+            "post_cleanup_retention_days": app_s.post_cleanup_retention_days,
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": app_s.number_of_episodes_to_whitelist_from_archive_of_new_feed,
         },
     }
@@ -518,19 +520,21 @@ def _update_section_output(data: Dict[str, Any]) -> None:
     db.session.commit()
 
 
-def _update_section_app(data: Dict[str, Any]) -> Optional[int]:
+def _update_section_app(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
     row = AppSettings.query.get(1)
     assert row is not None
     old_interval: Optional[int] = row.background_update_interval_minute
+    old_retention: Optional[int] = row.post_cleanup_retention_days
     for key in [
         "background_update_interval_minute",
         "automatically_whitelist_new_episodes",
+        "post_cleanup_retention_days",
         "number_of_episodes_to_whitelist_from_archive_of_new_feed",
     ]:
         if key in data:
             setattr(row, key, data[key])
     db.session.commit()
-    return old_interval
+    return old_interval, old_retention
 
 
 def update_combined(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -543,17 +547,20 @@ def update_combined(payload: Dict[str, Any]) -> Dict[str, Any]:
     if "output" in payload:
         _update_section_output(payload["output"] or {})
     if "app" in payload:
-        old_interval = _update_section_app(payload["app"] or {})
+        old_interval, old_retention = _update_section_app(payload["app"] or {})
         # Reschedule background job if interval changed
         app_s = AppSettings.query.get(1)
-        if app_s and old_interval != app_s.background_update_interval_minute:
-            try:
-                scheduler.remove_job("refresh_all_feeds")
-            except Exception:
-                # job may not exist yet; ignore
-                pass
-            if app_s.background_update_interval_minute is not None:
-                add_background_job(int(app_s.background_update_interval_minute))
+        if app_s:
+            if old_interval != app_s.background_update_interval_minute:
+                try:
+                    scheduler.remove_job("refresh_all_feeds")
+                except Exception:
+                    # job may not exist yet; ignore
+                    pass
+                if app_s.background_update_interval_minute is not None:
+                    add_background_job(int(app_s.background_update_interval_minute))
+            if old_retention != app_s.post_cleanup_retention_days:
+                schedule_cleanup_job(app_s.post_cleanup_retention_days)
 
     return read_combined()
 
@@ -626,6 +633,7 @@ def to_pydantic_config() -> PydanticConfig:
         background_update_interval_minute=data["app"].get(
             "background_update_interval_minute"
         ),
+        post_cleanup_retention_days=data["app"].get("post_cleanup_retention_days"),
         whisper=whisper_obj,
         automatically_whitelist_new_episodes=bool(
             data["app"].get(
