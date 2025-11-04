@@ -48,6 +48,7 @@ You have two options to get started:
 | **$5**  | local    | remote        | remote |
 | **$10** | public (railway)  | remote        | remote |
 | **$6** | [zeroads](https://zeroads.ai/)  | for-profit fork of Podly | remote |
+| ? | do you run an ad removal service? | get listed here | sponsor or contribute to project |
 
 
 ## Contributing
