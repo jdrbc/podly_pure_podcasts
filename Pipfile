@@ -51,6 +51,7 @@ types-flask-migrate = "*"
 pytest-mock = "*"
 watchdog = "*"
 requests = "*"
+types-flask-cors = "*"
 
 [requires]
 python_version = "3.11"
