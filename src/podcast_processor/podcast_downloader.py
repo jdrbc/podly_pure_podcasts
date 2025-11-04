@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 import re
@@ -8,7 +10,7 @@ import requests
 import validators
 from flask import abort
 
-from app.models import Post
+from shared.interfaces import Post
 from shared.processing_paths import get_in_root
 
 logger = logging.getLogger(__name__)
@@ -61,16 +63,17 @@ class PodcastDownloader:
             abort(404)
 
         self.logger.info(f"Downloading {audio_link} into {download_path}...")
-        response = requests.get(audio_link)  # pylint: disable=missing-timeout
-        if response.status_code == 200:
-            with open(download_path, "wb") as file:
-                file.write(response.content)
+        with requests.get(audio_link, stream=True, timeout=60) as response:
+            if response.status_code == 200:
+                with open(download_path, "wb") as file:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        file.write(chunk)
                 self.logger.info("Download complete.")
-        else:
-            self.logger.info(
-                f"Failed to download the podcast episode, response: {response.status_code}"
-            )
-            return None
+            else:
+                self.logger.info(
+                    f"Failed to download the podcast episode, response: {response.status_code}"
+                )
+                return None
 
         return download_path
 

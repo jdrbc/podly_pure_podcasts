@@ -2,6 +2,8 @@
 Tests for configuration error handling and validation.
 """
 
+import pytest
+
 from shared.config import Config
 
 

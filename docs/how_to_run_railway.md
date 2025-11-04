@@ -21,6 +21,10 @@ Click the button below to deploy Podly to Railway. This is a sponsored link that
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/deploy?template=https://github.com/jdrbc/podly_pure_podcasts&referralCode=NMdeg5)
 
+If you want to be a beta-tester, you can deploy the preview branch instead:
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/sXaSI2?referralCode=NMdeg5&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
 ## 3. Configure Networking
 
 After the deployment is complete, you need to expose the service to the internet.
@@ -41,7 +45,20 @@ Podly is designed to run efficiently on Railway's hobby plan.
 
 If you process a large volume of podcasts, you can check the **Config** page in your Podly deployment for estimated monthly costs based on your usage.
 
-## 5. Using Podly
+## 5. Secure Your Deployment
+
+Podly includes built-in HTTP Basic authentication. Before inviting listeners, secure the app:
+
+1. In the Railway dashboard, open your Podly service and head to **Variables**.
+2. Add `REQUIRE_AUTH` with value `true`.
+3. Add a strong `PODLY_ADMIN_PASSWORD` (minimum 12 characters including uppercase, lowercase, digit, and symbol). Optionally set `PODLY_ADMIN_USERNAME`.
+4. Redeploy the service. On first boot Podly seeds the admin user and requires those credentials on every request.
+
+> **Important:** Enabling auth on an existing deployment requires a fresh data volume. Create a new Railway deployment or wipe the existing storage so the initial admin can be seeded.
+
+After signing in, use the Config page to change your password, add additional users, and copy RSS links that include credentials for each listener. When you rotate passwords, update the corresponding Railway variables so restarts succeed.
+
+## 6. Using Podly
 
 1.  Open your new Podly URL in a browser.
 2.  Navigate to the **Feeds** page.

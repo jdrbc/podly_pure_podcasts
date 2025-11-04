@@ -11,6 +11,7 @@ disable=
     W1514, # using-constant-test
     E0401, # import-error
     C0301, # line-too-long
+    R0911, # too-many-return-statements
 
 [MASTER:src/tests/*.py]
 disable=

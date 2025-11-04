@@ -7,6 +7,7 @@ import type {
   CombinedConfig,
   LLMConfig,
   WhisperConfig,
+  PodcastSearchResult,
 } from '../types';
 
 const API_BASE_URL = '';
@@ -14,6 +15,56 @@ const API_BASE_URL = '';
 const api = axios.create({
   baseURL: API_BASE_URL,
 });
+
+export interface AuthCredentials {
+  username: string;
+  password: string;
+}
+
+let activeCredentials: AuthCredentials | null = null;
+
+const buildAuthorizationHeader = (credentials: AuthCredentials): string =>
+  `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
+
+const buildAbsoluteUrl = (path: string): string => {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const origin = API_BASE_URL || window.location.origin;
+  if (path.startsWith('/')) {
+    return `${origin}${path}`;
+  }
+  return `${origin}/${path}`;
+};
+
+const withEmbeddedCredentials = (url: string): string => {
+  if (!activeCredentials) {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url, window.location.origin);
+    parsed.username = activeCredentials.username;
+    parsed.password = activeCredentials.password;
+    return parsed.toString();
+  } catch (error) {
+    console.error('Failed to embed credentials in URL', error);
+    return url;
+  }
+};
+
+export const setAuthCredentials = (credentials: AuthCredentials | null) => {
+  activeCredentials = credentials;
+
+  if (credentials) {
+    api.defaults.headers.common['Authorization'] = buildAuthorizationHeader(credentials);
+  } else {
+    delete api.defaults.headers.common['Authorization'];
+  }
+};
+
+export const getActiveCredentials = (): AuthCredentials | null => activeCredentials;
 
 export const feedsApi = {
   getFeeds: async (): Promise<Feed[]> => {
@@ -61,6 +112,18 @@ export const feedsApi = {
     return response.data;
   },
 
+  searchFeeds: async (
+    term: string
+  ): Promise<{
+    results: PodcastSearchResult[];
+    total: number;
+  }> => {
+    const response = await api.get('/api/feeds/search', {
+      params: { term },
+    });
+    return response.data;
+  },
+
   // New post processing methods
   processPost: async (guid: string): Promise<{ status: string; job_id?: string; message: string; download_url?: string }> => {
     const response = await api.post(`/api/posts/${guid}/process`);
@@ -87,17 +150,17 @@ export const feedsApi = {
 
   // Get audio URL for post
   getPostAudioUrl: (guid: string): string => {
-    return `${API_BASE_URL}/api/posts/${guid}/audio`;
+    return withEmbeddedCredentials(buildAbsoluteUrl(`/api/posts/${guid}/audio`));
   },
 
   // Get download URL for processed post
   getPostDownloadUrl: (guid: string): string => {
-    return `${API_BASE_URL}/api/posts/${guid}/download`;
+    return withEmbeddedCredentials(buildAbsoluteUrl(`/api/posts/${guid}/download`));
   },
 
   // Get download URL for original post
   getPostOriginalDownloadUrl: (guid: string): string => {
-    return `${API_BASE_URL}/api/posts/${guid}/download/original`;
+    return withEmbeddedCredentials(buildAbsoluteUrl(`/api/posts/${guid}/download/original`));
   },
 
   // Download processed post
@@ -133,6 +196,9 @@ export const feedsApi = {
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
   },
+
+  buildProtectedFeedUrl: (feedId: number): string =>
+    withEmbeddedCredentials(buildAbsoluteUrl(`/feed/${feedId}`)),
 
   // Get processing stats for post
   getPostStats: async (guid: string): Promise<{
@@ -308,6 +374,48 @@ export const feedsApi = {
 
   getEpisodeOriginalDownloadUrl: (guid: string): string => {
     return feedsApi.getPostOriginalDownloadUrl(guid);
+  },
+};
+
+export const authApi = {
+  getStatus: async (): Promise<{ require_auth: boolean }> => {
+    const response = await api.get('/api/auth/status');
+    return response.data;
+  },
+
+  login: async (username: string, password: string): Promise<{ user: { id: number; username: string; role: string } }> => {
+    const response = await api.post('/api/auth/login', { username, password });
+    return response.data;
+  },
+
+  getCurrentUser: async (): Promise<{ user: { id: number; username: string; role: string } }> => {
+    const response = await api.get('/api/auth/me');
+    return response.data;
+  },
+
+  changePassword: async (payload: { current_password: string; new_password: string }): Promise<{ status: string }> => {
+    const response = await api.post('/api/auth/change-password', payload);
+    return response.data;
+  },
+
+  listUsers: async (): Promise<{ users: Array<{ id: number; username: string; role: string; created_at: string; updated_at: string }> }> => {
+    const response = await api.get('/api/auth/users');
+    return response.data;
+  },
+
+  createUser: async (payload: { username: string; password: string; role: string }): Promise<{ user: { id: number; username: string; role: string; created_at: string; updated_at: string } }> => {
+    const response = await api.post('/api/auth/users', payload);
+    return response.data;
+  },
+
+  updateUser: async (username: string, payload: { password?: string; role?: string }): Promise<{ status: string }> => {
+    const response = await api.patch(`/api/auth/users/${username}`, payload);
+    return response.data;
+  },
+
+  deleteUser: async (username: string): Promise<{ status: string }> => {
+    const response = await api.delete(`/api/auth/users/${username}`);
+    return response.data;
   },
 };
 
