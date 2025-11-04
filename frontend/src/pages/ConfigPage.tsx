@@ -379,53 +379,6 @@ export default function ConfigPage() {
         <h2 className="text-lg font-semibold text-gray-900">Configuration</h2>
       </div>
 
-      <Section title="Account Security">
-        <form className="grid gap-3 max-w-md" onSubmit={handlePasswordSubmit}>
-          <Field label="Current password">
-            <input
-              className="input"
-              type="password"
-              autoComplete="current-password"
-              value={passwordForm.current}
-              onChange={(event) => setPasswordForm((prev) => ({ ...prev, current: event.target.value }))}
-              required
-            />
-          </Field>
-          <Field label="New password">
-            <input
-              className="input"
-              type="password"
-              autoComplete="new-password"
-              value={passwordForm.next}
-              onChange={(event) => setPasswordForm((prev) => ({ ...prev, next: event.target.value }))}
-              required
-            />
-          </Field>
-          <Field label="Confirm new password">
-            <input
-              className="input"
-              type="password"
-              autoComplete="new-password"
-              value={passwordForm.confirm}
-              onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirm: event.target.value }))}
-              required
-            />
-          </Field>
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              className="px-4 py-2 rounded bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
-              disabled={passwordSubmitting}
-            >
-              {passwordSubmitting ? 'Updating…' : 'Update password'}
-            </button>
-            <p className="text-xs text-gray-500">
-              After updating, rotate <code className="font-mono">PODLY_ADMIN_PASSWORD</code> to match.
-            </p>
-          </div>
-        </form>
-      </Section>
-
       <Section title="Connection Status">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="flex items-start justify-between border rounded p-3">
@@ -658,6 +611,54 @@ export default function ConfigPage() {
         </button>
       </div>
 
+      {showUserManagement && (
+                  <Section title="Account Security">
+            <form className="grid gap-3 max-w-md" onSubmit={handlePasswordSubmit}>
+              <Field label="Current password">
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={passwordForm.current}
+                  onChange={(event) => setPasswordForm((prev) => ({ ...prev, current: event.target.value }))}
+                  required
+                />
+              </Field>
+              <Field label="New password">
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordForm.next}
+                  onChange={(event) => setPasswordForm((prev) => ({ ...prev, next: event.target.value }))}
+                  required
+                />
+              </Field>
+              <Field label="Confirm new password">
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordForm.confirm}
+                  onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirm: event.target.value }))}
+                  required
+                />
+              </Field>
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
+                  disabled={passwordSubmitting}
+                >
+                  {passwordSubmitting ? 'Updating…' : 'Update password'}
+                </button>
+                <p className="text-xs text-gray-500">
+                  After updating, rotate <code className="font-mono">PODLY_ADMIN_PASSWORD</code> to match.
+                </p>
+              </div>
+            </form>
+          </Section>
+      )}
       {showUserManagement && (
         <Section title="User Management">
           <div className="space-y-4">
@@ -1135,6 +1136,15 @@ export default function ConfigPage() {
                   type="number"
                   value={pending?.app?.background_update_interval_minute ?? ''}
                   onChange={(e) => setField(['app', 'background_update_interval_minute'], e.target.value === '' ? null : Number(e.target.value))}
+                />
+              </Field>
+              <Field label="Cleanup Retention (days)">
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  value={pending?.app?.post_cleanup_retention_days ?? ''}
+                  onChange={(e) => setField(['app', 'post_cleanup_retention_days'], e.target.value === '' ? null : Number(e.target.value))}
                 />
               </Field>
               <Field label="Auto-whitelist new episodes">

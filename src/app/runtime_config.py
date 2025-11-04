@@ -35,6 +35,7 @@ else:
             max_overlap_segments=DEFAULTS.PROCESSING_MAX_OVERLAP_SEGMENTS,
         ),
         background_update_interval_minute=DEFAULTS.APP_BACKGROUND_UPDATE_INTERVAL_MINUTE,
+        post_cleanup_retention_days=DEFAULTS.APP_POST_CLEANUP_RETENTION_DAYS,
         llm_max_concurrent_calls=DEFAULTS.LLM_DEFAULT_MAX_CONCURRENT_CALLS,
         llm_max_retry_attempts=DEFAULTS.LLM_DEFAULT_MAX_RETRY_ATTEMPTS,
         llm_enable_token_rate_limiting=DEFAULTS.LLM_ENABLE_TOKEN_RATE_LIMITING,

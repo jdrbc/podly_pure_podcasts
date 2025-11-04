@@ -98,6 +98,10 @@ class Config(BaseModel):
     background_update_interval_minute: Optional[int] = (
         DEFAULTS.APP_BACKGROUND_UPDATE_INTERVAL_MINUTE
     )
+    post_cleanup_retention_days: Optional[int] = Field(
+        default=DEFAULTS.APP_POST_CLEANUP_RETENTION_DAYS,
+        description="Number of days to retain processed post data before cleanup. None disables cleanup.",
+    )
     # removed job_timeout
     whisper: Optional[
         LocalWhisperConfig | RemoteWhisperConfig | TestWhisperConfig | GroqWhisperConfig

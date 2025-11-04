@@ -20,11 +20,9 @@ config_bp = Blueprint("config", __name__)
 
 def _require_admin() -> tuple[User | None, flask.Response | None]:
     settings = current_app.config.get("AUTH_SETTINGS")
+    # When REQUIRE_AUTH=false we intentionally allow these routes.
     if not settings or not settings.require_auth:
-        return None, flask.make_response(
-            jsonify({"error": "Authentication is disabled."}),
-            404,
-        )
+        return None, None
 
     current = getattr(g, "current_user", None)
     if current is None:
@@ -209,6 +207,12 @@ def _hydrate_runtime_config(data: Dict[str, Any]) -> None:
                 data["whisper"]["max_retries"] = getattr(
                     rt_whisper, "max_retries", data["whisper"].get("max_retries")
                 )
+    data.setdefault("app", {})
+    data["app"]["post_cleanup_retention_days"] = getattr(
+        runtime_config,
+        "post_cleanup_retention_days",
+        data["app"].get("post_cleanup_retention_days"),
+    )
 
 
 @config_bp.route("/api/config", methods=["PUT"])
