@@ -27,6 +27,7 @@ from podcast_processor.token_rate_limiter import (
 )
 from podcast_processor.transcribe import Segment
 from shared.config import Config, TestWhisperConfig
+from shared.llm_utils import model_uses_max_completion_tokens
 
 
 class ClassifyParams:
@@ -560,13 +561,10 @@ class AdClassifier:
 
         # Use max_completion_tokens for newer OpenAI models (o1, gpt-5, gpt-4o variants)
         # OpenAI deprecated max_tokens for these models in favor of max_completion_tokens
-        model_lower = model_call_obj.model_name.lower()
-
         # Check if this is a model that requires max_completion_tokens
         # This includes: gpt-5, gpt-4o variants, o1 series, and latest chatgpt models
-        uses_max_completion_tokens = any(
-            pattern in model_lower
-            for pattern in ["gpt-5", "gpt-4o", "o1-", "o1_", "o1/", "chatgpt-4o-latest"]
+        uses_max_completion_tokens = model_uses_max_completion_tokens(
+            model_call_obj.model_name
         )
 
         # Debug logging to help diagnose model parameter issues
