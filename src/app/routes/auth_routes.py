@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import cast
 
-from flask import Blueprint, Response, current_app, g, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request, session
 
 from app.auth.service import (
     AuthServiceError,
@@ -28,6 +28,8 @@ logger = logging.getLogger("global_logger")
 auth_bp = Blueprint("auth", __name__)
 
 RouteResult = Response | tuple[Response, int] | tuple[Response, int, dict[str, str]]
+
+SESSION_USER_KEY = "user_id"
 
 
 def _auth_enabled() -> bool:
@@ -64,16 +66,18 @@ def login() -> RouteResult:
     authenticated = authenticate(username, password)
     if authenticated is None:
         backoff = failure_rate_limiter.register_failure(client_identifier)
-        response_headers = {"WWW-Authenticate": 'Basic realm="Podly"'}
+        response_headers: dict[str, str] = {}
         if backoff:
             response_headers["Retry-After"] = str(backoff)
-        return (
-            jsonify({"error": "Invalid username or password."}),
-            401,
-            response_headers,
-        )
+        response = jsonify({"error": "Invalid username or password."})
+        if response_headers:
+            return response, 401, response_headers
+        return response, 401
 
     failure_rate_limiter.register_success(client_identifier)
+    session.clear()
+    session[SESSION_USER_KEY] = authenticated.id
+    session.permanent = True
     return jsonify(
         {
             "user": {
@@ -83,6 +87,19 @@ def login() -> RouteResult:
             }
         }
     )
+
+
+@auth_bp.route("/api/auth/logout", methods=["POST"])
+def logout() -> RouteResult:
+    if not _auth_enabled():
+        return jsonify({"error": "Authentication is disabled."}), 404
+
+    if getattr(g, "current_user", None) is None:
+        session.clear()
+        return jsonify({"error": "Authentication required."}), 401
+
+    session.clear()
+    return Response(status=204)
 
 
 @auth_bp.route("/api/auth/me", methods=["GET"])
@@ -276,8 +293,4 @@ def _unauthorized_response() -> RouteResult:
     if not _auth_enabled():
         return jsonify({"error": "Authentication is disabled."}), 404
 
-    return (
-        jsonify({"error": "Authentication required."}),
-        401,
-        {"WWW-Authenticate": 'Basic realm="Podly"'},
-    )
+    return jsonify({"error": "Authentication required."}), 401

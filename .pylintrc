@@ -1,5 +1,6 @@
 [MASTER]
 ignore=frontend,migrations,scripts
+ignore-paths=^src/(migrations|tests)/
 disable=
     C0114, # missing-module-docstring
     C0115, # missing-class-docstring

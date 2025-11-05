@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import secrets
 import sys
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,13 @@ from shared.processing_paths import get_in_root, get_srv_root
 
 setup_logger("global_logger", "src/instance/logs/app.log")
 logger = logging.getLogger("global_logger")
+
+
+def _bool_env(value: str | None, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    lowered = value.strip().lower()
+    return lowered in {"1", "true", "t", "yes", "y", "on"}
 
 
 def setup_dirs() -> None:
@@ -66,109 +74,25 @@ def setup_scheduler(app: Flask) -> None:
 
 
 def create_app() -> Flask:
-    static_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
-    app = Flask(__name__, static_folder=static_folder)
+    app = _create_flask_app()
+    auth_settings = _load_auth_settings()
 
-    try:
-        auth_settings: AuthSettings = load_auth_settings()
-    except RuntimeError as exc:
-        logger.critical("Authentication configuration error: %s", exc)
-        raise
-    app.config["AUTH_SETTINGS"] = auth_settings
-    app.config["REQUIRE_AUTH"] = auth_settings.require_auth
-    app.config["AUTH_ADMIN_USERNAME"] = auth_settings.admin_username
-
-    # Configure CORS
-    # Default to wildcard to accept all origins, but allow override via environment variable
-    default_cors = "*"
-    cors_origins_env = os.environ.get("CORS_ORIGINS", default_cors)
-    cors_origins = (
-        cors_origins_env.split(",") if cors_origins_env != "*" else cors_origins_env
-    )
-    CORS(
-        app,
-        resources={r"/*": {"origins": cors_origins}},
-        allow_headers=["Content-Type", "Authorization", "Range"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        supports_credentials=False,
-    )
-
-    # Load scheduler configuration
-    app.config.from_object(SchedulerConfig())
-
-    # Configure the database URI (SQLite with a 90-second timeout)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db?timeout=90"
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "connect_args": {
-            "timeout": 90,
-            "check_same_thread": False,
-        },
-    }
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-    # Groq's client logs the entire binary input file when set to DEBUG, which we never want to do.
-    groq_logger = logging.getLogger("groq")
-    groq_logger.setLevel(logging.INFO)
-
-    db.init_app(app)
-    migrate.init_app(app, db)
-
-    # Register all route blueprints
-    from app.routes import register_routes  # pylint: disable=import-outside-toplevel
-
-    register_routes(app)
-    init_auth_middleware(app)
-
-    from app import models  # pylint: disable=import-outside-toplevel, unused-import
+    _apply_auth_settings(app, auth_settings)
+    _configure_session(app, auth_settings)
+    _configure_cors(app)
+    _configure_scheduler(app)
+    _configure_database(app)
+    _configure_external_loggers()
+    _initialize_extensions(app)
+    _register_routes_and_middleware(app)
 
     with app.app_context():
-        upgrade()
-        bootstrap_admin_user(auth_settings)
-        # Initialize settings and hydrate runtime config in one step
-        try:
-            from app.config_store import (  # pylint: disable=import-outside-toplevel
-                ensure_defaults_and_hydrate,
-            )
-
-            ensure_defaults_and_hydrate()
-
-            # Reset processor singleton to pick up the updated config
-            from app.processor import (  # pylint: disable=import-outside-toplevel
-                ProcessorSingleton,
-            )
-
-            ProcessorSingleton.reset_instance()
-
-        except Exception as e:  # pylint: disable=broad-except
-            logger.error(f"Failed to initialize settings: {e}")
+        _run_app_startup(auth_settings)
 
     app.config["AUTH_SETTINGS"] = auth_settings.without_password()
 
-    # After hydration, enforce environment key consistency rules; fail fast on conflicts
     _validate_env_key_conflicts()
-
-    # Always start the scheduler for on-demand jobs
-    _clear_scheduler_jobstore()
-    setup_scheduler(app)
-
-    # Clear all jobs on startup to ensure clean state
-    from app.jobs_manager import (  # pylint: disable=import-outside-toplevel
-        get_jobs_manager,
-    )
-
-    jobs_manager = get_jobs_manager()
-    clear_result = jobs_manager.clear_all_jobs()
-    if clear_result["status"] == "success":
-        logger.info(f"Startup: {clear_result['message']}")
-    else:
-        logger.warning(f"Startup job clearing failed: {clear_result['message']}")
-
-    add_background_job(
-        10
-        if config.background_update_interval_minute is None
-        else int(config.background_update_interval_minute)
-    )
-    schedule_cleanup_job(getattr(config, "post_cleanup_retention_days", None))
+    _start_scheduler_and_jobs(app)
     return app
 
 
@@ -238,3 +162,146 @@ def _validate_env_key_conflicts() -> None:
         )
         # Crash the process so Docker start fails clearly
         raise SystemExit(message)
+
+
+def _create_flask_app() -> Flask:
+    static_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
+    return Flask(__name__, static_folder=static_folder)
+
+
+def _load_auth_settings() -> AuthSettings:
+    try:
+        return load_auth_settings()
+    except RuntimeError as exc:
+        logger.critical("Authentication configuration error: %s", exc)
+        raise
+
+
+def _apply_auth_settings(app: Flask, auth_settings: AuthSettings) -> None:
+    app.config["AUTH_SETTINGS"] = auth_settings
+    app.config["REQUIRE_AUTH"] = auth_settings.require_auth
+    app.config["AUTH_ADMIN_USERNAME"] = auth_settings.admin_username
+
+
+def _configure_session(app: Flask, auth_settings: AuthSettings) -> None:
+    secret_key = os.environ.get("PODLY_SECRET_KEY")
+    if not secret_key:
+        try:
+            secret_key = secrets.token_urlsafe(64)
+        except Exception as exc:  # pylint: disable=broad-except
+            raise RuntimeError("Failed to generate session secret key.") from exc
+        if auth_settings.require_auth:
+            logger.warning(
+                "Generated ephemeral session secret key because PODLY_SECRET_KEY is not set; "
+                "all sessions will be invalidated on restart."
+            )
+
+    app.config["SECRET_KEY"] = secret_key
+    app.config["SESSION_COOKIE_NAME"] = os.environ.get(
+        "PODLY_SESSION_COOKIE_NAME", "podly_session"
+    )
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+    allow_insecure_cookie = _bool_env(
+        os.environ.get("PODLY_ALLOW_INSECURE_SESSION_COOKIE"),
+        default=not auth_settings.require_auth,
+    )
+    app.config["SESSION_COOKIE_SECURE"] = not allow_insecure_cookie
+
+
+def _configure_cors(app: Flask) -> None:
+    default_cors = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    cors_origins_env = os.environ.get("CORS_ORIGINS")
+    if cors_origins_env:
+        cors_origins = [
+            origin.strip() for origin in cors_origins_env.split(",") if origin.strip()
+        ]
+    else:
+        cors_origins = default_cors
+    CORS(
+        app,
+        resources={r"/*": {"origins": cors_origins}},
+        allow_headers=["Content-Type", "Authorization", "Range"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        supports_credentials=True,
+    )
+
+
+def _configure_scheduler(app: Flask) -> None:
+    app.config.from_object(SchedulerConfig())
+
+
+def _configure_database(app: Flask) -> None:
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db?timeout=90"
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "connect_args": {
+            "timeout": 90,
+            "check_same_thread": False,
+        },
+    }
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+
+def _configure_external_loggers() -> None:
+    groq_logger = logging.getLogger("groq")
+    groq_logger.setLevel(logging.INFO)
+
+
+def _initialize_extensions(app: Flask) -> None:
+    db.init_app(app)
+    migrate.init_app(app, db)
+
+
+def _register_routes_and_middleware(app: Flask) -> None:
+    from app.routes import register_routes  # pylint: disable=import-outside-toplevel
+
+    register_routes(app)
+    init_auth_middleware(app)
+
+    from app import models  # pylint: disable=import-outside-toplevel, unused-import
+
+
+def _run_app_startup(auth_settings: AuthSettings) -> None:
+    upgrade()
+    bootstrap_admin_user(auth_settings)
+    try:
+        from app.config_store import (  # pylint: disable=import-outside-toplevel
+            ensure_defaults_and_hydrate,
+        )
+
+        ensure_defaults_and_hydrate()
+
+        from app.processor import (  # pylint: disable=import-outside-toplevel
+            ProcessorSingleton,
+        )
+
+        ProcessorSingleton.reset_instance()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Failed to initialize settings: {exc}")
+
+
+def _start_scheduler_and_jobs(app: Flask) -> None:
+    _clear_scheduler_jobstore()
+    setup_scheduler(app)
+
+    from app.jobs_manager import (  # pylint: disable=import-outside-toplevel
+        get_jobs_manager,
+    )
+
+    jobs_manager = get_jobs_manager()
+    clear_result = jobs_manager.clear_all_jobs()
+    if clear_result["status"] == "success":
+        logger.info(f"Startup: {clear_result['message']}")
+    else:
+        logger.warning(f"Startup job clearing failed: {clear_result['message']}")
+
+    add_background_job(
+        10
+        if config.background_update_interval_minute is None
+        else int(config.background_update_interval_minute)
+    )
+    schedule_cleanup_job(getattr(config, "post_cleanup_retention_days", None))

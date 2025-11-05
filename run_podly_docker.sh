@@ -191,6 +191,19 @@ export USE_GPU_NVIDIA
 export USE_GPU_AMD
 export LITE_BUILD
 
+# Surface authentication/session configuration warnings
+REQUIRE_AUTH_LOWER=$(printf '%s' "${REQUIRE_AUTH:-false}" | tr '[:upper:]' '[:lower:]')
+if [ "$REQUIRE_AUTH_LOWER" = "true" ]; then
+    if [ -z "${PODLY_SECRET_KEY}" ]; then
+        echo -e "${YELLOW}Warning: REQUIRE_AUTH is true but PODLY_SECRET_KEY is not set. Sessions will be reset on every restart.${NC}"
+    fi
+
+    ALLOW_INSECURE_LOWER=$(printf '%s' "${PODLY_ALLOW_INSECURE_SESSION_COOKIE:-false}" | tr '[:upper:]' '[:lower:]')
+    if [ "$ALLOW_INSECURE_LOWER" = "true" ]; then
+        echo -e "${RED}Warning: PODLY_ALLOW_INSECURE_SESSION_COOKIE=true with auth enabled. Do not use this override in production; serve Podly over HTTPS instead.${NC}"
+    fi
+fi
+
 # Setup Docker Compose configuration
 if [ "$PRODUCTION_MODE" = true ]; then
     COMPOSE_FILES="-f compose.yml"
@@ -256,4 +269,3 @@ else
         docker compose $COMPOSE_FILES up
     fi
 fi
-

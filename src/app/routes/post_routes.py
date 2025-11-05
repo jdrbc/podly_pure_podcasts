@@ -18,6 +18,23 @@ logger = logging.getLogger("global_logger")
 post_bp = Blueprint("post", __name__)
 
 
+def _increment_download_count(post: Post) -> None:
+    """Safely increment the download counter for a post."""
+    try:
+        updated = Post.query.filter_by(id=post.id).update(
+            {Post.download_count: (Post.download_count or 0) + 1},
+            synchronize_session=False,
+        )
+        if updated:
+            post.download_count = (post.download_count or 0) + 1
+        db.session.commit()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error(
+            "Failed to increment download count for post %s: %s", post.guid, exc
+        )
+        db.session.rollback()
+
+
 @post_bp.route("/api/feeds/<int:feed_id>/posts", methods=["GET"])
 def api_feed_posts(feed_id: int) -> flask.Response:
     """Returns a JSON list of posts for a specific feed."""
@@ -39,6 +56,7 @@ def api_feed_posts(feed_id: int) -> flask.Response:
             "has_unprocessed_audio": post.unprocessed_audio_path is not None,
             "download_url": post.download_url,
             "image_url": post.image_url,
+            "download_count": post.download_count,
         }
         for post in feed.posts
     ]
@@ -109,6 +127,7 @@ def get_post_json(p_guid: str) -> flask.Response:
         "model_call_count": post.model_calls.count(),
         "whisper_model_calls": whisper_model_calls,
         "whitelisted": post.whitelisted,
+        "download_count": post.download_count,
     }
 
     return flask.jsonify(post_data)
@@ -159,6 +178,7 @@ def post_debug(p_guid: str) -> flask.Response:
         "ad_segments_count": ad_segments,
         "model_call_statuses": model_call_statuses,
         "model_types": model_types,
+        "download_count": post.download_count,
     }
 
     return flask.make_response(
@@ -291,6 +311,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
             ),
             "whitelisted": post.whitelisted,
             "has_processed_audio": post.processed_audio_path is not None,
+            "download_count": post.download_count,
         },
         "processing_stats": {
             "total_segments": len(transcript_segments),
@@ -559,7 +580,7 @@ def api_download_post(p_guid: str) -> flask.Response:
         return flask.make_response(("Processed audio not found", 404))
 
     try:
-        return send_file(
+        response = send_file(
             path_or_file=Path(post.processed_audio_path).resolve(),
             mimetype="audio/mpeg",
             as_attachment=True,
@@ -568,6 +589,9 @@ def api_download_post(p_guid: str) -> flask.Response:
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error serving file for {p_guid}: {e}")
         return flask.make_response(("Error serving file", 500))
+
+    _increment_download_count(post)
+    return response
 
 
 @post_bp.route("/api/posts/<string:p_guid>/download/original", methods=["GET"])
@@ -591,7 +615,7 @@ def api_download_original_post(p_guid: str) -> flask.Response:
         return flask.make_response(("Original audio not found", 404))
 
     try:
-        return send_file(
+        response = send_file(
             path_or_file=Path(post.unprocessed_audio_path).resolve(),
             mimetype="audio/mpeg",
             as_attachment=True,
@@ -600,6 +624,9 @@ def api_download_original_post(p_guid: str) -> flask.Response:
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error serving original file for {p_guid}: {e}")
         return flask.make_response(("Error serving file", 500))
+
+    _increment_download_count(post)
+    return response
 
 
 # Legacy endpoints for backward compatibility

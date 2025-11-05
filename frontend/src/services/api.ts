@@ -14,17 +14,8 @@ const API_BASE_URL = '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
 });
-
-export interface AuthCredentials {
-  username: string;
-  password: string;
-}
-
-let activeCredentials: AuthCredentials | null = null;
-
-const buildAuthorizationHeader = (credentials: AuthCredentials): string =>
-  `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
 
 const buildAbsoluteUrl = (path: string): string => {
   if (/^https?:\/\//i.test(path)) {
@@ -37,34 +28,6 @@ const buildAbsoluteUrl = (path: string): string => {
   }
   return `${origin}/${path}`;
 };
-
-const withEmbeddedCredentials = (url: string): string => {
-  if (!activeCredentials) {
-    return url;
-  }
-
-  try {
-    const parsed = new URL(url, window.location.origin);
-    parsed.username = activeCredentials.username;
-    parsed.password = activeCredentials.password;
-    return parsed.toString();
-  } catch (error) {
-    console.error('Failed to embed credentials in URL', error);
-    return url;
-  }
-};
-
-export const setAuthCredentials = (credentials: AuthCredentials | null) => {
-  activeCredentials = credentials;
-
-  if (credentials) {
-    api.defaults.headers.common['Authorization'] = buildAuthorizationHeader(credentials);
-  } else {
-    delete api.defaults.headers.common['Authorization'];
-  }
-};
-
-export const getActiveCredentials = (): AuthCredentials | null => activeCredentials;
 
 export const feedsApi = {
   getFeeds: async (): Promise<Feed[]> => {
@@ -150,17 +113,17 @@ export const feedsApi = {
 
   // Get audio URL for post
   getPostAudioUrl: (guid: string): string => {
-    return withEmbeddedCredentials(buildAbsoluteUrl(`/api/posts/${guid}/audio`));
+    return buildAbsoluteUrl(`/api/posts/${guid}/audio`);
   },
 
   // Get download URL for processed post
   getPostDownloadUrl: (guid: string): string => {
-    return withEmbeddedCredentials(buildAbsoluteUrl(`/api/posts/${guid}/download`));
+    return buildAbsoluteUrl(`/api/posts/${guid}/download`);
   },
 
   // Get download URL for original post
   getPostOriginalDownloadUrl: (guid: string): string => {
-    return withEmbeddedCredentials(buildAbsoluteUrl(`/api/posts/${guid}/download/original`));
+    return buildAbsoluteUrl(`/api/posts/${guid}/download/original`);
   },
 
   // Download processed post
@@ -197,8 +160,12 @@ export const feedsApi = {
     window.URL.revokeObjectURL(url);
   },
 
-  buildProtectedFeedUrl: (feedId: number): string =>
-    withEmbeddedCredentials(buildAbsoluteUrl(`/feed/${feedId}`)),
+  createProtectedFeedShareLink: async (
+    feedId: number
+  ): Promise<{ url: string; credentials: { username: string; password: string }; feed_id: number }> => {
+    const response = await api.post(`/api/feeds/${feedId}/share-link`);
+    return response.data;
+  },
 
   // Get processing stats for post
   getPostStats: async (guid: string): Promise<{
@@ -386,6 +353,10 @@ export const authApi = {
   login: async (username: string, password: string): Promise<{ user: { id: number; username: string; role: string } }> => {
     const response = await api.post('/api/auth/login', { username, password });
     return response.data;
+  },
+
+  logout: async (): Promise<void> => {
+    await api.post('/api/auth/logout');
   },
 
   getCurrentUser: async (): Promise<{ user: { id: number; username: string; role: string } }> => {

@@ -1,6 +1,7 @@
 import datetime
 import logging
 import uuid
+from email.utils import format_datetime, parsedate_to_datetime
 from typing import Any, Optional
 from urllib.parse import quote, urlparse, urlunparse
 
@@ -89,7 +90,9 @@ def refresh_feed(feed: Feed) -> None:
             # do not allow automatic download of any backcatalog added to the feed
             if (
                 oldest_post is not None
-                and p.release_date.date() < oldest_post.release_date
+                and p.release_date
+                and oldest_post.release_date
+                and p.release_date.date() < oldest_post.release_date.date()
             ):
                 p.whitelisted = False
                 logger.debug(
@@ -187,11 +190,7 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
         ),
         description=description,
         guid=post.guid,
-        pubDate=(
-            post.release_date.strftime("%a, %d %b %Y %H:%M:%S %z")
-            if post.release_date
-            else None
-        ),
+        pubDate=_format_pub_date(post.release_date),
     )
 
     return item
@@ -204,11 +203,13 @@ def generate_feed_xml(feed: Feed) -> Any:
     base_url = _get_base_url()
     link = _with_basic_auth(f"{base_url}/feed/{feed.id}")
 
+    last_build_date = format_datetime(datetime.datetime.now(datetime.timezone.utc))
+
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
         link=link,
         description=feed.description,
-        lastBuildDate=datetime.datetime.now(),
+        lastBuildDate=last_build_date,
         image=PyRSS2Gen.Image(url=feed.image_url, title=feed.title, link=link),
         items=items,
     )
@@ -273,14 +274,79 @@ def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
         download_url=find_audio_link(entry),
         title=entry.title,
         description=entry.get("description", ""),
-        release_date=(
-            datetime.datetime(*entry.published_parsed[:6])
-            if entry.get("published_parsed")
-            else None
-        ),
+        release_date=_parse_release_date(entry),
         duration=get_duration(entry),
         image_url=episode_image_url,
     )
+
+
+def _get_entry_field(entry: feedparser.FeedParserDict, field: str) -> Optional[Any]:
+    value = getattr(entry, field, None)
+    return value if value is not None else entry.get(field)
+
+
+def _parse_datetime_string(
+    value: Optional[str], field: str
+) -> Optional[datetime.datetime]:
+    if not value:
+        return None
+    try:
+        return parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        logger.debug("Failed to parse %s string for release date", field)
+        return None
+
+
+def _parse_struct_time(value: Optional[Any], field: str) -> Optional[datetime.datetime]:
+    if not value:
+        return None
+    try:
+        dt = datetime.datetime(*value[:6])
+    except (TypeError, ValueError):
+        logger.debug("Failed to parse %s for release date", field)
+        return None
+    gmtoff = getattr(value, "tm_gmtoff", None)
+    if gmtoff is not None:
+        dt = dt.replace(tzinfo=datetime.timezone(datetime.timedelta(seconds=gmtoff)))
+    return dt
+
+
+def _normalize_to_utc(dt: Optional[datetime.datetime]) -> Optional[datetime.datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(datetime.timezone.utc)
+
+
+def _parse_release_date(
+    entry: feedparser.FeedParserDict,
+) -> Optional[datetime.datetime]:
+    """Parse a release datetime from a feed entry and normalize to UTC."""
+    for field in ("published", "updated"):
+        dt = _parse_datetime_string(_get_entry_field(entry, field), field)
+        normalized = _normalize_to_utc(dt)
+        if normalized:
+            return normalized
+
+    for field in ("published_parsed", "updated_parsed"):
+        dt = _parse_struct_time(_get_entry_field(entry, field), field)
+        normalized = _normalize_to_utc(dt)
+        if normalized:
+            return normalized
+
+    return None
+
+
+def _format_pub_date(release_date: Optional[datetime.datetime]) -> Optional[str]:
+    if not release_date:
+        return None
+
+    normalized = release_date
+    if normalized.tzinfo is None:
+        normalized = normalized.replace(tzinfo=datetime.timezone.utc)
+
+    return format_datetime(normalized.astimezone(datetime.timezone.utc))
 
 
 # sometimes feed entry ids are the post url or something else

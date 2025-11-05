@@ -13,7 +13,7 @@ export default function ConfigPage() {
     queryFn: configApi.getConfig,
   });
 
-  const { changePassword, refreshUser, user, logout } = useAuth();
+  const { changePassword, refreshUser, user, logout, requireAuth } = useAuth();
 
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' });
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
@@ -22,6 +22,8 @@ export default function ConfigPage() {
   const [activeResetUser, setActiveResetUser] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
+
+  const showSecurityControls = requireAuth && !!user;
 
   const {
     data: managedUsers,
@@ -33,7 +35,7 @@ export default function ConfigPage() {
       const response = await authApi.listUsers();
       return response.users;
     },
-    enabled: !!user && user.role === 'admin',
+    enabled: showSecurityControls && user.role === 'admin',
   });
 
   const [pending, setPending] = useState<CombinedConfig | null>(null);
@@ -597,12 +599,14 @@ export default function ConfigPage() {
       </Section>
 
       <div className="flex items-center justify-end gap-3">
-        <button
-          onClick={() => setShowUserManagement((v) => !v)}
-          className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
-        >
-          {showUserManagement ? 'Hide User Management' : 'Show User Management'}
-        </button>
+        {showSecurityControls && (
+          <button
+            onClick={() => setShowUserManagement((v) => !v)}
+            className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            {showUserManagement ? 'Hide User Management' : 'Show User Management'}
+          </button>
+        )}
         <button
           onClick={() => setShowAdvanced((v) => !v)}
           className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -611,7 +615,7 @@ export default function ConfigPage() {
         </button>
       </div>
 
-      {showUserManagement && (
+      {showSecurityControls && showUserManagement && (
                   <Section title="Account Security">
             <form className="grid gap-3 max-w-md" onSubmit={handlePasswordSubmit}>
               <Field label="Current password">
@@ -659,7 +663,7 @@ export default function ConfigPage() {
             </form>
           </Section>
       )}
-      {showUserManagement && (
+      {showSecurityControls && showUserManagement && (
         <Section title="User Management">
           <div className="space-y-4">
             <form className="grid gap-3 md:grid-cols-2" onSubmit={handleCreateUser}>
