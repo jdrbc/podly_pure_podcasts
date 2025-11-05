@@ -28,7 +28,7 @@ Here's how it works:
 
 ## How To Run
 
-You have two options to get started:
+You have a few options to get started:
 
 - **Deploy on Railway**: 
    - quick and easy setup in the cloud, follow our [Railway deployment guide](docs/how_to_run_railway.md). 
@@ -37,8 +37,7 @@ You have two options to get started:
    - For local development and customization, 
    - see our [beginner's guide for running locally](docs/how_to_run_beginners.md). 
    - Use this for the most cost-optimal & private setup.
-- **Join The Preview Server**: 
-   - https://podly.up.railway.app/
+- **[https://podly.up.railway.app/](Join The Preview Server)**: 
    - support the project through code contribution or sponsorship
    - request access in discord
 
@@ -52,7 +51,7 @@ You have two options to get started:
 | **$5**  | local    | remote        | remote |
 | **$10** | public (railway)  | remote        | remote |
 | **$6** | [zeroads](https://zeroads.ai?utm_source=podly)  | for-profit fork of Podly | remote |
-| ? | do you run an ad removal service? | get listed here | sponsor or contribute to project |
+| ? | do you run an ad removal service? | get listed here | sponsor or contribute to project 😀 |
 
 
 ## Contributing
