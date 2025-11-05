@@ -589,7 +589,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                       <>
                         <span>•</span>
                         <span>
-                          {episode.download_count} {episode.download_count === 1 ? 'download' : 'downloads'}
+                          {episode.download_count ? episode.download_count : 0} {episode.download_count === 1 ? 'download' : 'downloads'}
                         </span>
                       </>
                     </div>
