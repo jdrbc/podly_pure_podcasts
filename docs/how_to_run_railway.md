@@ -47,16 +47,17 @@ If you process a large volume of podcasts, you can check the **Config** page in 
 
 ## 5. Secure Your Deployment
 
-Podly includes built-in HTTP Basic authentication. Before inviting listeners, secure the app:
+Podly now uses secure session cookies for the web dashboard while keeping HTTP Basic authentication for RSS feeds and audio downloads. Before inviting listeners, secure the app:
 
 1. In the Railway dashboard, open your Podly service and head to **Variables**.
 2. Add `REQUIRE_AUTH` with value `true`.
 3. Add a strong `PODLY_ADMIN_PASSWORD` (minimum 12 characters including uppercase, lowercase, digit, and symbol). Optionally set `PODLY_ADMIN_USERNAME`.
-4. Redeploy the service. On first boot Podly seeds the admin user and requires those credentials on every request.
+4. Provide a long, random `PODLY_SECRET_KEY` so session cookies survive restarts. (If you omit it, Podly will generate a new key each deploy and sign everyone out.)
+5. Redeploy the service. On first boot Podly seeds the admin user and requires those credentials on every request.
 
 > **Important:** Enabling auth on an existing deployment requires a fresh data volume. Create a new Railway deployment or wipe the existing storage so the initial admin can be seeded.
 
-After signing in, use the Config page to change your password, add additional users, and copy RSS links that include credentials for each listener. When you rotate passwords, update the corresponding Railway variables so restarts succeed.
+After signing in, use the Config page to change your password, add additional users, and copy RSS links via the "Copy protected feed" button. Podly issues feed-specific access tokens and embeds them in each URL so listeners can subscribe without knowing your main password. When you rotate passwords, update the corresponding Railway variables so restarts succeed.
 
 ## 6. Using Podly
 

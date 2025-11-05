@@ -27,12 +27,9 @@ def _require_admin() -> tuple[User | None, flask.Response | None]:
 
     current = getattr(g, "current_user", None)
     if current is None:
-        response = flask.make_response(
-            jsonify({"error": "Authentication required."}),
-            401,
+        return None, flask.make_response(
+            jsonify({"error": "Authentication required."}), 401
         )
-        response.headers["WWW-Authenticate"] = 'Basic realm="Podly"'
-        return None, response
 
     user = User.query.get(current.id)
     if user is None or user.role != "admin":

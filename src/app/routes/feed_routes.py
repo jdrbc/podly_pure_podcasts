@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 from threading import Thread
 from typing import Any, cast
+from urllib.parse import quote, urlparse, urlunparse
 
 import requests
 import validators
@@ -11,6 +12,7 @@ from flask import (
     Flask,
     Response,
     current_app,
+    g,
     jsonify,
     make_response,
     redirect,
@@ -20,6 +22,7 @@ from flask import (
 )
 from flask.typing import ResponseReturnValue
 
+from app.auth.feed_tokens import create_feed_access_token
 from app.extensions import db
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.jobs_manager import get_jobs_manager
@@ -30,6 +33,7 @@ from app.models import (
     Post,
     ProcessingJob,
     TranscriptSegment,
+    User,
 )
 from podcast_processor.podcast_downloader import sanitize_title
 from shared.processing_paths import get_in_root, get_srv_root
@@ -71,6 +75,48 @@ def add_feed() -> ResponseReturnValue:
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error adding feed: {e}")
         return make_response((f"Error adding feed: {e}", 500))
+
+
+@feed_bp.route("/api/feeds/<int:feed_id>/share-link", methods=["POST"])
+def create_feed_share_link(feed_id: int) -> ResponseReturnValue:
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if not settings or not settings.require_auth:
+        return jsonify({"error": "Authentication is disabled."}), 404
+
+    current = getattr(g, "current_user", None)
+    if current is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    feed = Feed.query.get_or_404(feed_id)
+    user = User.query.get(current.id)
+    if user is None:
+        return jsonify({"error": "User not found."}), 404
+
+    username, secret = create_feed_access_token(user, feed)
+
+    parsed = urlparse(request.host_url)
+    netloc = parsed.netloc
+    scheme = parsed.scheme
+    encoded_username = quote(username, safe="")
+    encoded_secret = quote(secret, safe="")
+    path = f"/feed/{feed.id}"
+    prefilled_url = urlunparse(
+        (scheme, f"{encoded_username}:{encoded_secret}@{netloc}", path, "", "", "")
+    )
+
+    return (
+        jsonify(
+            {
+                "url": prefilled_url,
+                "credentials": {
+                    "username": username,
+                    "password": secret,
+                },
+                "feed_id": feed.id,
+            }
+        ),
+        201,
+    )
 
 
 @feed_bp.route("/api/feeds/search", methods=["GET"])

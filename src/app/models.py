@@ -39,6 +39,30 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
         return f"<Feed {self.title}>"
 
 
+class FeedAccessToken(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "feed_access_token"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    token_id = db.Column(db.String(32), unique=True, nullable=False, index=True)
+    token_hash = db.Column(db.String(64), nullable=False)
+    feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+    revoked = db.Column(db.Boolean, default=False, nullable=False)
+
+    feed = db.relationship("Feed", backref=db.backref("access_tokens", lazy="dynamic"))
+    user = db.relationship(
+        "User", backref=db.backref("feed_access_tokens", lazy="dynamic")
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<FeedAccessToken feed={self.feed_id} user={self.user_id}"
+            f" revoked={self.revoked}>"
+        )
+
+
 class Post(db.Model):  # type: ignore[name-defined, misc]
     feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=False)
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)

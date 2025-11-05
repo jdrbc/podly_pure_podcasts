@@ -17,7 +17,7 @@ interface FeedDetailProps {
 type SortOption = 'newest' | 'oldest' | 'title';
 
 export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailProps) {
-  const { requireAuth, credentials } = useAuth();
+  const { requireAuth, isAuthenticated } = useAuth();
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [showStickyHeader, setShowStickyHeader] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -155,14 +155,20 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   };
 
   const handleCopyRssToClipboard = async () => {
-    if (requireAuth && !credentials) {
+    if (requireAuth && !isAuthenticated) {
       toast.error('Please sign in to copy a protected RSS URL.');
       return;
     }
 
-    const rssUrl = feedsApi.buildProtectedFeedUrl(feed.id);
-
     try {
+      let rssUrl: string;
+      if (requireAuth) {
+        const response = await feedsApi.createProtectedFeedShareLink(feed.id);
+        rssUrl = response.url;
+      } else {
+        rssUrl = new URL(`/feed/${feed.id}`, window.location.origin).toString();
+      }
+
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(rssUrl);
       } else {
@@ -179,7 +185,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
           throw new Error('Copy command failed');
         }
       }
-      toast.success('Feed URL copied to clipboard');
+
+      if (requireAuth) {
+        toast.success('Protected feed URL copied. Share carefully; it contains a feed-specific access token.');
+      } else {
+        toast.success('Feed URL copied to clipboard');
+      }
     } catch (err) {
       console.error('Failed to copy feed URL', err);
       toast.error('Failed to copy feed URL');
