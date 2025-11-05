@@ -37,7 +37,7 @@ You have a few options to get started:
    - For local development and customization, 
    - see our [beginner's guide for running locally](docs/how_to_run_beginners.md). 
    - Use this for the most cost-optimal & private setup.
-- **[https://podly.up.railway.app/](Join The Preview Server)**: 
+- **[Join The Preview Server](https://podly.up.railway.app/)**: 
    - support the project through code contribution or sponsorship
    - request access in discord
 
