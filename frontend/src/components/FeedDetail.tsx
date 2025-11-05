@@ -187,9 +187,9 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
       }
 
       if (requireAuth) {
-        toast.success('Protected feed URL copied. Share carefully; it contains a feed-specific access token.');
-      } else {
         toast.success('Feed URL copied to clipboard');
+      } else {
+        toast.success('Feed URL copied to clipboard!');
       }
     } catch (err) {
       console.error('Failed to copy feed URL', err);
