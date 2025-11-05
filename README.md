@@ -37,6 +37,10 @@ You have two options to get started:
    - For local development and customization, 
    - see our [beginner's guide for running locally](docs/how_to_run_beginners.md). 
    - Use this for the most cost-optimal & private setup.
+- **Join The Preview Server**: 
+   - https://podly.up.railway.app/
+   - support the project through code contribution or sponsorship
+   - request access in discord
 
 ### Cost Breakdown
 *Monthly cost breakdown for 5 podcasts*
