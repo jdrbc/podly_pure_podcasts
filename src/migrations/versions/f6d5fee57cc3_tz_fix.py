@@ -7,8 +7,9 @@ Create Date: 2025-11-04 22:31:38.563280
 """
 import datetime
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 
 # revision identifiers, used by Alembic.
@@ -19,12 +20,25 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table("post", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column("release_date_tmp", sa.DateTime(timezone=True), nullable=True)
-        )
-
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    column_names = {col["name"] for col in inspector.get_columns("post")}
+
+    if "release_date" not in column_names and "release_date_tmp" in column_names:
+        with op.batch_alter_table("post", schema=None) as batch_op:
+            batch_op.alter_column("release_date_tmp", new_column_name="release_date")
+        return
+
+    if "release_date" not in column_names:
+        # Nothing to migrate (already applied manually, or table missing column)
+        return
+
+    if "release_date_tmp" not in column_names:
+        with op.batch_alter_table("post", schema=None) as batch_op:
+            batch_op.add_column(
+                sa.Column("release_date_tmp", sa.DateTime(timezone=True), nullable=True)
+            )
+
     metadata = sa.MetaData()
     post = sa.Table("post", metadata, autoload_with=bind)
 
@@ -44,18 +58,37 @@ def upgrade():
             .values(release_date_tmp=dt)
         )
 
-    with op.batch_alter_table("post", schema=None) as batch_op:
-        batch_op.drop_column("release_date")
+    inspector = sa.inspect(bind)
+    column_names = {col["name"] for col in inspector.get_columns("post")}
+    if "release_date" in column_names:
+        with op.batch_alter_table("post", schema=None) as batch_op:
+            batch_op.drop_column("release_date")
 
-    with op.batch_alter_table("post", schema=None) as batch_op:
-        batch_op.rename_column("release_date_tmp", "release_date")
+    inspector = sa.inspect(bind)
+    column_names = {col["name"] for col in inspector.get_columns("post")}
+    if "release_date_tmp" in column_names:
+        with op.batch_alter_table("post", schema=None) as batch_op:
+            batch_op.alter_column("release_date_tmp", new_column_name="release_date")
 
 
 def downgrade():
-    with op.batch_alter_table("post", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("release_date_date", sa.DATE(), nullable=True))
-
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    column_names = {col["name"] for col in inspector.get_columns("post")}
+
+    if "release_date" not in column_names and "release_date_date" in column_names:
+        with op.batch_alter_table("post", schema=None) as batch_op:
+            batch_op.alter_column("release_date_date", new_column_name="release_date")
+        return
+
+    if "release_date" not in column_names:
+        # Nothing to revert
+        return
+
+    if "release_date_date" not in column_names:
+        with op.batch_alter_table("post", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("release_date_date", sa.DATE(), nullable=True))
+
     metadata = sa.MetaData()
     post = sa.Table("post", metadata, autoload_with=bind)
 
@@ -75,8 +108,14 @@ def downgrade():
             .values(release_date_date=date_only)
         )
 
-    with op.batch_alter_table("post", schema=None) as batch_op:
-        batch_op.drop_column("release_date")
+    inspector = sa.inspect(bind)
+    column_names = {col["name"] for col in inspector.get_columns("post")}
+    if "release_date" in column_names:
+        with op.batch_alter_table("post", schema=None) as batch_op:
+            batch_op.drop_column("release_date")
 
-    with op.batch_alter_table("post", schema=None) as batch_op:
-        batch_op.rename_column("release_date_date", "release_date")
+    inspector = sa.inspect(bind)
+    column_names = {col["name"] for col in inspector.get_columns("post")}
+    if "release_date_date" in column_names:
+        with op.batch_alter_table("post", schema=None) as batch_op:
+            batch_op.alter_column("release_date_date", new_column_name="release_date")
