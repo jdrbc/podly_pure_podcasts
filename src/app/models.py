@@ -74,7 +74,7 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     unprocessed_audio_path = db.Column(db.Text)
     processed_audio_path = db.Column(db.Text)
     description = db.Column(db.Text)
-    release_date = db.Column(db.Date)
+    release_date = db.Column(db.DateTime(timezone=True))
     duration = db.Column(db.Integer)
     whitelisted = db.Column(db.Boolean, default=False, nullable=False)
     image_url = db.Column(db.Text)  # Episode thumbnail URL

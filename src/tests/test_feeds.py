@@ -32,7 +32,7 @@ class MockPost:
         guid="test-guid",
         download_url="https://example.com/episode.mp3",
         description="Test description",
-        release_date=datetime.datetime(2023, 1, 1, 12, 0),
+        release_date=datetime.datetime(2023, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
         feed_id=1,
     ):
         self.id = id
