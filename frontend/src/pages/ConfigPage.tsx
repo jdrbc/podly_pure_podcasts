@@ -11,6 +11,9 @@ export default function ConfigPage() {
   const { data, isLoading, refetch } = useQuery<CombinedConfig>({
     queryKey: ['config'],
     queryFn: configApi.getConfig,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const { changePassword, refreshUser, user, logout, requireAuth } = useAuth();
@@ -39,6 +42,7 @@ export default function ConfigPage() {
   });
 
   const [pending, setPending] = useState<CombinedConfig | null>(null);
+  const [hasEdits, setHasEdits] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [showGroqHelp, setShowGroqHelp] = useState(false);
@@ -170,8 +174,19 @@ export default function ConfigPage() {
   };
 
   useEffect(() => {
-    setPending(data ?? null);
-  }, [data]);
+    if (!data) {
+      return;
+    }
+    setPending((prev) => {
+      if (prev === null) {
+        return data;
+      }
+      if (hasEdits) {
+        return prev;
+      }
+      return data;
+    });
+  }, [data, hasEdits]);
 
   const probeConnections = async () => {
     if (!pending) return;
@@ -224,9 +239,50 @@ export default function ConfigPage() {
       return configApi.updateConfig((pending ?? {}) as Partial<CombinedConfig>);
     },
     onSuccess: () => {
+      setHasEdits(false);
       refetch();
     },
   });
+
+  const saveToastMessages = {
+    loading: 'Saving changes...',
+    success: 'Configuration saved',
+    error: (err: unknown) => {
+      if (typeof err === 'object' && err !== null) {
+        const e = err as {
+          response?: { data?: { error?: string; details?: string; message?: string } };
+          message?: string;
+        };
+        return (
+          e.response?.data?.message ||
+          e.response?.data?.error ||
+          e.response?.data?.details ||
+          e.message ||
+          'Failed to save configuration'
+        );
+      }
+      return 'Failed to save configuration';
+    },
+  } as const;
+
+  const handleSave = () => {
+    if (saveMutation.isPending) {
+      return;
+    }
+    toast.promise(saveMutation.mutateAsync(), saveToastMessages);
+  };
+
+  const renderSaveButton = () => (
+    <div className="flex items-center justify-end">
+      <button
+        onClick={handleSave}
+        className="px-3 py-2 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+        disabled={saveMutation.isPending}
+      >
+        {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+      </button>
+    </div>
+  );
 
   const applyGroqKeyMutation = useMutation({
     mutationFn: async (key: string) => {
@@ -245,8 +301,8 @@ export default function ConfigPage() {
         },
       } as Partial<CombinedConfig>;
 
-      setPending((prev) => ({
-        ...(prev as CombinedConfig),
+      updatePending((prevConfig) => ({
+        ...prevConfig,
         llm: next.llm as LLMConfig,
         whisper: next.whisper as WhisperConfig,
       }));
@@ -261,6 +317,7 @@ export default function ConfigPage() {
       return await configApi.updateConfig(next);
     },
     onSuccess: () => {
+      setHasEdits(false);
       refetch();
       toast.success('Groq key verified and saved. Defaults applied.');
       setLlmStatus('ok');
@@ -299,19 +356,68 @@ export default function ConfigPage() {
     return <div className="text-sm text-gray-700">Loading configuration...</div>;
   }
 
-  const setField = (path: string[], value: unknown) => {
-    setPending((prev) => {
-      const next: Record<string, unknown> = {
-        ...(prev as unknown as Record<string, unknown>),
-      };
-      let cursor: Record<string, unknown> = next;
-      for (let i = 0; i < path.length - 1; i++) {
-        const key = path[i];
-        const child = (cursor[key] as Record<string, unknown>) ?? {};
-        cursor[key] = child;
-        cursor = child;
+  const updatePending = (
+    transform: (prevConfig: CombinedConfig) => CombinedConfig,
+    markDirty: boolean = true
+  ) => {
+    let updated = false;
+    setPending((prevConfig) => {
+      if (!prevConfig) {
+        return prevConfig;
       }
-      cursor[path[path.length - 1]] = value;
+      const nextConfig = transform(prevConfig);
+      if (nextConfig === prevConfig) {
+        return prevConfig;
+      }
+      updated = true;
+      return nextConfig;
+    });
+
+    if (updated && markDirty) {
+      setHasEdits(true);
+    }
+  };
+
+  const setField = (path: string[], value: unknown) => {
+    updatePending((prevConfig) => {
+      const prevRecord = prevConfig as unknown as Record<string, unknown>;
+      const lastIndex = path.length - 1;
+
+      let existingParent: Record<string, unknown> | null = prevRecord;
+      for (let i = 0; i < lastIndex; i++) {
+        const key = path[i];
+        const rawNext: unknown = existingParent?.[key];
+        const nextParent: Record<string, unknown> | null =
+          rawNext && typeof rawNext === 'object' ? (rawNext as Record<string, unknown>) : null;
+        if (!nextParent) {
+          existingParent = null;
+          break;
+        }
+        existingParent = nextParent;
+      }
+
+      if (existingParent) {
+        const currentValue = existingParent[path[lastIndex]];
+        if (Object.is(currentValue, value)) {
+          return prevConfig;
+        }
+      }
+
+      const next: Record<string, unknown> = { ...prevRecord };
+
+      let cursor: Record<string, unknown> = next;
+      let sourceCursor: Record<string, unknown> = prevRecord;
+
+      for (let i = 0; i < lastIndex; i++) {
+        const key = path[i];
+        const currentSource = (sourceCursor?.[key] as Record<string, unknown>) ?? {};
+        const clonedChild: Record<string, unknown> = { ...currentSource };
+        cursor[key] = clonedChild;
+        cursor = clonedChild;
+        sourceCursor = currentSource;
+      }
+
+      cursor[path[lastIndex]] = value;
       return next as unknown as CombinedConfig;
     });
   };
@@ -319,10 +425,10 @@ export default function ConfigPage() {
   const handleWhisperTypeChange = (
     nextType: 'local' | 'remote' | 'groq'
   ) => {
-    setPending((prev) => {
-      if (!prev) return prev;
-
-      const prevWhisper = prev.whisper as unknown as Record<string, unknown>;
+    updatePending((prevConfig) => {
+      const prevWhisper = {
+        ...(prevConfig.whisper as unknown as Record<string, unknown>),
+      };
       const prevModelRaw = (prevWhisper?.model as string | undefined) ?? '';
       const prevModel = String(prevModelRaw).toLowerCase();
 
@@ -368,7 +474,7 @@ export default function ConfigPage() {
       }
 
       return {
-        ...prev,
+        ...prevConfig,
         whisper: nextWhisper as unknown as WhisperConfig,
       } as CombinedConfig;
     });
@@ -550,12 +656,11 @@ export default function ConfigPage() {
               value={pending?.whisper?.whisper_type === 'groq' ? getWhisperApiKey(pending?.whisper) : (pending?.llm?.llm_api_key || '')}
               onChange={(e) => {
                 const val = e.target.value;
-                setPending((prev) => {
-                  if (!prev) return prev;
+                updatePending((prevConfig) => {
                   return {
-                    ...prev,
+                    ...prevConfig,
                     llm: {
-                      ...(prev.llm as LLMConfig),
+                      ...(prevConfig.llm as LLMConfig),
                       llm_api_key: val,
                       llm_model: groqRecommendedModel,
                     },
@@ -942,6 +1047,7 @@ export default function ConfigPage() {
               </button>
             </div>
           </Section>
+          {renderSaveButton()}
 
           <Section title="Whisper">
             <Field label="Type">
@@ -1082,6 +1188,7 @@ export default function ConfigPage() {
               </button>
             </div>
           </Section>
+          {renderSaveButton()}
 
           <Section title="Processing">
             <Field label="Number of Segments per Prompt">
@@ -1093,6 +1200,7 @@ export default function ConfigPage() {
               />
             </Field>
           </Section>
+          {renderSaveButton()}
 
           <Section title="Output">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1131,6 +1239,7 @@ export default function ConfigPage() {
               </Field>
             </div>
           </Section>
+          {renderSaveButton()}
 
           <Section title="App">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1168,37 +1277,7 @@ export default function ConfigPage() {
               </Field>
             </div>
           </Section>
-
-          <div className="flex items-center justify-end">
-            <button
-              onClick={() => {
-                toast.promise(
-                  saveMutation.mutateAsync(),
-                  {
-                    loading: 'Saving changes...',
-                    success: 'Configuration saved',
-                    error: (err: unknown) => {
-                      if (typeof err === 'object' && err !== null) {
-                        const e = err as { response?: { data?: { error?: string; details?: string; message?: string } }; message?: string };
-                        return (
-                          e.response?.data?.message ||
-                          e.response?.data?.error ||
-                          e.response?.data?.details ||
-                          e.message ||
-                          'Failed to save configuration'
-                        );
-                      }
-                      return 'Failed to save configuration';
-                    },
-                  }
-                );
-              }}
-              className="px-3 py-2 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700"
-              disabled={saveMutation.isPending}
-            >
-              {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
+          {renderSaveButton()}
         </div>
       )}
       
