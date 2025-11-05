@@ -34,16 +34,16 @@ jobs:
         run: pipenv run mypy --install-types
 
       - name: Run mypy
-        run: pipenv run mypy . --explicit-package-bases --exclude 'migrations' --exclude 'build' --exclude 'scripts' --exclude 'src/tests' --exclude 'src/tests/test_routes.py' --exclude 'src/app/routes.py'
+        run: pipenv run mypy src --explicit-package-bases --exclude 'migrations' --exclude 'build' --exclude 'scripts' --exclude 'src/tests' --exclude 'src/tests/test_routes.py' --exclude 'src/app/routes.py'
 
       - name: Run pylint
-        run: pipenv run pylint . --ignore=migrations,tests
+        run: pipenv run pylint src --ignore=migrations,tests
 
       - name: Run black
-        run: pipenv run black --check .
+        run: pipenv run black --check src
 
       - name: Run isort
-        run: pipenv run isort --check-only .
+        run: pipenv run isort --check-only src
 
       - name: Run pytest
         run: pipenv run pytest --disable-warnings

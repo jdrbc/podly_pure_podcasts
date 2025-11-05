@@ -575,6 +575,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                           <span>{formatDuration(episode.duration)}</span>
                         </>
                       )}
+                      <>
+                        <span>•</span>
+                        <span>
+                          {episode.download_count} {episode.download_count === 1 ? 'download' : 'downloads'}
+                        </span>
+                      </>
                     </div>
 
                     {/* Bottom Controls - only show if episode is whitelisted */}

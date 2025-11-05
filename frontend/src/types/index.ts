@@ -20,6 +20,7 @@ export interface Episode {
   has_unprocessed_audio: boolean;
   download_url: string;
   image_url: string | null;
+  download_count: number;
 } 
 
 export interface Job {

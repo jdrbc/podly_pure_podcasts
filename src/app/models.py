@@ -54,6 +54,7 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     duration = db.Column(db.Integer)
     whitelisted = db.Column(db.Boolean, default=False, nullable=False)
     image_url = db.Column(db.Text)  # Episode thumbnail URL
+    download_count = db.Column(db.Integer, nullable=True, default=0)
 
     segments = db.relationship(
         "TranscriptSegment",
