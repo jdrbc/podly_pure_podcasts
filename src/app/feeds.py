@@ -203,9 +203,7 @@ def generate_feed_xml(feed: Feed) -> Any:
     base_url = _get_base_url()
     link = _with_basic_auth(f"{base_url}/feed/{feed.id}")
 
-    last_build_date = format_datetime(
-        datetime.datetime.now(datetime.timezone.utc)
-    )
+    last_build_date = format_datetime(datetime.datetime.now(datetime.timezone.utc))
 
     rss_feed = PyRSS2Gen.RSS2(
         title="[podly] " + feed.title,
@@ -282,58 +280,62 @@ def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
     )
 
 
-def _parse_release_date(entry: feedparser.FeedParserDict) -> Optional[datetime.datetime]:
-    """Parse a release datetime from a feed entry and normalize to UTC."""
-    dt: Optional[datetime.datetime] = None
+def _get_entry_field(entry: feedparser.FeedParserDict, field: str) -> Optional[Any]:
+    value = getattr(entry, field, None)
+    return value if value is not None else entry.get(field)
 
-    published_raw = getattr(entry, "published", None) or entry.get("published")
-    if published_raw:
-        try:
-            dt = parsedate_to_datetime(published_raw)
-        except (TypeError, ValueError):
-            logger.debug("Failed to parse published string for release date")
 
-    if dt is None:
-        published_parsed = entry.get("published_parsed")
-        if published_parsed:
-            try:
-                dt = datetime.datetime(*published_parsed[:6])
-                gmtoff = getattr(published_parsed, "tm_gmtoff", None)
-                if gmtoff is not None:
-                    dt = dt.replace(
-                        tzinfo=datetime.timezone(datetime.timedelta(seconds=gmtoff))
-                    )
-            except (TypeError, ValueError):
-                logger.debug("Failed to parse published_parsed for release date")
-
-    if dt is None:
-        updated_raw = getattr(entry, "updated", None) or entry.get("updated")
-        if updated_raw:
-            try:
-                dt = parsedate_to_datetime(updated_raw)
-            except (TypeError, ValueError):
-                logger.debug("Failed to parse updated string for release date")
-
-    if dt is None:
-        updated_parsed = entry.get("updated_parsed")
-        if updated_parsed:
-            try:
-                dt = datetime.datetime(*updated_parsed[:6])
-                gmtoff = getattr(updated_parsed, "tm_gmtoff", None)
-                if gmtoff is not None:
-                    dt = dt.replace(
-                        tzinfo=datetime.timezone(datetime.timedelta(seconds=gmtoff))
-                    )
-            except (TypeError, ValueError):
-                logger.debug("Failed to parse updated_parsed for release date")
-
-    if dt is None:
+def _parse_datetime_string(
+    value: Optional[str], field: str
+) -> Optional[datetime.datetime]:
+    if not value:
+        return None
+    try:
+        return parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        logger.debug("Failed to parse %s string for release date", field)
         return None
 
+
+def _parse_struct_time(value: Optional[Any], field: str) -> Optional[datetime.datetime]:
+    if not value:
+        return None
+    try:
+        dt = datetime.datetime(*value[:6])
+    except (TypeError, ValueError):
+        logger.debug("Failed to parse %s for release date", field)
+        return None
+    gmtoff = getattr(value, "tm_gmtoff", None)
+    if gmtoff is not None:
+        dt = dt.replace(tzinfo=datetime.timezone(datetime.timedelta(seconds=gmtoff)))
+    return dt
+
+
+def _normalize_to_utc(dt: Optional[datetime.datetime]) -> Optional[datetime.datetime]:
+    if dt is None:
+        return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=datetime.timezone.utc)
-
     return dt.astimezone(datetime.timezone.utc)
+
+
+def _parse_release_date(
+    entry: feedparser.FeedParserDict,
+) -> Optional[datetime.datetime]:
+    """Parse a release datetime from a feed entry and normalize to UTC."""
+    for field in ("published", "updated"):
+        dt = _parse_datetime_string(_get_entry_field(entry, field), field)
+        normalized = _normalize_to_utc(dt)
+        if normalized:
+            return normalized
+
+    for field in ("published_parsed", "updated_parsed"):
+        dt = _parse_struct_time(_get_entry_field(entry, field), field)
+        normalized = _normalize_to_utc(dt)
+        if normalized:
+            return normalized
+
+    return None
 
 
 def _format_pub_date(release_date: Optional[datetime.datetime]) -> Optional[str]:

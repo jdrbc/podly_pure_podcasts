@@ -5,12 +5,11 @@ Revises: 0d954a44fa8e
 Create Date: 2025-11-04 22:31:38.563280
 
 """
+
 import datetime
 
 import sqlalchemy as sa
-
 from alembic import op
-
 
 # revision identifiers, used by Alembic.
 revision = "f6d5fee57cc3"
@@ -53,9 +52,7 @@ def upgrade():
             dt = datetime.datetime.combine(row.release_date, datetime.time())
         dt = dt.replace(tzinfo=datetime.timezone.utc)
         bind.execute(
-            post.update()
-            .where(post.c.id == row.id)
-            .values(release_date_tmp=dt)
+            post.update().where(post.c.id == row.id).values(release_date_tmp=dt)
         )
 
     inspector = sa.inspect(bind)
@@ -87,7 +84,9 @@ def downgrade():
 
     if "release_date_date" not in column_names:
         with op.batch_alter_table("post", schema=None) as batch_op:
-            batch_op.add_column(sa.Column("release_date_date", sa.DATE(), nullable=True))
+            batch_op.add_column(
+                sa.Column("release_date_date", sa.DATE(), nullable=True)
+            )
 
     metadata = sa.MetaData()
     post = sa.Table("post", metadata, autoload_with=bind)
@@ -103,9 +102,7 @@ def downgrade():
             dt = datetime.datetime.combine(row.release_date, datetime.time())
         date_only = dt.astimezone(datetime.timezone.utc).date()
         bind.execute(
-            post.update()
-            .where(post.c.id == row.id)
-            .values(release_date_date=date_only)
+            post.update().where(post.c.id == row.id).values(release_date_date=date_only)
         )
 
     inspector = sa.inspect(bind)
