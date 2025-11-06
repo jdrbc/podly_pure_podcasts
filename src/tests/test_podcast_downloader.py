@@ -176,7 +176,8 @@ def test_download_episode_invalid_url(
         mock_abort.assert_called_once_with(404)
 
 
-def test_download_episode_invalid_post_title(test_post, downloader, app):
+@mock.patch("podcast_processor.podcast_downloader.requests.get")
+def test_download_episode_invalid_post_title(mock_get, test_post, downloader, app):
     with app.app_context():
         # Test with a post that has an invalid title that results in empty sanitized title
         test_post.title = "!@#$%^&*()"  # This will sanitize to empty string
@@ -184,12 +185,11 @@ def test_download_episode_invalid_post_title(test_post, downloader, app):
         with mock.patch.object(
             downloader, "get_and_make_download_path"
         ) as mock_get_path:
-            mock_get_path.return_value = None
+            mock_get_path.return_value = ""
 
             expected_path = downloader.get_and_make_download_path(test_post.title)
-            result = downloader.download_episode(
-                test_post, dest_path=str(expected_path)
-            )
+            result = downloader.download_episode(test_post, dest_path=expected_path)
 
             # Check that None was returned
             assert result is None
+            mock_get.assert_not_called()

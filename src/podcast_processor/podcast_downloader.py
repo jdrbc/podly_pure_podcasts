@@ -61,6 +61,7 @@ class PodcastDownloader:
         audio_link = post.download_url
         if audio_link is None or not validators.url(audio_link):
             abort(404)
+            return None
 
         self.logger.info(f"Downloading {audio_link} into {download_path}...")
         with requests.get(audio_link, stream=True, timeout=60) as response:

@@ -137,20 +137,14 @@ def _validate_env_key_conflicts() -> None:
 
     Rules:
     - If both LLM_API_KEY and GROQ_API_KEY are set and differ -> error
-    - If both LLM_API_KEY and WHISPER_REMOTE_API_KEY are set and differ -> error
     """
     llm_key = os.environ.get("LLM_API_KEY")
     groq_key = os.environ.get("GROQ_API_KEY")
-    whisper_remote_key = os.environ.get("WHISPER_REMOTE_API_KEY")
 
     conflicts: list[str] = []
     if llm_key and groq_key and llm_key != groq_key:
         conflicts.append(
             "LLM_API_KEY and GROQ_API_KEY are both set but have different values"
-        )
-    if llm_key and whisper_remote_key and llm_key != whisper_remote_key:
-        conflicts.append(
-            "LLM_API_KEY and WHISPER_REMOTE_API_KEY are both set but have different values"
         )
 
     if conflicts:

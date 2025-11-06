@@ -2,9 +2,13 @@
 Tests for configuration error handling and validation.
 """
 
-import pytest
+import importlib
+
+import pytest  # type: ignore[import]
 
 from shared.config import Config
+
+app_module = importlib.import_module("app.__init__")
 
 
 class TestConfigurationErrorHandling:
@@ -109,3 +113,22 @@ class TestConfigurationErrorHandling:
             },
         )
         assert config.llm_enable_token_rate_limiting is False
+
+
+class TestEnvKeyValidation:
+    """Tests for environment-based API key validation."""
+
+    def test_llm_and_groq_conflict_raises(self, monkeypatch):
+        monkeypatch.setenv("LLM_API_KEY", "llm-value")
+        monkeypatch.setenv("GROQ_API_KEY", "groq-value")
+        monkeypatch.delenv("WHISPER_REMOTE_API_KEY", raising=False)
+
+        with pytest.raises(SystemExit):
+            app_module._validate_env_key_conflicts()
+
+    def test_whisper_remote_allows_different_key(self, monkeypatch):
+        monkeypatch.setenv("LLM_API_KEY", "llm-value")
+        monkeypatch.setenv("WHISPER_REMOTE_API_KEY", "remote-value")
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+        app_module._validate_env_key_conflicts()
