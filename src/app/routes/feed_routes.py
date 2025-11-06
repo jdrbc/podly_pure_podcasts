@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from threading import Thread
 from typing import Any, cast
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import quote, urlencode, urlparse, urlunparse
 
 import requests
 import validators
@@ -92,26 +92,21 @@ def create_feed_share_link(feed_id: int) -> ResponseReturnValue:
     if user is None:
         return jsonify({"error": "User not found."}), 404
 
-    username, secret = create_feed_access_token(user, feed)
+    token_id, secret = create_feed_access_token(user, feed)
 
     parsed = urlparse(request.host_url)
     netloc = parsed.netloc
     scheme = parsed.scheme
-    encoded_username = quote(username, safe="")
-    encoded_secret = quote(secret, safe="")
     path = f"/feed/{feed.id}"
-    prefilled_url = urlunparse(
-        (scheme, f"{encoded_username}:{encoded_secret}@{netloc}", path, "", "", "")
-    )
+    query = urlencode({"feed_token": token_id, "feed_secret": secret})
+    prefilled_url = urlunparse((scheme, netloc, path, "", query, ""))
 
     return (
         jsonify(
             {
                 "url": prefilled_url,
-                "credentials": {
-                    "username": username,
-                    "password": secret,
-                },
+                "feed_token": token_id,
+                "feed_secret": secret,
                 "feed_id": feed.id,
             }
         ),

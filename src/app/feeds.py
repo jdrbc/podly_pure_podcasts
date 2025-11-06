@@ -3,7 +3,7 @@ import logging
 import uuid
 from email.utils import format_datetime, parsedate_to_datetime
 from typing import Any, Optional
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
@@ -174,8 +174,8 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
     base_url = _get_base_url()
 
     # Generate URLs that will be proxied by the frontend to the backend
-    audio_url = _with_basic_auth(f"{base_url}/api/posts/{post.guid}/download")
-    post_details_url = _with_basic_auth(f"{base_url}/api/posts/{post.guid}")
+    audio_url = _append_feed_token_params(f"{base_url}/api/posts/{post.guid}/download")
+    post_details_url = _append_feed_token_params(f"{base_url}/api/posts/{post.guid}")
 
     description = (
         f'{post.description}\n<p><a href="{post_details_url}">Podly Post Page</a></p>'
@@ -201,7 +201,7 @@ def generate_feed_xml(feed: Feed) -> Any:
     items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
 
     base_url = _get_base_url()
-    link = _with_basic_auth(f"{base_url}/feed/{feed.id}")
+    link = _append_feed_token_params(f"{base_url}/feed/{feed.id}")
 
     last_build_date = format_datetime(datetime.datetime.now(datetime.timezone.utc))
 
@@ -217,28 +217,30 @@ def generate_feed_xml(feed: Feed) -> Any:
     return rss_feed.to_xml("utf-8")
 
 
-def _with_basic_auth(url: str) -> str:
+def _append_feed_token_params(url: str) -> str:
     if not current_app.config.get("REQUIRE_AUTH"):
         return url
 
-    credentials = getattr(g, "basic_auth_credentials", None)
-    if not credentials:
+    try:
+        token_result = getattr(g, "feed_token", None)
+        token_id = request.args.get("feed_token")
+        secret = request.args.get("feed_secret")
+    except RuntimeError:
         return url
 
-    username, password = credentials
+    if token_result is not None:
+        token_id = token_id or token_result.token.token_id
+        secret = secret or token_result.token.token_secret
+
+    if not token_id or not secret:
+        return url
+
     parsed = urlparse(url)
-    if not parsed.netloc:
-        return url
-
-    if parsed.username or parsed.password:
-        return url
-
-    safe_username = quote(username, safe="")
-    safe_password = quote(password, safe="")
-    userinfo = f"{safe_username}:{safe_password}"
-    netloc_with_credentials = f"{userinfo}@{parsed.netloc}"
-
-    return urlunparse(parsed._replace(netloc=netloc_with_credentials))
+    query_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query_params["feed_token"] = token_id
+    query_params["feed_secret"] = secret
+    new_query = urlencode(query_params)
+    return urlunparse(parsed._replace(query=new_query))
 
 
 def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:

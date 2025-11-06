@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import base64
-import binascii
 import re
 from typing import Any
 
 from flask import Response, current_app, g, jsonify, request, session
 
 from app.auth.feed_tokens import FeedTokenAuthResult, authenticate_feed_token
-from app.auth.service import AuthenticatedUser, authenticate
+from app.auth.service import AuthenticatedUser
 from app.auth.state import failure_rate_limiter
 from app.models import User
 
-REALM = "Podly"
 SESSION_USER_KEY = "user_id"
 
 # Paths that remain public even when auth is required.
@@ -49,7 +46,7 @@ _PUBLIC_EXTENSIONS: tuple[str, ...] = (
 )
 
 
-_BASIC_AUTH_PATTERNS: tuple[re.Pattern[str], ...] = (
+_TOKEN_PROTECTED_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^/feed/[^/]+$"),
     re.compile(r"^/api/posts/[^/]+/(audio|download(?:/original)?)$"),
     re.compile(r"^/post/[^/]+(?:\\.mp3|/original\\.mp3)$"),
@@ -77,40 +74,29 @@ def init_auth_middleware(app: Any) -> None:
         session_user = _load_session_user()
         if session_user is not None:
             g.current_user = session_user
-            g.basic_auth_credentials = None
+            g.feed_token = None
             failure_rate_limiter.register_success(client_identifier)
             return None
 
-        if not _is_basic_auth_endpoint(request.path):
-            return _json_unauthorized()
+        if _is_token_protected_endpoint(request.path):
+            retry_after = failure_rate_limiter.retry_after(client_identifier)
+            if retry_after:
+                return _too_many_requests(retry_after)
 
-        retry_after = failure_rate_limiter.retry_after(client_identifier)
-        if retry_after:
-            return _too_many_requests(retry_after)
-
-        credentials = _parse_basic_credentials(request.headers.get("Authorization"))
-        if credentials is None:
-            return _basic_unauthorized()
-
-        username, password = credentials
-        token_result: FeedTokenAuthResult | None = None
-        user = authenticate(username, password)
-        if user is None:
-            token_result = authenticate_feed_token(username, password, request.path)
+            token_result = _authenticate_feed_token_from_query()
             if token_result is None:
                 backoff = failure_rate_limiter.register_failure(client_identifier)
-                response = _basic_unauthorized("Invalid credentials.")
+                response = _token_unauthorized()
                 if backoff:
                     response.headers["Retry-After"] = str(backoff)
                 return response
-            user = token_result.user
 
-        failure_rate_limiter.register_success(client_identifier)
-        g.current_user = user
-        g.basic_auth_credentials = (username, password)
-        if token_result is not None:
+            failure_rate_limiter.register_success(client_identifier)
+            g.current_user = token_result.user
             g.feed_token = token_result
-        return None
+            return None
+
+        return _json_unauthorized()
 
 
 def _load_session_user() -> AuthenticatedUser | None:
@@ -130,29 +116,17 @@ def _load_session_user() -> AuthenticatedUser | None:
     return AuthenticatedUser(id=user.id, username=user.username, role=user.role)
 
 
-def _is_basic_auth_endpoint(path: str) -> bool:
-    return any(pattern.match(path) for pattern in _BASIC_AUTH_PATTERNS)
+def _is_token_protected_endpoint(path: str) -> bool:
+    return any(pattern.match(path) for pattern in _TOKEN_PROTECTED_PATTERNS)
 
 
-def _parse_basic_credentials(header_value: str | None) -> tuple[str, str] | None:
-    if not header_value:
+def _authenticate_feed_token_from_query() -> FeedTokenAuthResult | None:
+    token_id = request.args.get("feed_token")
+    secret = request.args.get("feed_secret")
+    if not token_id or not secret:
         return None
 
-    if not header_value.startswith("Basic "):
-        return None
-
-    encoded = header_value.split(" ", 1)[1]
-    try:
-        decoded_bytes = base64.b64decode(encoded, validate=True)
-        decoded = decoded_bytes.decode("utf-8")
-    except (binascii.Error, UnicodeDecodeError):
-        return None
-
-    if ":" not in decoded:
-        return None
-
-    username, password = decoded.split(":", 1)
-    return username, password
+    return authenticate_feed_token(token_id, secret, request.path)
 
 
 def _is_public_request(path: str) -> bool:
@@ -174,9 +148,8 @@ def _json_unauthorized(message: str = "Authentication required.") -> Response:
     return response
 
 
-def _basic_unauthorized(message: str | None = None) -> Response:
-    response = Response(message or "Unauthorized", status=401)
-    response.headers["WWW-Authenticate"] = f'Basic realm="{REALM}"'
+def _token_unauthorized() -> Response:
+    response = Response("Invalid or missing feed token", status=401)
     return response
 
 

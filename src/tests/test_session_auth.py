@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import base64
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from flask import Flask, Response, g, jsonify
@@ -76,11 +75,6 @@ def auth_app() -> Flask:
         db.drop_all()
 
 
-def _encode_basic(username: str, password: str) -> str:
-    encoded = base64.b64encode(f"{username}:{password}".encode("utf-8"))
-    return f"Basic {encoded.decode('utf-8')}"
-
-
 def test_login_sets_session_cookie_and_allows_authenticated_requests(
     auth_app: Flask,
 ) -> None:
@@ -123,22 +117,15 @@ def test_protected_route_without_session_returns_json_401(auth_app: Flask) -> No
     assert response.headers.get("WWW-Authenticate") is None
 
 
-def test_feed_allows_basic_auth_when_no_session(auth_app: Flask) -> None:
+def test_feed_requires_token_when_no_session(auth_app: Flask) -> None:
     client = auth_app.test_client()
 
     unauthorized = client.get("/feed/1")
     assert unauthorized.status_code == 401
-    assert unauthorized.headers.get("WWW-Authenticate", "").startswith("Basic ")
-
-    authorized = client.get(
-        "/feed/1",
-        headers={"Authorization": _encode_basic("admin", "password")},
-    )
-    assert authorized.status_code == 200
-    assert authorized.data == b"ok"
+    assert "Invalid or missing feed token" in unauthorized.get_data(as_text=True)
 
 
-def test_share_link_generates_token_and_allows_basic_access(auth_app: Flask) -> None:
+def test_share_link_generates_token_and_allows_query_access(auth_app: Flask) -> None:
     client = auth_app.test_client()
     with auth_app.app_context():
         feed = Feed(title="Example", rss_url="https://example.com/feed.xml")
@@ -162,18 +149,43 @@ def test_share_link_generates_token_and_allows_basic_access(auth_app: Flask) -> 
     payload = share.get_json()
     assert payload["feed_id"] == feed_id
 
+    token_id = payload["feed_token"]
+    secret = payload["feed_secret"]
+
     parsed = urlparse(payload["url"])
-    assert parsed.username and parsed.username.startswith("feed-")
-    assert parsed.password
+    params = parse_qs(parsed.query)
+    assert params.get("feed_token", [None])[0] == token_id
+    assert params.get("feed_secret", [None])[0] == secret
 
-    header = "Basic " + base64.b64encode(
-        f"{parsed.username}:{parsed.password}".encode("utf-8")
-    ).decode("utf-8")
+    anon_client = auth_app.test_client()
 
-    feed_response = client.get(f"/feed/{feed_id}", headers={"Authorization": header})
+    feed_response = anon_client.get(
+        f"/feed/{feed_id}",
+        query_string={"feed_token": token_id, "feed_secret": secret},
+    )
     assert feed_response.status_code == 200
+    assert feed_response.data == b"ok"
 
-    download_response = client.get(
-        "/api/posts/episode-1/download", headers={"Authorization": header}
+    download_response = anon_client.get(
+        "/api/posts/episode-1/download",
+        query_string={"feed_token": token_id, "feed_secret": secret},
     )
     assert download_response.status_code == 200
+
+
+def test_share_link_returns_same_token_for_user_and_feed(auth_app: Flask) -> None:
+    client = auth_app.test_client()
+    with auth_app.app_context():
+        feed = Feed(title="Stable", rss_url="https://example.com/stable.xml")
+        db.session.add(feed)
+        db.session.commit()
+        feed_id = feed.id
+
+    client.post("/api/auth/login", json={"username": "admin", "password": "password"})
+
+    first = client.post(f"/api/feeds/{feed_id}/share-link").get_json()
+    second = client.post(f"/api/feeds/{feed_id}/share-link").get_json()
+
+    assert first["url"] == second["url"]
+    assert first["feed_token"] == second["feed_token"]
+    assert first["feed_secret"] == second["feed_secret"]

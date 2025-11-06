@@ -24,27 +24,38 @@ def _hash_token(secret: str) -> str:
 
 
 def create_feed_access_token(user: User, feed: Feed) -> tuple[str, str]:
+    existing = FeedAccessToken.query.filter_by(
+        user_id=user.id, feed_id=feed.id, revoked=False
+    ).first()
+    if existing is not None:
+        if existing.token_secret:
+            return existing.token_id, existing.token_secret
+
+        secret = secrets.token_urlsafe(18)
+        existing.token_hash = _hash_token(secret)
+        existing.token_secret = secret
+        db.session.add(existing)
+        db.session.commit()
+        return existing.token_id, secret
+
     token_id = uuid.uuid4().hex
     secret = secrets.token_urlsafe(18)
     token = FeedAccessToken(
         token_id=token_id,
         token_hash=_hash_token(secret),
+        token_secret=secret,
         feed_id=feed.id,
         user_id=user.id,
     )
     db.session.add(token)
     db.session.commit()
 
-    return f"feed-{token_id}", secret
+    return token_id, secret
 
 
 def authenticate_feed_token(
-    username: str, secret: str, path: str
+    token_id: str, secret: str, path: str
 ) -> Optional[FeedTokenAuthResult]:
-    if not username.startswith("feed-"):
-        return None
-
-    token_id = username[len("feed-") :]
     if not token_id:
         return None
 
@@ -65,6 +76,8 @@ def authenticate_feed_token(
         return None
 
     token.last_used_at = datetime.utcnow()
+    if token.token_secret is None:
+        token.token_secret = secret
     db.session.add(token)
     # Defer commit to request teardown
 

@@ -162,7 +162,7 @@ export const feedsApi = {
 
   createProtectedFeedShareLink: async (
     feedId: number
-  ): Promise<{ url: string; credentials: { username: string; password: string }; feed_id: number }> => {
+  ): Promise<{ url: string; feed_token: string; feed_secret: string; feed_id: number }> => {
     const response = await api.post(`/api/feeds/${feedId}/share-link`);
     return response.data;
   },
