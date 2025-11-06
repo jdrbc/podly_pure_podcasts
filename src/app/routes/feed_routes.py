@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from threading import Thread
 from typing import Any, cast
-from urllib.parse import quote, urlencode, urlparse, urlunparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import requests
 import validators
