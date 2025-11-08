@@ -204,18 +204,22 @@ fi
 if [ "$PRODUCTION_MODE" = true ]; then
     COMPOSE_FILES="-f compose.yml"
     # Set branch tag based on GPU detection and branch
-    if [ "$USE_GPU_NVIDIA" = true ]; then
-        export BRANCH="${BRANCH_SUFFIX}-gpu-nvidia"
-    elif [ "$USE_GPU_AMD" = true ]; then
-        export BRANCH="${BRANCH_SUFFIX}-gpu-amd"
-    else
-        export BRANCH="${BRANCH_SUFFIX}-latest"
+    if [ "$LITE_BUILD" = true ] && [ "$USE_GPU" = true ]; then
+        echo -e "${RED}Error: --lite cannot be combined with GPU builds. Use --cpu or drop --lite.${NC}"
+        exit 1
     fi
 
-    # Append lite suffix if building lite version
     if [ "$LITE_BUILD" = true ]; then
-        export BRANCH="${BRANCH}-lite"
+        BRANCH="${BRANCH_SUFFIX}-lite"
+    elif [ "$USE_GPU_NVIDIA" = true ]; then
+        BRANCH="${BRANCH_SUFFIX}-gpu-nvidia"
+    elif [ "$USE_GPU_AMD" = true ]; then
+        BRANCH="${BRANCH_SUFFIX}-gpu-amd"
+    else
+        BRANCH="${BRANCH_SUFFIX}-latest"
     fi
+
+    export BRANCH
 
     echo -e "${YELLOW}Production mode - using published images${NC}"
     echo -e "${YELLOW}  Branch tag: ${BRANCH}${NC}"
