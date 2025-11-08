@@ -41,16 +41,34 @@ def _require_admin() -> tuple[User | None, flask.Response | None]:
     return user, None
 
 
+def _mask_secret(value: Any | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        secret = str(value).strip()
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+    if not secret:
+        return None
+    if len(secret) <= 8:
+        return secret
+    return f"{secret[:4]}...{secret[-4:]}"
+
+
 def _sanitize_config_for_client(cfg: Dict[str, Any]) -> Dict[str, Any]:
     try:
         data: Dict[str, Any] = dict(cfg)
         llm: Dict[str, Any] = dict(data.get("llm", {}))
         whisper: Dict[str, Any] = dict(data.get("whisper", {}))
 
-        if "llm_api_key" in llm:
-            llm.pop("llm_api_key", None)
-        if "api_key" in whisper:
-            whisper.pop("api_key", None)
+        llm_api_key = llm.pop("llm_api_key", None)
+        if llm_api_key:
+            llm["llm_api_key_preview"] = _mask_secret(llm_api_key)
+
+        whisper_api_key = whisper.pop("api_key", None)
+        if whisper_api_key:
+            whisper["api_key_preview"] = _mask_secret(whisper_api_key)
 
         data["llm"] = llm
         data["whisper"] = whisper
@@ -220,6 +238,15 @@ def api_put_config() -> flask.Response:
         return error_response
 
     payload = request.get_json(silent=True) or {}
+
+    llm_payload = payload.get("llm")
+    if isinstance(llm_payload, dict):
+        llm_payload.pop("llm_api_key_preview", None)
+
+    whisper_payload = payload.get("whisper")
+    if isinstance(whisper_payload, dict):
+        whisper_payload.pop("api_key_preview", None)
+
     try:
         data = update_combined(payload)
 

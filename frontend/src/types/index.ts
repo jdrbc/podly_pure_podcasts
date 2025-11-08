@@ -66,6 +66,7 @@ export interface JobManagerStatus {
 
 export interface LLMConfig {
   llm_api_key?: string | null;
+  llm_api_key_preview?: string | null;
   llm_model: string;
   openai_base_url?: string | null;
   openai_timeout: number;
@@ -83,6 +84,7 @@ export type WhisperConfig =
       whisper_type: 'remote';
       model: string;
       api_key?: string | null;
+      api_key_preview?: string | null;
       base_url?: string;
       language: string;
       timeout_sec: number;
@@ -91,6 +93,7 @@ export type WhisperConfig =
   | {
       whisper_type: 'groq';
       api_key?: string | null;
+      api_key_preview?: string | null;
       model: string;
       language: string;
       max_retries: number;

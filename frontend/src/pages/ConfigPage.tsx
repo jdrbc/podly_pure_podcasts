@@ -418,6 +418,7 @@ export default function ConfigPage() {
       }
 
       cursor[path[lastIndex]] = value;
+
       return next as unknown as CombinedConfig;
     });
   };
@@ -652,7 +653,11 @@ export default function ConfigPage() {
             <input
               className="input"
               type="text"
-              placeholder="gsk_..."
+              placeholder={
+                pending?.whisper?.whisper_type === 'groq'
+                  ? pending?.whisper?.api_key_preview || ''
+                  : pending?.llm?.llm_api_key_preview || ''
+              }
               value={pending?.whisper?.whisper_type === 'groq' ? getWhisperApiKey(pending?.whisper) : (pending?.llm?.llm_api_key || '')}
               onChange={(e) => {
                 const val = e.target.value;
@@ -939,6 +944,7 @@ export default function ConfigPage() {
               <input
                 className="input"
                 type="text"
+                placeholder={pending?.llm?.llm_api_key_preview || ''}
                 value={pending?.llm?.llm_api_key || ''}
                 onChange={(e) => setField(['llm', 'llm_api_key'], e.target.value)}
               />
@@ -1079,6 +1085,7 @@ export default function ConfigPage() {
                   <input
                     className="input"
                     type="text"
+                    placeholder={pending?.whisper?.api_key_preview || ''}
                     value={getWhisperApiKey(pending?.whisper)}
                     onChange={(e) => setField(['whisper', 'api_key'], e.target.value)}
                   />
@@ -1132,6 +1139,7 @@ export default function ConfigPage() {
                   <input
                     className="input"
                     type="text"
+                    placeholder={pending?.whisper?.api_key_preview || ''}
                     value={getWhisperApiKey(pending?.whisper)}
                     onChange={(e) => setField(['whisper', 'api_key'], e.target.value)}
                   />
