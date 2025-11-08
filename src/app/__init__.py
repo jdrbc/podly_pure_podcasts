@@ -25,13 +25,6 @@ setup_logger("global_logger", "src/instance/logs/app.log")
 logger = logging.getLogger("global_logger")
 
 
-def _bool_env(value: str | None, *, default: bool = False) -> bool:
-    if value is None:
-        return default
-    lowered = value.strip().lower()
-    return lowered in {"1", "true", "t", "yes", "y", "on"}
-
-
 def setup_dirs() -> None:
     in_root = get_in_root()
     srv_root = get_srv_root()
@@ -197,11 +190,8 @@ def _configure_session(app: Flask, auth_settings: AuthSettings) -> None:
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
-    allow_insecure_cookie = _bool_env(
-        os.environ.get("PODLY_ALLOW_INSECURE_SESSION_COOKIE"),
-        default=not auth_settings.require_auth,
-    )
-    app.config["SESSION_COOKIE_SECURE"] = not allow_insecure_cookie
+    # We always allow HTTP cookies so self-hosted installs work behind simple HTTP reverse proxies.
+    app.config["SESSION_COOKIE_SECURE"] = False
 
 
 def _configure_cors(app: Flask) -> None:

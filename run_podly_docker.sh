@@ -198,10 +198,6 @@ if [ "$REQUIRE_AUTH_LOWER" = "true" ]; then
         echo -e "${YELLOW}Warning: REQUIRE_AUTH is true but PODLY_SECRET_KEY is not set. Sessions will be reset on every restart.${NC}"
     fi
 
-    ALLOW_INSECURE_LOWER=$(printf '%s' "${PODLY_ALLOW_INSECURE_SESSION_COOKIE:-false}" | tr '[:upper:]' '[:lower:]')
-    if [ "$ALLOW_INSECURE_LOWER" = "true" ]; then
-        echo -e "${RED}Warning: PODLY_ALLOW_INSECURE_SESSION_COOKIE=true with auth enabled. Do not use this override in production; serve Podly over HTTPS instead.${NC}"
-    fi
 fi
 
 # Setup Docker Compose configuration

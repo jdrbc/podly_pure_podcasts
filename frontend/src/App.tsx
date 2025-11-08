@@ -10,7 +10,17 @@ import LoginPage from './pages/LoginPage';
 import AudioPlayer from './components/AudioPlayer';
 import './App.css';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 0,
+      gcTime: 0,
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: 'always',
+      refetchOnReconnect: 'always',
+    },
+  },
+});
 
 function AppShell() {
   const { status, requireAuth, isAuthenticated, user, logout } = useAuth();

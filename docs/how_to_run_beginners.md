@@ -129,8 +129,6 @@ export REQUIRE_AUTH=true
 export PODLY_ADMIN_USERNAME='podly_admin'
 export PODLY_ADMIN_PASSWORD='SuperSecurePass!2024'
 export PODLY_SECRET_KEY='replace-with-a-strong-64-char-secret'
-# Optional for local HTTP testing only
-export PODLY_ALLOW_INSECURE_SESSION_COOKIE=true
 ```
 
 2. Start Podly as usual. On first boot with auth enabled and an empty database, the admin account is created automatically. If you are turning auth on for an existing volume, clear the `sqlite3.db` file so the bootstrap can succeed.
