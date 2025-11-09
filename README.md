@@ -30,7 +30,7 @@ Here's how it works:
 
 You have a few options to get started:
 
-- **Deploy on Railway**: 
+- [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/podly?referralCode=NMdeg5&utm_medium=integration&utm_source=template&utm_campaign=generic)
    - quick and easy setup in the cloud, follow our [Railway deployment guide](docs/how_to_run_railway.md). 
    - Use this if you want to share your Podly server with others.
 - **Run Locally**: 
@@ -46,6 +46,7 @@ You have a few options to get started:
 
 | Cost    | Hosting  | Transcription | LLM    |
 |---------|----------|---------------|--------|
+| **free**| [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
 | **free**| local    | local         | local  |
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
