@@ -120,9 +120,16 @@ def test_download_episode_new_file(mock_get, test_post, downloader, app):
         expected_path = downloader.get_and_make_download_path(test_post.title)
         result = downloader.download_episode(test_post, dest_path=str(expected_path))
 
-        # Check that we tried to download the file
+        # Check that we tried to download the file with proper headers
+        expected_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": "https://open.acast.com/",
+        }
         mock_get.assert_called_once_with(
-            "https://example.com/podcast.mp3", stream=True, timeout=60
+            "https://example.com/podcast.mp3",
+            stream=True,
+            timeout=60,
+            headers=expected_headers,
         )
 
         # Check that the file was created with the correct content
@@ -147,9 +154,16 @@ def test_download_episode_download_failed(mock_get, test_post, downloader, app):
         expected_path = downloader.get_and_make_download_path(test_post.title)
         result = downloader.download_episode(test_post, dest_path=str(expected_path))
 
-        # Check that we tried to download the file
+        # Check that we tried to download the file with proper headers
+        expected_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": "https://open.acast.com/",
+        }
         mock_get.assert_called_once_with(
-            "https://example.com/podcast.mp3", stream=True, timeout=60
+            "https://example.com/podcast.mp3",
+            stream=True,
+            timeout=60,
+            headers=expected_headers,
         )
 
         # Check that no file was created
