@@ -239,45 +239,131 @@ def _hydrate_runtime_config(data: Dict[str, Any]) -> None:
     )
 
 
-def _build_env_override_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
-    overrides: Dict[str, Any] = {}
+def _first_env(env_names: list[str]) -> tuple[str | None, str | None]:
+    """Return first found environment variable name and value."""
+    for name in env_names:
+        value = os.environ.get(name)
+        if value is not None and value != "":
+            return name, value
+    return None, None
 
-    def _first_env(env_names: list[str]) -> tuple[str | None, str | None]:
-        for name in env_names:
-            value = os.environ.get(name)
-            if value is not None and value != "":
-                return name, value
-        return None, None
 
-    def _register(
-        path: str, env_var: str | None, value: Any | None, *, secret: bool = False
-    ) -> None:
-        if not env_var or value is None:
-            return
-        entry: Dict[str, Any] = {"env_var": env_var}
-        if secret:
-            entry["is_secret"] = True
-            entry["value_preview"] = _mask_secret(value)
-        else:
-            entry["value"] = value
-        overrides[path] = entry
+def _register_override(
+    overrides: Dict[str, Any],
+    path: str,
+    env_var: str | None,
+    value: Any | None,
+    *,
+    secret: bool = False,
+) -> None:
+    """Register an environment override in the metadata dict."""
+    if not env_var or value is None:
+        return
+    entry: Dict[str, Any] = {"env_var": env_var}
+    if secret:
+        entry["is_secret"] = True
+        entry["value_preview"] = _mask_secret(value)
+    else:
+        entry["value"] = value
+    overrides[path] = entry
 
+
+def _register_llm_overrides(overrides: Dict[str, Any]) -> None:
+    """Register LLM-related environment overrides."""
     env_var, env_value = _first_env(["LLM_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY"])
-    _register("llm.llm_api_key", env_var, env_value, secret=True)
+    _register_override(overrides, "llm.llm_api_key", env_var, env_value, secret=True)
 
     base_url = os.environ.get("OPENAI_BASE_URL")
     if base_url:
-        _register("llm.openai_base_url", "OPENAI_BASE_URL", base_url)
+        _register_override(
+            overrides, "llm.openai_base_url", "OPENAI_BASE_URL", base_url
+        )
 
     llm_model = os.environ.get("LLM_MODEL")
     if llm_model:
-        _register("llm.llm_model", "LLM_MODEL", llm_model)
+        _register_override(overrides, "llm.llm_model", "LLM_MODEL", llm_model)
 
+
+def _register_groq_shared_overrides(overrides: Dict[str, Any]) -> None:
+    """Register shared Groq API key override metadata."""
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        _register_override(
+            overrides, "groq.api_key", "GROQ_API_KEY", groq_key, secret=True
+        )
+
+
+def _register_remote_whisper_overrides(overrides: Dict[str, Any]) -> None:
+    """Register remote whisper environment overrides."""
+    remote_key = _first_env(["WHISPER_REMOTE_API_KEY", "OPENAI_API_KEY"])
+    _register_override(
+        overrides, "whisper.api_key", remote_key[0], remote_key[1], secret=True
+    )
+
+    remote_base = _first_env(["WHISPER_REMOTE_BASE_URL", "OPENAI_BASE_URL"])
+    _register_override(overrides, "whisper.base_url", remote_base[0], remote_base[1])
+
+    remote_model = os.environ.get("WHISPER_REMOTE_MODEL")
+    if remote_model:
+        _register_override(
+            overrides, "whisper.model", "WHISPER_REMOTE_MODEL", remote_model
+        )
+
+    remote_timeout = os.environ.get("WHISPER_REMOTE_TIMEOUT_SEC")
+    if remote_timeout:
+        _register_override(
+            overrides,
+            "whisper.timeout_sec",
+            "WHISPER_REMOTE_TIMEOUT_SEC",
+            remote_timeout,
+        )
+
+    remote_chunksize = os.environ.get("WHISPER_REMOTE_CHUNKSIZE_MB")
+    if remote_chunksize:
+        _register_override(
+            overrides,
+            "whisper.chunksize_mb",
+            "WHISPER_REMOTE_CHUNKSIZE_MB",
+            remote_chunksize,
+        )
+
+
+def _register_groq_whisper_overrides(overrides: Dict[str, Any]) -> None:
+    """Register groq whisper environment overrides."""
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        _register_override(
+            overrides, "whisper.api_key", "GROQ_API_KEY", groq_key, secret=True
+        )
+
+    groq_model_env, groq_model_val = _first_env(
+        ["GROQ_WHISPER_MODEL", "WHISPER_GROQ_MODEL"]
+    )
+    _register_override(overrides, "whisper.model", groq_model_env, groq_model_val)
+
+    groq_retries = os.environ.get("GROQ_MAX_RETRIES")
+    if groq_retries:
+        _register_override(
+            overrides, "whisper.max_retries", "GROQ_MAX_RETRIES", groq_retries
+        )
+
+
+def _register_local_whisper_overrides(overrides: Dict[str, Any]) -> None:
+    """Register local whisper environment overrides."""
+    local_model = os.environ.get("WHISPER_LOCAL_MODEL")
+    if local_model:
+        _register_override(
+            overrides, "whisper.model", "WHISPER_LOCAL_MODEL", local_model
+        )
+
+
+def _determine_whisper_type_for_metadata(data: Dict[str, Any]) -> str | None:
+    """Determine whisper type for environment metadata (with auto-detection)."""
     whisper_cfg = data.get("whisper", {}) or {}
     wtype = whisper_cfg.get("whisper_type")
 
     env_whisper_type = os.environ.get("WHISPER_TYPE")
-    
+
     # Auto-detect whisper type from API key environment variables if not explicitly set
     # (matching the logic in config_store._apply_whisper_type_override)
     if not env_whisper_type:
@@ -285,52 +371,33 @@ def _build_env_override_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
             env_whisper_type = "remote"
         elif os.environ.get("GROQ_API_KEY") and not os.environ.get("LLM_API_KEY"):
             env_whisper_type = "groq"
-    
+
     if env_whisper_type:
-        _register("whisper.whisper_type", "WHISPER_TYPE", env_whisper_type)
         wtype = env_whisper_type.strip().lower()
 
-    if wtype == "remote":
-        remote_key = _first_env(["WHISPER_REMOTE_API_KEY", "OPENAI_API_KEY"])
-        _register("whisper.api_key", remote_key[0], remote_key[1], secret=True)
+    return wtype if isinstance(wtype, str) else None
 
-        remote_base = _first_env(["WHISPER_REMOTE_BASE_URL", "OPENAI_BASE_URL"])
-        _register("whisper.base_url", remote_base[0], remote_base[1])
 
-        remote_model = os.environ.get("WHISPER_REMOTE_MODEL")
-        if remote_model:
-            _register("whisper.model", "WHISPER_REMOTE_MODEL", remote_model)
+def _build_env_override_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
+    overrides: Dict[str, Any] = {}
 
-        remote_timeout = os.environ.get("WHISPER_REMOTE_TIMEOUT_SEC")
-        if remote_timeout:
-            _register(
-                "whisper.timeout_sec", "WHISPER_REMOTE_TIMEOUT_SEC", remote_timeout
-            )
+    _register_llm_overrides(overrides)
+    _register_groq_shared_overrides(overrides)
 
-        remote_chunksize = os.environ.get("WHISPER_REMOTE_CHUNKSIZE_MB")
-        if remote_chunksize:
-            _register(
-                "whisper.chunksize_mb", "WHISPER_REMOTE_CHUNKSIZE_MB", remote_chunksize
-            )
-
-    elif wtype == "groq":
-        groq_key = os.environ.get("GROQ_API_KEY")
-        if groq_key:
-            _register("whisper.api_key", "GROQ_API_KEY", groq_key, secret=True)
-
-        groq_model_env, groq_model_val = _first_env(
-            ["GROQ_WHISPER_MODEL", "WHISPER_GROQ_MODEL"]
+    env_whisper_type = os.environ.get("WHISPER_TYPE")
+    if env_whisper_type:
+        _register_override(
+            overrides, "whisper.whisper_type", "WHISPER_TYPE", env_whisper_type
         )
-        _register("whisper.model", groq_model_env, groq_model_val)
 
-        groq_retries = os.environ.get("GROQ_MAX_RETRIES")
-        if groq_retries:
-            _register("whisper.max_retries", "GROQ_MAX_RETRIES", groq_retries)
+    wtype = _determine_whisper_type_for_metadata(data)
 
+    if wtype == "remote":
+        _register_remote_whisper_overrides(overrides)
+    elif wtype == "groq":
+        _register_groq_whisper_overrides(overrides)
     elif wtype == "local":
-        local_model = os.environ.get("WHISPER_LOCAL_MODEL")
-        if local_model:
-            _register("whisper.model", "WHISPER_LOCAL_MODEL", local_model)
+        _register_local_whisper_overrides(overrides)
 
     return overrides
 

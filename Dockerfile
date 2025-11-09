@@ -11,8 +11,11 @@ RUN npm ci
 # Copy frontend source code
 COPY frontend/ ./
 
-# Build frontend assets
-RUN npm run build
+# Build frontend assets with explicit error handling
+RUN set -e && \
+    npm run build && \
+    test -d dist && \
+    echo "Frontend build successful - dist directory created"
 
 # Backend stage
 FROM ${BASE_IMAGE} AS backend

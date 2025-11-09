@@ -64,7 +64,14 @@ class PodcastDownloader:
             return None
 
         self.logger.info(f"Downloading {audio_link} into {download_path}...")
-        with requests.get(audio_link, stream=True, timeout=60) as response:
+        referer = "https://open.acast.com/" if "acast.com" in audio_link else None
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": referer,
+        }
+        with requests.get(
+            audio_link, stream=True, timeout=60, headers=headers
+        ) as response:
             if response.status_code == 200:
                 with open(download_path, "wb") as file:
                     for chunk in response.iter_content(chunk_size=8192):

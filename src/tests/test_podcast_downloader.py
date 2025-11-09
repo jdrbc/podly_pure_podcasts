@@ -122,7 +122,7 @@ def test_download_episode_new_file(mock_get, test_post, downloader, app):
 
         # Check that we tried to download the file
         mock_get.assert_called_once_with(
-            "https://example.com/podcast.mp3", stream=True, timeout=60
+            "https://example.com/podcast.mp3", headers=mock.ANY, stream=True, timeout=60
         )
 
         # Check that the file was created with the correct content
@@ -149,7 +149,7 @@ def test_download_episode_download_failed(mock_get, test_post, downloader, app):
 
         # Check that we tried to download the file
         mock_get.assert_called_once_with(
-            "https://example.com/podcast.mp3", stream=True, timeout=60
+            "https://example.com/podcast.mp3", headers=mock.ANY, stream=True, timeout=60
         )
 
         # Check that no file was created

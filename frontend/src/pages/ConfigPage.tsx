@@ -7,6 +7,7 @@ import { toast } from 'react-hot-toast';
 import type {
   CombinedConfig,
   ConfigResponse,
+  EnvOverrideEntry,
   EnvOverrideMap,
   LLMConfig,
   ManagedUser,
@@ -15,6 +16,7 @@ import type {
 import { useAuth } from '../contexts/AuthContext';
 
 const ENV_FIELD_LABELS: Record<string, string> = {
+  'groq.api_key': 'Groq API Key',
   'llm.llm_api_key': 'LLM API Key',
   'llm.llm_model': 'LLM Model',
   'llm.openai_base_url': 'LLM Base URL',
@@ -25,6 +27,20 @@ const ENV_FIELD_LABELS: Record<string, string> = {
   'whisper.timeout_sec': 'Whisper Timeout (sec)',
   'whisper.chunksize_mb': 'Whisper Chunk Size (MB)',
   'whisper.max_retries': 'Whisper Max Retries',
+};
+
+const DEFAULT_ENV_HINTS: Record<string, EnvOverrideEntry> = {
+  'groq.api_key': { env_var: 'GROQ_API_KEY' },
+  'llm.llm_api_key': { env_var: 'LLM_API_KEY' },
+  'llm.llm_model': { env_var: 'LLM_MODEL' },
+  'llm.openai_base_url': { env_var: 'OPENAI_BASE_URL' },
+  'whisper.whisper_type': { env_var: 'WHISPER_TYPE' },
+  'whisper.api_key': { env_var: 'WHISPER_REMOTE_API_KEY' },
+  'whisper.base_url': { env_var: 'WHISPER_REMOTE_BASE_URL' },
+  'whisper.model': { env_var: 'WHISPER_REMOTE_MODEL' },
+  'whisper.timeout_sec': { env_var: 'WHISPER_REMOTE_TIMEOUT_SEC' },
+  'whisper.chunksize_mb': { env_var: 'WHISPER_REMOTE_CHUNKSIZE_MB' },
+  'whisper.max_retries': { env_var: 'GROQ_MAX_RETRIES' },
 };
 
 const getValueAtPath = (obj: unknown, path: string): unknown => {
@@ -62,6 +78,10 @@ export default function ConfigPage() {
 
   const configData = data?.config;
   const envOverrides = useMemo<EnvOverrideMap>(() => data?.env_overrides ?? {}, [data]);
+  const getEnvHint = useCallback(
+    (path: string, fallback?: EnvOverrideEntry) => envOverrides[path] ?? fallback ?? DEFAULT_ENV_HINTS[path],
+    [envOverrides],
+  );
 
   const { changePassword, refreshUser, user, logout, requireAuth } = useAuth();
 
@@ -223,10 +243,15 @@ export default function ConfigPage() {
     return '';
   };
 
+  const whisperApiKeyPreview =
+    pending?.whisper?.whisper_type === 'remote' || pending?.whisper?.whisper_type === 'groq'
+      ? pending.whisper.api_key_preview
+      : undefined;
+
   const whisperApiKeyPlaceholder = useMemo(() => {
     if (pending?.whisper?.whisper_type === 'remote' || pending?.whisper?.whisper_type === 'groq') {
-      if (pending?.whisper?.api_key_preview) {
-        return pending.whisper.api_key_preview;
+      if (whisperApiKeyPreview) {
+        return whisperApiKeyPreview;
       }
       const override = envOverrides['whisper.api_key'];
       if (override) {
@@ -234,7 +259,7 @@ export default function ConfigPage() {
       }
     }
     return '';
-  }, [pending?.whisper?.api_key_preview, pending?.whisper?.whisper_type, envOverrides]);
+  }, [whisperApiKeyPreview, pending?.whisper?.whisper_type, envOverrides]);
 
   const updatePending = useCallback(
     (
@@ -751,7 +776,7 @@ export default function ConfigPage() {
             </div>
           </div>
         )}
-        <Field label="Groq API Key">
+        <Field label="Groq API Key" envMeta={getEnvHint('groq.api_key')}>
           <div className="flex gap-2">
             <input
               className="input"
@@ -1043,7 +1068,7 @@ export default function ConfigPage() {
       {showAdvanced && (
         <div className="space-y-6">
           <Section title="LLM">
-            <Field label="API Key">
+            <Field label="API Key" envMeta={getEnvHint('llm.llm_api_key')}>
               <input
                 className="input"
                 type="text"
@@ -1052,17 +1077,20 @@ export default function ConfigPage() {
                 onChange={(e) => setField(['llm', 'llm_api_key'], e.target.value)}
               />
             </Field>
-            <label className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="w-60 text-sm text-gray-700">OpenAI Base URL</span>
-                <button
-                  type="button"
-                  className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
-                  onClick={() => setShowBaseUrlInfo((v) => !v)}
-                  title="When is this used?"
-                >
-                  ⓘ
-                </button>
+            <label className="flex items-start justify-between gap-3">
+              <div className="w-60">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-700">OpenAI Base URL</span>
+                  <button
+                    type="button"
+                    className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
+                    onClick={() => setShowBaseUrlInfo((v) => !v)}
+                    title="When is this used?"
+                  >
+                    ⓘ
+                  </button>
+                </div>
+                <EnvVarHint meta={getEnvHint('llm.openai_base_url')} />
               </div>
               <div className="flex-1 space-y-2">
                 <input
@@ -1104,7 +1132,7 @@ export default function ConfigPage() {
               <style>{`.input{width:100%;padding:0.5rem;border:1px solid #e5e7eb;border-radius:0.375rem;font-size:0.875rem}`}</style>
             </label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Field label="Model">
+              <Field label="Model" envMeta={getEnvHint('llm.llm_model')}>
                 <div className="relative">
                   <input
                     list="llm-model-datalist"
@@ -1201,7 +1229,7 @@ export default function ConfigPage() {
           {renderSaveButton()}
 
           <Section title="Whisper">
-            <Field label="Type">
+            <Field label="Type" envMeta={getEnvHint('whisper.whisper_type')}>
               <select
                 className="input"
                 value={
@@ -1215,7 +1243,7 @@ export default function ConfigPage() {
               </select>
             </Field>
             {pending?.whisper?.whisper_type === 'local' && (
-              <Field label="Local Model">
+              <Field label="Local Model" envMeta={getEnvHint('whisper.model', { env_var: 'WHISPER_LOCAL_MODEL' })}>
                 <input
                   className="input"
                   type="text"
@@ -1226,7 +1254,7 @@ export default function ConfigPage() {
             )}
             {pending?.whisper?.whisper_type === 'remote' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Field label="API Key">
+                <Field label="API Key" envMeta={getEnvHint('whisper.api_key', { env_var: 'WHISPER_REMOTE_API_KEY' })}>
                   <input
                     className="input"
                     type="text"
@@ -1235,7 +1263,7 @@ export default function ConfigPage() {
                     onChange={(e) => setField(['whisper', 'api_key'], e.target.value)}
                   />
                 </Field>
-                <Field label="Remote Model">
+                <Field label="Remote Model" envMeta={getEnvHint('whisper.model', { env_var: 'WHISPER_REMOTE_MODEL' })}>
                   <input
                     className="input"
                     type="text"
@@ -1243,7 +1271,7 @@ export default function ConfigPage() {
                     onChange={(e) => setField(['whisper', 'model'], e.target.value)}
                   />
                 </Field>
-                <Field label="Base URL">
+                <Field label="Base URL" envMeta={getEnvHint('whisper.base_url')}>
                   <input
                     className="input"
                     type="text"
@@ -1260,7 +1288,7 @@ export default function ConfigPage() {
                     onChange={(e) => setField(['whisper', 'language'], e.target.value)}
                   />
                 </Field>
-                <Field label="Timeout (sec)">
+                <Field label="Timeout (sec)" envMeta={getEnvHint('whisper.timeout_sec')}>
                   <input
                     className="input"
                     type="number"
@@ -1268,7 +1296,7 @@ export default function ConfigPage() {
                     onChange={(e) => setField(['whisper', 'timeout_sec'], Number(e.target.value))}
                   />
                 </Field>
-                <Field label="Chunk Size (MB)">
+                <Field label="Chunk Size (MB)" envMeta={getEnvHint('whisper.chunksize_mb')}>
                   <input
                     className="input"
                     type="number"
@@ -1280,7 +1308,7 @@ export default function ConfigPage() {
             )}
             {pending?.whisper?.whisper_type === 'groq' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Field label="API Key">
+                <Field label="API Key" envMeta={getEnvHint('whisper.api_key', { env_var: 'GROQ_API_KEY' })}>
                   <input
                     className="input"
                     type="text"
@@ -1289,7 +1317,7 @@ export default function ConfigPage() {
                     onChange={(e) => setField(['whisper', 'api_key'], e.target.value)}
                   />
                 </Field>
-                <Field label="Model">
+                <Field label="Model" envMeta={getEnvHint('whisper.model', { env_var: 'GROQ_WHISPER_MODEL' })}>
                   <input
                     className="input"
                     type="text"
@@ -1305,7 +1333,7 @@ export default function ConfigPage() {
                     onChange={(e) => setField(['whisper', 'language'], e.target.value)}
                   />
                 </Field>
-                <Field label="Max Retries">
+                <Field label="Max Retries" envMeta={getEnvHint('whisper.max_retries')}>
                   <input
                     className="input"
                     type="number"
@@ -1396,7 +1424,7 @@ export default function ConfigPage() {
 
           <Section title="App">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Field label="Background Interval (min)">
+              <Field label="Feed Refresh Background Interval (min)">
                 <input
                   className="input"
                   type="number"
@@ -1532,13 +1560,34 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  children,
+  envMeta,
+}: {
+  label: string;
+  children: ReactNode;
+  envMeta?: EnvOverrideEntry;
+}) {
   return (
-    <label className="flex items-center justify-between gap-3">
-      <span className="w-60 text-sm text-gray-700">{label}</span>
+    <label className="flex items-start justify-between gap-3">
+      <div className="w-60">
+        <span className="block text-sm text-gray-700">{label}</span>
+        <EnvVarHint meta={envMeta} />
+      </div>
       <div className="flex-1">{children}</div>
       <style>{`.input{width:100%;padding:0.5rem;border:1px solid #e5e7eb;border-radius:0.375rem;font-size:0.875rem}`}</style>
     </label>
+  );
+}
+
+function EnvVarHint({ meta }: { meta?: EnvOverrideEntry }) {
+  if (!meta?.env_var) {
+    return null;
+  }
+
+  return (
+    <code className="mt-1 block text-xs text-gray-500 font-mono">{meta.env_var}</code>
   );
 }
 

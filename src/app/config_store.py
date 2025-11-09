@@ -450,7 +450,10 @@ def _update_section_llm(data: Dict[str, Any]) -> None:
         "llm_max_input_tokens_per_minute",
     ]:
         if key in data:
-            setattr(row, key, data[key])
+            new_val = data[key]
+            if key == "llm_api_key" and _is_empty(new_val):
+                continue
+            setattr(row, key, new_val)
     db.session.commit()
 
 
@@ -478,7 +481,10 @@ def _update_section_whisper(data: Dict[str, Any]) -> None:
         ]:
             src, dst = key_map
             if src in data:
-                setattr(row, dst, data[src])
+                new_val = data[src]
+                if src == "api_key" and _is_empty(new_val):
+                    continue
+                setattr(row, dst, new_val)
     elif row.whisper_type == "groq":
         for key_map in [
             ("api_key", "groq_api_key"),
@@ -488,7 +494,10 @@ def _update_section_whisper(data: Dict[str, Any]) -> None:
         ]:
             src, dst = key_map
             if src in data:
-                setattr(row, dst, data[src])
+                new_val = data[src]
+                if src == "api_key" and _is_empty(new_val):
+                    continue
+                setattr(row, dst, new_val)
     else:
         # test type has no extra fields
         pass
@@ -587,7 +596,7 @@ def to_pydantic_config() -> PydanticConfig:
     elif wtype == "groq":
         whisper_obj = GroqWhisperConfig(
             api_key=w.get("api_key"),
-            model=w.get("model", "whisper-large-v3-turbo"),
+            model=w.get("model", DEFAULTS.WHISPER_GROQ_MODEL),
             language=w.get("language", "en"),
             max_retries=w.get("max_retries", 3),
         )
@@ -739,9 +748,140 @@ def _apply_llm_model_override(cfg: PydanticConfig) -> None:
         cfg.llm_model = env_llm_model
 
 
+def _configure_local_whisper(cfg: PydanticConfig) -> None:
+    """Configure local whisper type."""
+    # Validate that local whisper is available
+    try:
+        import whisper as _  # type: ignore[import-untyped]  # noqa: F401
+    except ImportError as e:
+        error_msg = (
+            f"WHISPER_TYPE is set to 'local' but whisper library is not available. "
+            f"Either install whisper with 'pip install openai-whisper' or set WHISPER_TYPE to 'remote' or 'groq'. "
+            f"Import error: {e}"
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg) from e
+
+    existing_model_any = getattr(cfg.whisper, "model", "base.en")
+    existing_model = (
+        existing_model_any if isinstance(existing_model_any, str) else "base.en"
+    )
+    loc_model_env = os.environ.get("WHISPER_LOCAL_MODEL")
+    loc_model: str = (
+        loc_model_env
+        if isinstance(loc_model_env, str) and loc_model_env
+        else existing_model
+    )
+    cfg.whisper = LocalWhisperConfig(model=loc_model)
+
+
+def _configure_remote_whisper(cfg: PydanticConfig) -> None:
+    """Configure remote whisper type."""
+    existing_model_any = getattr(cfg.whisper, "model", "whisper-1")
+    existing_model = (
+        existing_model_any if isinstance(existing_model_any, str) else "whisper-1"
+    )
+    rem_model_env = os.environ.get("WHISPER_REMOTE_MODEL")
+    rem_model: str = (
+        rem_model_env
+        if isinstance(rem_model_env, str) and rem_model_env
+        else existing_model
+    )
+
+    existing_key_any = getattr(cfg.whisper, "api_key", "")
+    existing_key = existing_key_any if isinstance(existing_key_any, str) else ""
+    rem_api_key_env = os.environ.get("WHISPER_REMOTE_API_KEY") or os.environ.get(
+        "OPENAI_API_KEY"
+    )
+    rem_api_key: str = (
+        rem_api_key_env
+        if isinstance(rem_api_key_env, str) and rem_api_key_env
+        else existing_key
+    )
+
+    existing_base_any = getattr(cfg.whisper, "base_url", "https://api.openai.com/v1")
+    existing_base = (
+        existing_base_any
+        if isinstance(existing_base_any, str)
+        else "https://api.openai.com/v1"
+    )
+    rem_base_env = os.environ.get("WHISPER_REMOTE_BASE_URL") or os.environ.get(
+        "OPENAI_BASE_URL"
+    )
+    rem_base_url: str = (
+        rem_base_env
+        if isinstance(rem_base_env, str) and rem_base_env
+        else existing_base
+    )
+
+    existing_lang_any = getattr(cfg.whisper, "language", "en")
+    lang: str = existing_lang_any if isinstance(existing_lang_any, str) else "en"
+
+    timeout_sec: int = int(
+        os.environ.get(
+            "WHISPER_REMOTE_TIMEOUT_SEC",
+            str(getattr(cfg.whisper, "timeout_sec", 600)),
+        )
+    )
+    chunksize_mb: int = int(
+        os.environ.get(
+            "WHISPER_REMOTE_CHUNKSIZE_MB",
+            str(getattr(cfg.whisper, "chunksize_mb", 24)),
+        )
+    )
+
+    cfg.whisper = RemoteWhisperConfig(
+        model=rem_model,
+        api_key=rem_api_key,
+        base_url=rem_base_url,
+        language=lang,
+        timeout_sec=timeout_sec,
+        chunksize_mb=chunksize_mb,
+    )
+
+
+def _configure_groq_whisper(cfg: PydanticConfig) -> None:
+    """Configure groq whisper type."""
+    existing_key_any = getattr(cfg.whisper, "api_key", "")
+    existing_key = existing_key_any if isinstance(existing_key_any, str) else ""
+    groq_key_env = os.environ.get("GROQ_API_KEY")
+    groq_api_key: str = (
+        groq_key_env if isinstance(groq_key_env, str) and groq_key_env else existing_key
+    )
+
+    existing_model_any = getattr(cfg.whisper, "model", DEFAULTS.WHISPER_GROQ_MODEL)
+    existing_model = (
+        existing_model_any
+        if isinstance(existing_model_any, str)
+        else DEFAULTS.WHISPER_GROQ_MODEL
+    )
+    groq_model_env = os.environ.get("GROQ_WHISPER_MODEL") or os.environ.get(
+        "WHISPER_GROQ_MODEL"
+    )
+    groq_model_val: str = (
+        groq_model_env
+        if isinstance(groq_model_env, str) and groq_model_env
+        else existing_model
+    )
+
+    existing_lang_any = getattr(cfg.whisper, "language", "en")
+    groq_lang: str = existing_lang_any if isinstance(existing_lang_any, str) else "en"
+
+    max_retries: int = int(
+        os.environ.get("GROQ_MAX_RETRIES", str(getattr(cfg.whisper, "max_retries", 3)))
+    )
+
+    cfg.whisper = GroqWhisperConfig(
+        api_key=groq_api_key,
+        model=groq_model_val,
+        language=groq_lang,
+        max_retries=max_retries,
+    )
+
+
 def _apply_whisper_type_override(cfg: PydanticConfig) -> None:
     env_whisper_type = os.environ.get("WHISPER_TYPE")
-    
+
     # Auto-detect whisper type from API key environment variables if not explicitly set
     if not env_whisper_type:
         if os.environ.get("WHISPER_REMOTE_API_KEY"):
@@ -756,145 +896,18 @@ def _apply_whisper_type_override(cfg: PydanticConfig) -> None:
             logger.info(
                 "Auto-detected WHISPER_TYPE=groq from GROQ_API_KEY environment variable"
             )
-    
+
     if not env_whisper_type:
         return
-    
+
     wtype = env_whisper_type.strip().lower()
     if wtype == "local":
-        # Validate that local whisper is available
-        try:
-            import whisper  # type: ignore[import-untyped]  # noqa: F401
-        except ImportError as e:
-            error_msg = (
-                f"WHISPER_TYPE is set to 'local' but whisper library is not available. "
-                f"Either install whisper with 'pip install openai-whisper' or set WHISPER_TYPE to 'remote' or 'groq'. "
-                f"Import error: {e}"
-            )
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
-        
-        existing_model_any = getattr(cfg.whisper, "model", "base.en")
-        existing_model = (
-            existing_model_any if isinstance(existing_model_any, str) else "base.en"
-        )
-        loc_model_env = os.environ.get("WHISPER_LOCAL_MODEL")
-        loc_model: str = (
-            loc_model_env
-            if isinstance(loc_model_env, str) and loc_model_env
-            else existing_model
-        )
-        cfg.whisper = LocalWhisperConfig(model=loc_model)
-        return
-    if wtype == "remote":
-        existing_model_any = getattr(cfg.whisper, "model", "whisper-1")
-        existing_model = (
-            existing_model_any if isinstance(existing_model_any, str) else "whisper-1"
-        )
-        rem_model_env = os.environ.get("WHISPER_REMOTE_MODEL")
-        rem_model: str = (
-            rem_model_env
-            if isinstance(rem_model_env, str) and rem_model_env
-            else existing_model
-        )
-
-        existing_key_any = getattr(cfg.whisper, "api_key", "")
-        existing_key = existing_key_any if isinstance(existing_key_any, str) else ""
-        rem_api_key_env = os.environ.get("WHISPER_REMOTE_API_KEY") or os.environ.get(
-            "OPENAI_API_KEY"
-        )
-        rem_api_key: str = (
-            rem_api_key_env
-            if isinstance(rem_api_key_env, str) and rem_api_key_env
-            else existing_key
-        )
-
-        existing_base_any = getattr(
-            cfg.whisper, "base_url", "https://api.openai.com/v1"
-        )
-        existing_base = (
-            existing_base_any
-            if isinstance(existing_base_any, str)
-            else "https://api.openai.com/v1"
-        )
-        rem_base_env = os.environ.get("WHISPER_REMOTE_BASE_URL") or os.environ.get(
-            "OPENAI_BASE_URL"
-        )
-        rem_base_url: str = (
-            rem_base_env
-            if isinstance(rem_base_env, str) and rem_base_env
-            else existing_base
-        )
-
-        existing_lang_any = getattr(cfg.whisper, "language", "en")
-        lang: str = existing_lang_any if isinstance(existing_lang_any, str) else "en"
-
-        timeout_sec: int = int(
-            os.environ.get(
-                "WHISPER_REMOTE_TIMEOUT_SEC",
-                str(getattr(cfg.whisper, "timeout_sec", 600)),
-            )
-        )
-        chunksize_mb: int = int(
-            os.environ.get(
-                "WHISPER_REMOTE_CHUNKSIZE_MB",
-                str(getattr(cfg.whisper, "chunksize_mb", 24)),
-            )
-        )
-
-        cfg.whisper = RemoteWhisperConfig(
-            model=rem_model,
-            api_key=rem_api_key,
-            base_url=rem_base_url,
-            language=lang,
-            timeout_sec=timeout_sec,
-            chunksize_mb=chunksize_mb,
-        )
-        return
-    if wtype == "groq":
-        existing_key_any = getattr(cfg.whisper, "api_key", "")
-        existing_key = existing_key_any if isinstance(existing_key_any, str) else ""
-        groq_key_env = os.environ.get("GROQ_API_KEY")
-        groq_api_key: str = (
-            groq_key_env
-            if isinstance(groq_key_env, str) and groq_key_env
-            else existing_key
-        )
-
-        existing_model_any = getattr(cfg.whisper, "model", "whisper-large-v3-turbo")
-        existing_model = (
-            existing_model_any
-            if isinstance(existing_model_any, str)
-            else "whisper-large-v3-turbo"
-        )
-        groq_model_env = os.environ.get("GROQ_WHISPER_MODEL") or os.environ.get(
-            "WHISPER_GROQ_MODEL"
-        )
-        groq_model_val: str = (
-            groq_model_env
-            if isinstance(groq_model_env, str) and groq_model_env
-            else existing_model
-        )
-
-        existing_lang_any = getattr(cfg.whisper, "language", "en")
-        groq_lang: str = (
-            existing_lang_any if isinstance(existing_lang_any, str) else "en"
-        )
-
-        max_retries: int = int(
-            os.environ.get(
-                "GROQ_MAX_RETRIES", str(getattr(cfg.whisper, "max_retries", 3))
-            )
-        )
-
-        cfg.whisper = GroqWhisperConfig(
-            api_key=groq_api_key,
-            model=groq_model_val,
-            language=groq_lang,
-            max_retries=max_retries,
-        )
-        return
-    if wtype == "test":
+        _configure_local_whisper(cfg)
+    elif wtype == "remote":
+        _configure_remote_whisper(cfg)
+    elif wtype == "groq":
+        _configure_groq_whisper(cfg)
+    elif wtype == "test":
         cfg.whisper = TestWhisperConfig()
 
 
