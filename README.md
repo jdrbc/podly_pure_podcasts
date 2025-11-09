@@ -30,7 +30,9 @@ You have a few options to get started:
    - Use this for the most cost-optimal & private setup.
 - **[Join The Preview Server](https://podly.up.railway.app/)**: 
    - support the project through code contribution or sponsorship
-   - request access in discord
+   - get account  <a href="https://discord.gg/FRB98GtF6N" target="_blank">
+      <img src="https://img.shields.io/badge/discord-join-blue.svg?logo=discord&logoColor=white" alt="Discord">
+  </a>
 
 
 ## How it works:
