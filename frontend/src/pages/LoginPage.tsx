@@ -39,9 +39,6 @@ export default function LoginPage() {
         <div className="flex flex-col items-center gap-2 mb-6">
           <img src="/images/logos/logo.webp" alt="Podly" className="h-10 w-auto" />
           <h1 className="text-xl font-semibold text-gray-900">Sign in to Podly</h1>
-          <p className="text-sm text-gray-500 text-center">
-            Authentication is required to access feeds and configuration.
-          </p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -94,10 +91,6 @@ export default function LoginPage() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-
-        <p className="mt-6 text-xs text-gray-500 text-center">
-          After changing your password, update any saved Podly feed URLs to use the new credentials.
-        </p>
       </div>
     </div>
   );

@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { feedsApi } from '../services/api';
 import ReprocessButton from './ReprocessButton';
 import { configApi } from '../services/api';
-import type { CombinedConfig } from '../types';
 import { toast } from 'react-hot-toast';
-import { useAuth } from '../contexts/AuthContext';
 
 interface DownloadButtonProps {
   episodeGuid: string;
@@ -37,14 +35,6 @@ export default function DownloadButton({
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const { requireAuth, user } = useAuth();
-
-  // Keep config in cache for other UI, but do not rely on it for gating
-  useQuery<CombinedConfig>({
-    queryKey: ['config'],
-    queryFn: configApi.getConfig,
-    enabled: !requireAuth || user?.role === 'admin',
-  });
 
   // Check initial status when component mounts
   useEffect(() => {

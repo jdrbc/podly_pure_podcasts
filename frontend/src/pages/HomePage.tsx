@@ -4,7 +4,7 @@ import { feedsApi, configApi } from '../services/api';
 import FeedList from '../components/FeedList';
 import FeedDetail from '../components/FeedDetail';
 import AddFeedForm from '../components/AddFeedForm';
-import type { Feed, CombinedConfig } from '../types';
+import type { Feed, ConfigResponse } from '../types';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -18,7 +18,7 @@ export default function HomePage() {
     queryFn: feedsApi.getFeeds,
   });
 
-  useQuery<CombinedConfig>({
+  useQuery<ConfigResponse>({
     queryKey: ['config'],
     queryFn: configApi.getConfig,
     enabled: !requireAuth || user?.role === 'admin',

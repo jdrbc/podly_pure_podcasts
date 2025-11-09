@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any, Dict
 
 import flask
@@ -88,7 +89,14 @@ def api_get_config() -> flask.Response:
 
         _hydrate_runtime_config(data)
 
-        return flask.jsonify(_sanitize_config_for_client(data))
+        env_metadata = _build_env_override_metadata(data)
+
+        return flask.jsonify(
+            {
+                "config": _sanitize_config_for_client(data),
+                "env_overrides": env_metadata,
+            }
+        )
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Failed to read configuration: {e}")
         return flask.make_response(
@@ -231,6 +239,102 @@ def _hydrate_runtime_config(data: Dict[str, Any]) -> None:
     )
 
 
+def _build_env_override_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
+    overrides: Dict[str, Any] = {}
+
+    def _first_env(env_names: list[str]) -> tuple[str | None, str | None]:
+        for name in env_names:
+            value = os.environ.get(name)
+            if value is not None and value != "":
+                return name, value
+        return None, None
+
+    def _register(
+        path: str, env_var: str | None, value: Any | None, *, secret: bool = False
+    ) -> None:
+        if not env_var or value is None:
+            return
+        entry: Dict[str, Any] = {"env_var": env_var}
+        if secret:
+            entry["is_secret"] = True
+            entry["value_preview"] = _mask_secret(value)
+        else:
+            entry["value"] = value
+        overrides[path] = entry
+
+    env_var, env_value = _first_env(["LLM_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY"])
+    _register("llm.llm_api_key", env_var, env_value, secret=True)
+
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    if base_url:
+        _register("llm.openai_base_url", "OPENAI_BASE_URL", base_url)
+
+    llm_model = os.environ.get("LLM_MODEL")
+    if llm_model:
+        _register("llm.llm_model", "LLM_MODEL", llm_model)
+
+    whisper_cfg = data.get("whisper", {}) or {}
+    wtype = whisper_cfg.get("whisper_type")
+
+    env_whisper_type = os.environ.get("WHISPER_TYPE")
+    
+    # Auto-detect whisper type from API key environment variables if not explicitly set
+    # (matching the logic in config_store._apply_whisper_type_override)
+    if not env_whisper_type:
+        if os.environ.get("WHISPER_REMOTE_API_KEY"):
+            env_whisper_type = "remote"
+        elif os.environ.get("GROQ_API_KEY") and not os.environ.get("LLM_API_KEY"):
+            env_whisper_type = "groq"
+    
+    if env_whisper_type:
+        _register("whisper.whisper_type", "WHISPER_TYPE", env_whisper_type)
+        wtype = env_whisper_type.strip().lower()
+
+    if wtype == "remote":
+        remote_key = _first_env(["WHISPER_REMOTE_API_KEY", "OPENAI_API_KEY"])
+        _register("whisper.api_key", remote_key[0], remote_key[1], secret=True)
+
+        remote_base = _first_env(["WHISPER_REMOTE_BASE_URL", "OPENAI_BASE_URL"])
+        _register("whisper.base_url", remote_base[0], remote_base[1])
+
+        remote_model = os.environ.get("WHISPER_REMOTE_MODEL")
+        if remote_model:
+            _register("whisper.model", "WHISPER_REMOTE_MODEL", remote_model)
+
+        remote_timeout = os.environ.get("WHISPER_REMOTE_TIMEOUT_SEC")
+        if remote_timeout:
+            _register(
+                "whisper.timeout_sec", "WHISPER_REMOTE_TIMEOUT_SEC", remote_timeout
+            )
+
+        remote_chunksize = os.environ.get("WHISPER_REMOTE_CHUNKSIZE_MB")
+        if remote_chunksize:
+            _register(
+                "whisper.chunksize_mb", "WHISPER_REMOTE_CHUNKSIZE_MB", remote_chunksize
+            )
+
+    elif wtype == "groq":
+        groq_key = os.environ.get("GROQ_API_KEY")
+        if groq_key:
+            _register("whisper.api_key", "GROQ_API_KEY", groq_key, secret=True)
+
+        groq_model_env, groq_model_val = _first_env(
+            ["GROQ_WHISPER_MODEL", "WHISPER_GROQ_MODEL"]
+        )
+        _register("whisper.model", groq_model_env, groq_model_val)
+
+        groq_retries = os.environ.get("GROQ_MAX_RETRIES")
+        if groq_retries:
+            _register("whisper.max_retries", "GROQ_MAX_RETRIES", groq_retries)
+
+    elif wtype == "local":
+        local_model = os.environ.get("WHISPER_LOCAL_MODEL")
+        if local_model:
+            _register("whisper.model", "WHISPER_LOCAL_MODEL", local_model)
+
+    return overrides
+
+
 @config_bp.route("/api/config", methods=["PUT"])
 def api_put_config() -> flask.Response:
     _, error_response = _require_admin()
@@ -369,6 +473,16 @@ def _get_whisper_config_value(
     return default
 
 
+def _get_env_whisper_api_key(whisper_type: str) -> str | None:
+    if whisper_type == "remote":
+        return os.environ.get("WHISPER_REMOTE_API_KEY") or os.environ.get(
+            "OPENAI_API_KEY"
+        )
+    if whisper_type == "groq":
+        return os.environ.get("GROQ_API_KEY")
+    return None
+
+
 def _determine_whisper_type(whisper_cfg: Dict[str, Any]) -> str | None:
     wtype_any = whisper_cfg.get("whisper_type")
     if isinstance(wtype_any, str):
@@ -424,6 +538,9 @@ def _test_remote_whisper(whisper_cfg: Dict[str, Any]) -> flask.Response:
     timeout: int = int(timeout_any) if timeout_any is not None else 30
 
     if not api_key:
+        api_key = _get_env_whisper_api_key("remote")
+
+    if not api_key:
         return _make_error_response("Missing whisper.api_key")
 
     _ = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout).models.list()
@@ -436,6 +553,9 @@ def _test_groq_whisper(whisper_cfg: Dict[str, Any]) -> flask.Response:
     groq_api_key: str | None = (
         groq_api_key_any if isinstance(groq_api_key_any, str) else None
     )
+
+    if not groq_api_key:
+        groq_api_key = _get_env_whisper_api_key("groq")
 
     if not groq_api_key:
         return _make_error_response("Missing whisper.api_key")

@@ -741,10 +741,39 @@ def _apply_llm_model_override(cfg: PydanticConfig) -> None:
 
 def _apply_whisper_type_override(cfg: PydanticConfig) -> None:
     env_whisper_type = os.environ.get("WHISPER_TYPE")
+    
+    # Auto-detect whisper type from API key environment variables if not explicitly set
+    if not env_whisper_type:
+        if os.environ.get("WHISPER_REMOTE_API_KEY"):
+            env_whisper_type = "remote"
+            logger.info(
+                "Auto-detected WHISPER_TYPE=remote from WHISPER_REMOTE_API_KEY environment variable"
+            )
+        elif os.environ.get("GROQ_API_KEY") and not os.environ.get("LLM_API_KEY"):
+            # Only auto-detect groq for whisper if LLM_API_KEY is not set
+            # (to avoid confusion when GROQ_API_KEY is only meant for LLM)
+            env_whisper_type = "groq"
+            logger.info(
+                "Auto-detected WHISPER_TYPE=groq from GROQ_API_KEY environment variable"
+            )
+    
     if not env_whisper_type:
         return
+    
     wtype = env_whisper_type.strip().lower()
     if wtype == "local":
+        # Validate that local whisper is available
+        try:
+            import whisper  # type: ignore[import-untyped]  # noqa: F401
+        except ImportError as e:
+            error_msg = (
+                f"WHISPER_TYPE is set to 'local' but whisper library is not available. "
+                f"Either install whisper with 'pip install openai-whisper' or set WHISPER_TYPE to 'remote' or 'groq'. "
+                f"Import error: {e}"
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        
         existing_model_any = getattr(cfg.whisper, "model", "base.en")
         existing_model = (
             existing_model_any if isinstance(existing_model_any, str) else "base.en"

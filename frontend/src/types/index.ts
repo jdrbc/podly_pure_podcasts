@@ -127,6 +127,20 @@ export interface CombinedConfig {
   app: AppConfigUI;
 }
 
+export interface EnvOverrideEntry {
+  env_var: string;
+  value?: string;
+  value_preview?: string | null;
+  is_secret?: boolean;
+}
+
+export type EnvOverrideMap = Record<string, EnvOverrideEntry>;
+
+export interface ConfigResponse {
+  config: CombinedConfig;
+  env_overrides?: EnvOverrideMap;
+}
+
 export interface PodcastSearchResult {
   title: string;
   author: string;

@@ -8,6 +8,7 @@ import type {
   LLMConfig,
   WhisperConfig,
   PodcastSearchResult,
+  ConfigResponse,
 } from '../types';
 
 const API_BASE_URL = '';
@@ -391,7 +392,7 @@ export const authApi = {
 };
 
 export const configApi = {
-  getConfig: async (): Promise<CombinedConfig> => {
+  getConfig: async (): Promise<ConfigResponse> => {
     const response = await api.get('/api/config');
     return response.data;
   },

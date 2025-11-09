@@ -1,20 +1,67 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { configApi, authApi } from '../services/api';
 import { toast } from 'react-hot-toast';
-import type { CombinedConfig, LLMConfig, ManagedUser, WhisperConfig } from '../types';
+import type {
+  CombinedConfig,
+  ConfigResponse,
+  EnvOverrideMap,
+  LLMConfig,
+  ManagedUser,
+  WhisperConfig,
+} from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
+const ENV_FIELD_LABELS: Record<string, string> = {
+  'llm.llm_api_key': 'LLM API Key',
+  'llm.llm_model': 'LLM Model',
+  'llm.openai_base_url': 'LLM Base URL',
+  'whisper.whisper_type': 'Whisper Mode',
+  'whisper.api_key': 'Whisper API Key',
+  'whisper.model': 'Whisper Model',
+  'whisper.base_url': 'Whisper Base URL',
+  'whisper.timeout_sec': 'Whisper Timeout (sec)',
+  'whisper.chunksize_mb': 'Whisper Chunk Size (MB)',
+  'whisper.max_retries': 'Whisper Max Retries',
+};
+
+const getValueAtPath = (obj: unknown, path: string): unknown => {
+  if (!obj || typeof obj !== 'object') {
+    return undefined;
+  }
+  return path.split('.').reduce<unknown>((acc, key) => {
+    if (!acc || typeof acc !== 'object') {
+      return undefined;
+    }
+    return (acc as Record<string, unknown>)[key];
+  }, obj);
+};
+
+const valuesDiffer = (a: unknown, b: unknown): boolean => {
+  if (a === b) {
+    return false;
+  }
+  const aEmpty = a === null || a === undefined || a === '';
+  const bEmpty = b === null || b === undefined || b === '';
+  if (aEmpty && bEmpty) {
+    return false;
+  }
+  return true;
+};
+
 export default function ConfigPage() {
-  const { data, isLoading, refetch } = useQuery<CombinedConfig>({
+  const { data, isLoading, refetch } = useQuery<ConfigResponse>({
     queryKey: ['config'],
     queryFn: configApi.getConfig,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+
+  const configData = data?.config;
+  const envOverrides = useMemo<EnvOverrideMap>(() => data?.env_overrides ?? {}, [data]);
 
   const { changePassword, refreshUser, user, logout, requireAuth } = useAuth();
 
@@ -25,6 +72,8 @@ export default function ConfigPage() {
   const [activeResetUser, setActiveResetUser] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
+  const [envWarningPaths, setEnvWarningPaths] = useState<string[]>([]);
+  const [showEnvWarning, setShowEnvWarning] = useState(false);
 
   const showSecurityControls = requireAuth && !!user;
 
@@ -47,6 +96,7 @@ export default function ConfigPage() {
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [showGroqHelp, setShowGroqHelp] = useState(false);
   const [showGroqPricing, setShowGroqPricing] = useState(false);
+  const [showBaseUrlInfo, setShowBaseUrlInfo] = useState(false);
   const [localWhisperAvailable, setLocalWhisperAvailable] = useState<boolean | null>(null);
   const [llmStatus, setLlmStatus] = useState<'loading' | 'ok' | 'error'>('loading');
   const [llmMessage, setLlmMessage] = useState<string>('');
@@ -173,20 +223,109 @@ export default function ConfigPage() {
     return '';
   };
 
+  const whisperApiKeyPlaceholder = useMemo(() => {
+    if (pending?.whisper?.whisper_type === 'remote' || pending?.whisper?.whisper_type === 'groq') {
+      if (pending?.whisper?.api_key_preview) {
+        return pending.whisper.api_key_preview;
+      }
+      const override = envOverrides['whisper.api_key'];
+      if (override) {
+        return override.value_preview || override.value || '';
+      }
+    }
+    return '';
+  }, [pending?.whisper?.api_key_preview, pending?.whisper?.whisper_type, envOverrides]);
+
+  const updatePending = useCallback(
+    (
+      transform: (prevConfig: CombinedConfig) => CombinedConfig,
+      markDirty: boolean = true,
+    ) => {
+      let updated = false;
+      setPending((prevConfig) => {
+        if (!prevConfig) {
+          return prevConfig;
+        }
+        const nextConfig = transform(prevConfig);
+        if (nextConfig === prevConfig) {
+          return prevConfig;
+        }
+        updated = true;
+        return nextConfig;
+      });
+
+      if (updated && markDirty) {
+        setHasEdits(true);
+      }
+    },
+    [],
+  );
+
+  const setField = useCallback(
+    (path: string[], value: unknown) => {
+      updatePending((prevConfig) => {
+        const prevRecord = prevConfig as unknown as Record<string, unknown>;
+        const lastIndex = path.length - 1;
+
+        let existingParent: Record<string, unknown> | null = prevRecord;
+        for (let i = 0; i < lastIndex; i++) {
+          const key = path[i];
+          const rawNext: unknown = existingParent?.[key];
+          const nextParent: Record<string, unknown> | null =
+            rawNext && typeof rawNext === 'object'
+              ? (rawNext as Record<string, unknown>)
+              : null;
+          if (!nextParent) {
+            existingParent = null;
+            break;
+          }
+          existingParent = nextParent;
+        }
+
+        if (existingParent) {
+          const currentValue = existingParent[path[lastIndex]];
+          if (Object.is(currentValue, value)) {
+            return prevConfig;
+          }
+        }
+
+        const next: Record<string, unknown> = { ...prevRecord };
+
+        let cursor: Record<string, unknown> = next;
+        let sourceCursor: Record<string, unknown> = prevRecord;
+
+        for (let i = 0; i < lastIndex; i++) {
+          const key = path[i];
+          const currentSource =
+            (sourceCursor?.[key] as Record<string, unknown>) ?? {};
+          const clonedChild: Record<string, unknown> = { ...currentSource };
+          cursor[key] = clonedChild;
+          cursor = clonedChild;
+          sourceCursor = currentSource;
+        }
+
+        cursor[path[lastIndex]] = value;
+
+        return next as unknown as CombinedConfig;
+      });
+    },
+    [updatePending],
+  );
+
   useEffect(() => {
-    if (!data) {
+    if (!configData) {
       return;
     }
     setPending((prev) => {
       if (prev === null) {
-        return data;
+        return configData;
       }
       if (hasEdits) {
         return prev;
       }
-      return data;
+      return configData;
     });
-  }, [data, hasEdits]);
+  }, [configData, hasEdits]);
 
   const probeConnections = async () => {
     if (!pending) return;
@@ -265,11 +404,42 @@ export default function ConfigPage() {
     },
   } as const;
 
+  const getEnvManagedConflicts = (): string[] => {
+    if (!pending || !configData) {
+      return [];
+    }
+    return Object.keys(envOverrides).filter((path) => {
+      const baseline = getValueAtPath(configData, path);
+      const current = getValueAtPath(pending, path);
+      return valuesDiffer(current, baseline);
+    });
+  };
+
+  const triggerSaveMutation = () => {
+    toast.promise(saveMutation.mutateAsync(), saveToastMessages);
+  };
+
   const handleSave = () => {
     if (saveMutation.isPending) {
       return;
     }
-    toast.promise(saveMutation.mutateAsync(), saveToastMessages);
+    const envConflicts = getEnvManagedConflicts();
+    if (envConflicts.length > 0) {
+      setEnvWarningPaths(envConflicts);
+      setShowEnvWarning(true);
+      return;
+    }
+    triggerSaveMutation();
+  };
+
+  const handleConfirmEnvWarning = () => {
+    setShowEnvWarning(false);
+    triggerSaveMutation();
+  };
+
+  const handleDismissEnvWarning = () => {
+    setShowEnvWarning(false);
+    setEnvWarningPaths([]);
   };
 
   const renderSaveButton = () => (
@@ -355,73 +525,6 @@ export default function ConfigPage() {
   if (isLoading || !pending) {
     return <div className="text-sm text-gray-700">Loading configuration...</div>;
   }
-
-  const updatePending = (
-    transform: (prevConfig: CombinedConfig) => CombinedConfig,
-    markDirty: boolean = true
-  ) => {
-    let updated = false;
-    setPending((prevConfig) => {
-      if (!prevConfig) {
-        return prevConfig;
-      }
-      const nextConfig = transform(prevConfig);
-      if (nextConfig === prevConfig) {
-        return prevConfig;
-      }
-      updated = true;
-      return nextConfig;
-    });
-
-    if (updated && markDirty) {
-      setHasEdits(true);
-    }
-  };
-
-  const setField = (path: string[], value: unknown) => {
-    updatePending((prevConfig) => {
-      const prevRecord = prevConfig as unknown as Record<string, unknown>;
-      const lastIndex = path.length - 1;
-
-      let existingParent: Record<string, unknown> | null = prevRecord;
-      for (let i = 0; i < lastIndex; i++) {
-        const key = path[i];
-        const rawNext: unknown = existingParent?.[key];
-        const nextParent: Record<string, unknown> | null =
-          rawNext && typeof rawNext === 'object' ? (rawNext as Record<string, unknown>) : null;
-        if (!nextParent) {
-          existingParent = null;
-          break;
-        }
-        existingParent = nextParent;
-      }
-
-      if (existingParent) {
-        const currentValue = existingParent[path[lastIndex]];
-        if (Object.is(currentValue, value)) {
-          return prevConfig;
-        }
-      }
-
-      const next: Record<string, unknown> = { ...prevRecord };
-
-      let cursor: Record<string, unknown> = next;
-      let sourceCursor: Record<string, unknown> = prevRecord;
-
-      for (let i = 0; i < lastIndex; i++) {
-        const key = path[i];
-        const currentSource = (sourceCursor?.[key] as Record<string, unknown>) ?? {};
-        const clonedChild: Record<string, unknown> = { ...currentSource };
-        cursor[key] = clonedChild;
-        cursor = clonedChild;
-        sourceCursor = currentSource;
-      }
-
-      cursor[path[lastIndex]] = value;
-
-      return next as unknown as CombinedConfig;
-    });
-  };
 
   const handleWhisperTypeChange = (
     nextType: 'local' | 'remote' | 'groq'
@@ -949,15 +1052,57 @@ export default function ConfigPage() {
                 onChange={(e) => setField(['llm', 'llm_api_key'], e.target.value)}
               />
             </Field>
-            <Field label="OpenAI Base URL">
-              <input
-                className="input"
-                type="text"
-                placeholder="https://api.openai.com/v1"
-                value={pending?.llm?.openai_base_url || ''}
-                onChange={(e) => setField(['llm', 'openai_base_url'], e.target.value)}
-              />
-            </Field>
+            <label className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="w-60 text-sm text-gray-700">OpenAI Base URL</span>
+                <button
+                  type="button"
+                  className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
+                  onClick={() => setShowBaseUrlInfo((v) => !v)}
+                  title="When is this used?"
+                >
+                  ⓘ
+                </button>
+              </div>
+              <div className="flex-1 space-y-2">
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="https://api.openai.com/v1"
+                  value={pending?.llm?.openai_base_url || ''}
+                  onChange={(e) => setField(['llm', 'openai_base_url'], e.target.value)}
+                />
+                {showBaseUrlInfo && (
+                  <div className="text-xs text-gray-700 bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
+                    <p className="font-semibold">When is Base URL used?</p>
+                    <p>
+                      The Base URL is <strong>only used for models without a provider prefix</strong>. 
+                      LiteLLM automatically routes provider-prefixed models to their respective APIs.
+                    </p>
+                    <div className="space-y-1">
+                      <p className="font-medium">✅ Base URL is IGNORED for:</p>
+                      <ul className="list-disc pl-5 space-y-0.5">
+                        <li><code className="bg-white px-1 rounded">groq/openai/gpt-oss-120b</code> → Groq API</li>
+                        <li><code className="bg-white px-1 rounded">anthropic/claude-3.5-sonnet</code> → Anthropic API</li>
+                        <li><code className="bg-white px-1 rounded">gemini/gemini-2.0-flash</code> → Google API</li>
+                      </ul>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-medium">⚙️ Base URL is USED for:</p>
+                      <ul className="list-disc pl-5 space-y-0.5">
+                        <li>Unprefixed models like <code className="bg-white px-1 rounded">gpt-4o</code></li>
+                        <li>Self-hosted OpenAI-compatible endpoints</li>
+                        <li>LiteLLM proxy servers or local LLMs</li>
+                      </ul>
+                    </div>
+                    <p className="italic text-gray-600">
+                      For the default Groq setup, you don't need to set this.
+                    </p>
+                  </div>
+                )}
+              </div>
+              <style>{`.input{width:100%;padding:0.5rem;border:1px solid #e5e7eb;border-radius:0.375rem;font-size:0.875rem}`}</style>
+            </label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="Model">
                 <div className="relative">
@@ -1085,7 +1230,7 @@ export default function ConfigPage() {
                   <input
                     className="input"
                     type="text"
-                    placeholder={pending?.whisper?.api_key_preview || ''}
+                    placeholder={whisperApiKeyPlaceholder}
                     value={getWhisperApiKey(pending?.whisper)}
                     onChange={(e) => setField(['whisper', 'api_key'], e.target.value)}
                   />
@@ -1139,7 +1284,7 @@ export default function ConfigPage() {
                   <input
                     className="input"
                     type="text"
-                    placeholder={pending?.whisper?.api_key_preview || ''}
+                    placeholder={whisperApiKeyPlaceholder}
                     value={getWhisperApiKey(pending?.whisper)}
                     onChange={(e) => setField(['whisper', 'api_key'], e.target.value)}
                   />
@@ -1288,11 +1433,92 @@ export default function ConfigPage() {
           {renderSaveButton()}
         </div>
       )}
+
+      {showEnvWarning && envWarningPaths.length > 0 && (
+        <EnvOverrideWarningModal
+          paths={envWarningPaths}
+          overrides={envOverrides}
+          onCancel={handleDismissEnvWarning}
+          onConfirm={handleConfirmEnvWarning}
+        />
+      )}
       
       {/* Extra padding to prevent audio player overlay from obscuring bottom settings */}
       <div className="h-24"></div>
       {/* Datalist options rendered once at end to ensure they exist in DOM */}
       <LlmModelDatalist />
+    </div>
+  );
+}
+
+function EnvOverrideWarningModal({
+  paths,
+  overrides,
+  onConfirm,
+  onCancel,
+}: {
+  paths: string[];
+  overrides: EnvOverrideMap;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!paths.length) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+      <div className="w-full max-w-lg space-y-4 rounded-lg bg-white p-5 shadow-xl">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">Environment-managed settings</h3>
+          <p className="text-sm text-gray-600">
+            These fields are controlled by environment variables. Update the referenced variables in your
+            <code className="mx-1 font-mono text-xs">.env</code>
+            (or deployment secrets) to make the change persistent. Saving now will apply it temporarily until the
+            service restarts.
+          </p>
+        </div>
+        <ul className="space-y-3 text-sm">
+          {paths.map((path) => {
+            const meta = overrides[path];
+            const label = ENV_FIELD_LABELS[path] ?? path;
+            return (
+              <li key={path} className="rounded border border-amber-200 bg-amber-50 p-3">
+                <div className="font-medium text-gray-900">{label}</div>
+                {meta?.env_var ? (
+                  <p className="mt-1 text-xs text-gray-700">
+                    Managed by <code className="font-mono">{meta.env_var}</code>
+                    {meta?.value_preview && (
+                      <span className="ml-1 text-gray-600">({meta.value_preview})</span>
+                    )}
+                    {!meta?.value_preview && meta?.value && (
+                      <span className="ml-1 text-gray-600">({meta.value})</span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-700">Managed by deployment environment</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Go back
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+          >
+            Save anyway
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
