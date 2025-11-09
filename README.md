@@ -15,15 +15,6 @@
 
 Podly uses Whisper and Chat GPT to remove ads from podcasts.
 
-Here's how it works:
-
-- You request an episode
-- Podly downloads the requested episode
-- Whisper transcribes the episode
-- LLM labels ad segments
-- Podly removes the ad segments
-- Podly delivers the ad-free version of the podcast to you
-
 <img width="100%" src="docs/images/screenshot.png" />
 
 ## How To Run
@@ -40,6 +31,16 @@ You have a few options to get started:
 - **[Join The Preview Server](https://podly.up.railway.app/)**: 
    - support the project through code contribution or sponsorship
    - request access in discord
+
+
+## How it works:
+
+- You request an episode
+- Podly downloads the requested episode
+- Whisper transcribes the episode
+- LLM labels ad segments
+- Podly removes the ad segments
+- Podly delivers the ad-free version of the podcast to you
 
 ### Cost Breakdown
 *Monthly cost breakdown for 5 podcasts*
