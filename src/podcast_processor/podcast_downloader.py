@@ -109,7 +109,16 @@ class PodcastDownloader:
 
 def sanitize_title(title: str) -> str:
     """Sanitize a title for use in file paths."""
-    return re.sub(r"[^a-zA-Z0-9\s]", "", title)
+    # Remove special characters, keep only alphanumeric and spaces
+    sanitized = re.sub(r"[^a-zA-Z0-9\s]", "", title)
+    # Replace multiple spaces with single space and strip
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    # Limit length to prevent filename too long errors
+    # Leave room for .mp3 extension and path components
+    max_length = 100  # Conservative limit for filename
+    if len(sanitized) > max_length:
+        sanitized = sanitized[:max_length].rstrip()
+    return sanitized
 
 
 def find_audio_link(entry: Any) -> str:

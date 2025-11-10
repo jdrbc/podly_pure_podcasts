@@ -359,6 +359,10 @@ def _cleanup_feed_directories(feed: Feed) -> None:
     ).strip()
     sanitized_feed_title = sanitized_feed_title.rstrip(".")
     sanitized_feed_title = re.sub(r"\s+", "_", sanitized_feed_title)
+    # Limit length to prevent path too long errors
+    max_length = 100  # Conservative limit for directory name
+    if len(sanitized_feed_title) > max_length:
+        sanitized_feed_title = sanitized_feed_title[:max_length].rstrip("_")
 
     srv_feed_dir = get_srv_root() / sanitized_feed_title
     if srv_feed_dir.exists() and srv_feed_dir.is_dir():
