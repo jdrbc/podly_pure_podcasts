@@ -62,6 +62,21 @@ export interface JobManagerStatus {
   run: JobManagerRun | null;
 }
 
+export interface CleanupPreview {
+  count: number;
+  retention_days: number | null;
+  cutoff_utc: string | null;
+}
+
+export interface CleanupRunResult {
+  status: 'ok' | 'disabled' | 'error' | string;
+  removed_posts?: number;
+  remaining_candidates?: number;
+  retention_days?: number | null;
+  cutoff_utc?: string | null;
+  message?: string;
+}
+
 // ----- Configuration Types -----
 
 export interface LLMConfig {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { jobsApi } from '../services/api';
-import type { Job, JobManagerRun, JobManagerStatus } from '../types';
+import type { CleanupPreview, Job, JobManagerRun, JobManagerStatus } from '../types';
 
 function getStatusColor(status: string) {
   switch (status) {
@@ -72,6 +72,11 @@ export default function JobsPage() {
   const [mode, setMode] = useState<'active' | 'all'>('active');
   const [cancellingJobs, setCancellingJobs] = useState<Set<string>>(new Set());
   const previousHasActiveWork = useRef<boolean>(false);
+  const [cleanupPreview, setCleanupPreview] = useState<CleanupPreview | null>(null);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -112,6 +117,20 @@ export default function JobsPage() {
     }
   }, []);
 
+  const loadCleanupPreview = useCallback(async () => {
+    setCleanupLoading(true);
+    try {
+      const data = await jobsApi.getCleanupPreview();
+      setCleanupPreview(data);
+      setCleanupError(null);
+    } catch (e) {
+      console.error('Failed to load cleanup preview:', e);
+      setCleanupError('Failed to load cleanup preview');
+    } finally {
+      setCleanupLoading(false);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     await loadStatus();
     if (mode === 'active') {
@@ -119,7 +138,8 @@ export default function JobsPage() {
     } else {
       await loadAll();
     }
-  }, [mode, loadActive, loadAll, loadStatus]);
+    await loadCleanupPreview();
+  }, [mode, loadActive, loadAll, loadStatus, loadCleanupPreview]);
 
   const cancelJob = useCallback(
     async (jobId: string) => {
@@ -140,10 +160,42 @@ export default function JobsPage() {
     [refresh]
   );
 
+  const runCleanupNow = useCallback(async () => {
+    setCleanupRunning(true);
+    setCleanupError(null);
+    setCleanupMessage(null);
+    try {
+      const result = await jobsApi.runCleanupJob();
+      if (result.status === 'disabled') {
+        setCleanupMessage(result.message ?? 'Cleanup is disabled.');
+        return;
+      }
+      if (result.status !== 'ok') {
+        setCleanupError(result.message ?? 'Cleanup job failed');
+        return;
+      }
+      const removed = result.removed_posts ?? 0;
+      const remaining = result.remaining_candidates ?? 0;
+      const removedText = `Cleanup removed ${removed} episode${removed === 1 ? '' : 's'}.`;
+      const remainingText =
+        remaining > 0
+          ? ` ${remaining} episode${remaining === 1 ? '' : 's'} still eligible.`
+          : '';
+      setCleanupMessage(`${removedText}${remainingText}`);
+      await refresh();
+    } catch (e) {
+      console.error('Failed to run cleanup job:', e);
+      setCleanupError('Failed to run cleanup job');
+    } finally {
+      setCleanupRunning(false);
+    }
+  }, [refresh]);
+
   useEffect(() => {
     void loadStatus();
     void loadActive();
-  }, [loadActive, loadStatus]);
+    void loadCleanupPreview();
+  }, [loadActive, loadStatus, loadCleanupPreview]);
 
   useEffect(() => {
     const queued = managerStatus?.run?.queued_jobs ?? 0;
@@ -172,6 +224,9 @@ export default function JobsPage() {
 
   const run: JobManagerRun | null = managerStatus?.run ?? null;
   const hasActiveWork = run ? run.queued_jobs + run.running_jobs > 0 : false;
+  const retentionDays = cleanupPreview?.retention_days ?? null;
+  const cleanupDisabled = retentionDays === null || retentionDays <= 0;
+  const cleanupEligibleCount = cleanupPreview?.count ?? 0;
 
   return (
     <div className="space-y-4">
@@ -227,6 +282,66 @@ export default function JobsPage() {
         ) : null}
       </div>
 
+      <div className="rounded border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Post Cleanup</h3>
+            <p className="text-xs text-gray-600">
+              {cleanupDisabled
+                ? 'Cleanup is disabled while retention days are unset or zero.'
+                : `Episodes older than ${retentionDays} day${retentionDays === 1 ? '' : 's'} will be removed.`}
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs uppercase tracking-wide text-gray-500">Eligible</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {cleanupLoading ? '…' : cleanupEligibleCount}
+            </div>
+          </div>
+        </div>
+
+        {cleanupError && (
+          <div className="mt-2 text-xs text-red-600">{cleanupError}</div>
+        )}
+        {cleanupMessage && (
+          <div className="mt-2 text-xs text-green-700">{cleanupMessage}</div>
+        )}
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-gray-500">Retention</div>
+            <div className="text-sm font-medium text-gray-900">
+              {cleanupDisabled ? 'Disabled' : `${retentionDays} day${retentionDays === 1 ? '' : 's'}`}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-gray-500">Eligible episodes</div>
+            <div className="text-sm font-medium text-gray-900">
+              {cleanupLoading ? 'Loading…' : cleanupEligibleCount}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-gray-500">Cutoff date</div>
+            <div className="text-sm font-medium text-gray-900">
+              {cleanupPreview?.cutoff_utc ? formatDateTime(cleanupPreview.cutoff_utc) : '—'}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-gray-500">
+            Includes completed jobs and non-whitelisted episodes with release dates older than the retention window.
+          </div>
+          <button
+            onClick={() => { void runCleanupNow(); }}
+            disabled={cleanupRunning || cleanupDisabled || cleanupLoading}
+            className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+          >
+            {cleanupRunning ? 'Running cleanup…' : 'Run cleanup now'}
+          </button>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xl font-semibold text-gray-900">{mode === 'active' ? 'Active Jobs' : 'All Jobs'}</h3>
@@ -246,7 +361,7 @@ export default function JobsPage() {
           </button>
           {mode === 'active' ? (
             <button
-              onClick={async () => { setMode('all'); await loadStatus(); await loadAll(); }}
+              onClick={async () => { setMode('all'); await loadStatus(); await loadAll(); await loadCleanupPreview(); }}
               className="inline-flex items-center rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400"
               disabled={loading}
             >
@@ -254,7 +369,7 @@ export default function JobsPage() {
             </button>
           ) : (
             <button
-              onClick={async () => { setMode('active'); await loadStatus(); await loadActive(); }}
+              onClick={async () => { setMode('active'); await loadStatus(); await loadActive(); await loadCleanupPreview(); }}
               className="inline-flex items-center rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400"
               disabled={loading}
             >

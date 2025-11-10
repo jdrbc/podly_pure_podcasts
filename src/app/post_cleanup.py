@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Sequence, Set
+from typing import Dict, Optional, Sequence, Set, Tuple
 
 from sqlalchemy import func
+from sqlalchemy.orm import Query
 
 from app.extensions import db, scheduler
 from app.jobs_manager_run_service import recalculate_run_counts
@@ -18,25 +19,14 @@ from shared import defaults as DEFAULTS
 logger = logging.getLogger("global_logger")
 
 
-def cleanup_processed_posts(retention_days: Optional[int]) -> int:
-    """Remove posts whose latest completed job finished before the retention window.
-
-    Returns the number of posts that were deleted. Callers must ensure an
-    application context is active.
-    """
+def _build_cleanup_query(
+    retention_days: Optional[int],
+) -> Tuple[Optional[Query["Post"]], Optional[datetime]]:
+    """Construct the base query for posts eligible for cleanup."""
     if retention_days is None or retention_days <= 0:
-        return 0
+        return None, None
 
     cutoff = datetime.utcnow() - timedelta(days=retention_days)
-
-    latest_jobs = (
-        db.session.query(
-            ProcessingJob.post_guid.label("post_guid"),
-            func.max(ProcessingJob.completed_at).label("last_completed_at"),
-        )
-        .group_by(ProcessingJob.post_guid)
-        .subquery()
-    )
 
     active_jobs_exists = (
         db.session.query(ProcessingJob.id)
@@ -45,13 +35,46 @@ def cleanup_processed_posts(retention_days: Optional[int]) -> int:
         .exists()
     )
 
-    posts: Sequence[Post] = (
-        Post.query.join(latest_jobs, Post.guid == latest_jobs.c.post_guid)
-        .filter(latest_jobs.c.last_completed_at.isnot(None))
-        .filter(latest_jobs.c.last_completed_at < cutoff)
+    posts_query = (
+        Post.query.filter(Post.processed_audio_path.isnot(None))
         .filter(~active_jobs_exists)
-        .all()
     )
+
+    return posts_query, cutoff
+
+
+def count_cleanup_candidates(
+    retention_days: Optional[int],
+) -> Tuple[int, Optional[datetime]]:
+    """Return how many posts would currently be removed along with the cutoff."""
+    posts_query, cutoff = _build_cleanup_query(retention_days)
+    if posts_query is None or cutoff is None:
+        return 0, None
+
+    posts = posts_query.all()
+    latest_completed = _load_latest_completed_map([post.guid for post in posts])
+    count = sum(
+        1
+        for post in posts
+        if _processed_timestamp_before_cutoff(post, cutoff, latest_completed)
+    )
+    return count, cutoff
+
+
+def cleanup_processed_posts(retention_days: Optional[int]) -> int:
+    """Remove posts older than the retention window.
+
+    Posts qualify when their processed audio artifact (or, if missing, the
+    latest completed job) is older than the retention window. Returns
+    the number of posts that were deleted. Callers must ensure an application
+    context is active.
+    """
+    posts_query, cutoff = _build_cleanup_query(retention_days)
+    if posts_query is None or cutoff is None:
+        return 0
+
+    posts: Sequence[Post] = posts_query.all()
+    latest_completed = _load_latest_completed_map([post.guid for post in posts])
 
     if not posts:
         return 0
@@ -60,6 +83,9 @@ def cleanup_processed_posts(retention_days: Optional[int]) -> int:
     removed_posts = 0
 
     for post in posts:
+        if not _processed_timestamp_before_cutoff(post, cutoff, latest_completed):
+            continue
+
         removed_posts += 1
         logger.info(
             "Cleanup removing post '%s' (guid=%s) completed before %s",
@@ -76,6 +102,9 @@ def cleanup_processed_posts(retention_days: Optional[int]) -> int:
             .all()
             if run_id
         )
+        if post.whitelisted:
+            # Ensure future refreshes treat this GUID as inactive.
+            post.whitelisted = False
         _remove_associated_files(post)
         _delete_post_related_rows(post)
         db.session.delete(post)
@@ -151,3 +180,61 @@ def _delete_post_related_rows(post: Post) -> None:
     db.session.query(ProcessingJob).filter(ProcessingJob.post_guid == post.guid).delete(
         synchronize_session=False
     )
+
+
+def _load_latest_completed_map(post_guids: Sequence[str]) -> Dict[str, Optional[datetime]]:
+    if not post_guids:
+        return {}
+
+    rows = (
+        db.session.query(
+            ProcessingJob.post_guid,
+            func.max(ProcessingJob.completed_at),
+        )
+        .filter(ProcessingJob.post_guid.in_(post_guids))
+        .group_by(ProcessingJob.post_guid)
+        .all()
+    )
+    return {guid: completed_at for guid, completed_at in rows}
+
+
+def _processed_timestamp_before_cutoff(
+    post: Post, cutoff: datetime, latest_completed: Dict[str, Optional[datetime]]
+) -> bool:
+    file_timestamp = _get_processed_file_timestamp(post)
+    job_timestamp = latest_completed.get(post.guid)
+
+    if file_timestamp and job_timestamp:
+        candidate = min(file_timestamp, job_timestamp)
+    else:
+        candidate = file_timestamp or job_timestamp
+
+    return bool(candidate and candidate < cutoff)
+
+
+def _get_processed_file_timestamp(post: Post) -> Optional[datetime]:
+    if not post.processed_audio_path:
+        return None
+
+    try:
+        file_path = Path(post.processed_audio_path)
+    except Exception:  # pylint: disable=broad-except
+        logger.warning(
+            "Cleanup: invalid processed path for post %s: %s",
+            post.guid,
+            post.processed_audio_path,
+        )
+        return None
+
+    if not file_path.exists():
+        return None
+
+    try:
+        mtime = file_path.stat().st_mtime
+    except OSError as exc:
+        logger.warning(
+            "Cleanup: unable to stat processed file %s: %s", file_path, exc
+        )
+        return None
+
+    return datetime.utcfromtimestamp(mtime)

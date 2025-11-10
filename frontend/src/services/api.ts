@@ -4,6 +4,8 @@ import type {
   Episode,
   Job,
   JobManagerStatus,
+  CleanupPreview,
+  CleanupRunResult,
   CombinedConfig,
   LLMConfig,
   WhisperConfig,
@@ -438,6 +440,14 @@ export const jobsApi = {
   },
   getJobManagerStatus: async (): Promise<JobManagerStatus> => {
     const response = await api.get('/api/job-manager/status');
+    return response.data;
+  },
+  getCleanupPreview: async (): Promise<CleanupPreview> => {
+    const response = await api.get('/api/jobs/cleanup/preview');
+    return response.data;
+  },
+  runCleanupJob: async (): Promise<CleanupRunResult> => {
+    const response = await api.post('/api/jobs/cleanup/run');
     return response.data;
   }
 };

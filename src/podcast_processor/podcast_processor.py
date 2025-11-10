@@ -160,6 +160,7 @@ class PodcastProcessor:
                     self.logger.info(f"Audio already processed: {post}")
                     # Update the database with the processed audio path
                     post.processed_audio_path = processed_audio_path
+                    self._remove_unprocessed_audio(post)
                     self.db_session.commit()
                     self.status_manager.update_job_status(
                         job, "completed", 4, "Processing complete", 100.0
@@ -287,6 +288,7 @@ class PodcastProcessor:
 
         # Update the database with the processed audio path
         post.processed_audio_path = processed_audio_path
+        self._remove_unprocessed_audio(post)
         self.db_session.commit()
 
         # Mark job complete
@@ -439,6 +441,27 @@ class PodcastProcessor:
         post.unprocessed_audio_path = None
         post.processed_audio_path = None
         self.db_session.commit()
+
+    def _remove_unprocessed_audio(self, post: Post) -> None:
+        """
+        Delete the downloaded source audio and clear its DB reference.
+
+        Used after we have a finalized processed file so stale downloads do not
+        accumulate on disk.
+        """
+        path = post.unprocessed_audio_path
+        if not path:
+            return
+
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+                self.logger.info("Removed unprocessed file after processing: %s", path)
+            except OSError as exc:  # best-effort cleanup
+                self.logger.warning(
+                    "Failed to remove unprocessed file '%s': %s", path, exc
+                )
+        post.unprocessed_audio_path = None
 
     def _check_existing_processed_audio(self, post: Post) -> bool:
         """

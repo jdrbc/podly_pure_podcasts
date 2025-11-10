@@ -12,7 +12,7 @@ from app.models import (
     ProcessingJob,
     TranscriptSegment,
 )
-from app.post_cleanup import cleanup_processed_posts
+from app.post_cleanup import cleanup_processed_posts, count_cleanup_candidates
 
 
 def _create_feed() -> Feed:
@@ -157,3 +157,38 @@ def test_cleanup_skips_when_retention_disabled(app) -> None:
         removed = cleanup_processed_posts(retention_days=None)
         assert removed == 0
         assert Post.query.filter_by(guid="guid").first() is not None
+
+
+def test_cleanup_includes_non_whitelisted_processed_posts(app, tmp_path) -> None:
+    with app.app_context():
+        feed = _create_feed()
+        post = _create_post(feed, "non-white", "https://example.com/nonwhite.mp3")
+        post.whitelisted = False
+        post.release_date = datetime.utcnow() - timedelta(days=10)
+        processed = tmp_path / "processed.mp3"
+        processed.write_text("audio")
+        post.processed_audio_path = str(processed)
+        db.session.commit()
+
+        count, _ = count_cleanup_candidates(retention_days=5)
+        assert count == 1
+
+        removed = cleanup_processed_posts(retention_days=5)
+        assert removed == 1
+        assert Post.query.filter_by(guid="non-white").first() is None
+
+
+def test_cleanup_skips_unprocessed_unwhitelisted_posts(app) -> None:
+    with app.app_context():
+        feed = _create_feed()
+        post = _create_post(feed, "non-white-2", "https://example.com/nonwhite2.mp3")
+        post.whitelisted = False
+        post.release_date = datetime.utcnow() - timedelta(days=10)
+        db.session.commit()
+
+        count, _ = count_cleanup_candidates(retention_days=5)
+        assert count == 0
+
+        removed = cleanup_processed_posts(retention_days=5)
+        assert removed == 0
+        assert Post.query.filter_by(guid="non-white-2").first() is not None
