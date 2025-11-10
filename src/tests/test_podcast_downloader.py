@@ -65,6 +65,23 @@ def test_sanitize_title():
     assert sanitize_title("") == ""
 
 
+def test_sanitize_title_length_limiting():
+    """Test that long titles are truncated to prevent filename too long errors."""
+    # Test with a very long title
+    long_title = "A" * 200  # 200 character title
+    result = sanitize_title(long_title)
+    # Should be truncated to 100 characters
+    assert result == "A" * 100
+    assert len(result) == 100
+
+    # Test with title that has spaces at the end after truncation
+    title_with_spaces = "Test Title " + "A" * 150
+    result = sanitize_title(title_with_spaces)
+    # Should be truncated and trailing spaces removed
+    assert len(result) <= 100
+    assert result == result.rstrip()
+
+
 def test_get_and_make_download_path(downloader):
     path = downloader.get_and_make_download_path("Test Episode!")
 

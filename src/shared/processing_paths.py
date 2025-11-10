@@ -20,6 +20,10 @@ def paths_from_unprocessed_path(
     sanitized_feed_title = sanitized_feed_title.rstrip(".")
     # Replace spaces with underscores for friendlier directory names
     sanitized_feed_title = re.sub(r"\s+", "_", sanitized_feed_title)
+    # Limit length to prevent path too long errors
+    max_length = 100  # Conservative limit for directory name
+    if len(sanitized_feed_title) > max_length:
+        sanitized_feed_title = sanitized_feed_title[:max_length].rstrip("_")
 
     return ProcessingPaths(
         post_processed_audio_path=get_srv_root()
@@ -35,6 +39,12 @@ def get_job_unprocessed_path(post_guid: str, job_id: str, post_title: str) -> Pa
     """
     # Keep same sanitization behavior used for download filenames
     sanitized_title = re.sub(r"[^a-zA-Z0-9\s]", "", post_title).strip()
+    # Replace multiple spaces with single space
+    sanitized_title = re.sub(r"\s+", " ", sanitized_title)
+    # Limit length to prevent filename too long errors
+    max_length = 100  # Conservative limit for filename
+    if len(sanitized_title) > max_length:
+        sanitized_title = sanitized_title[:max_length].rstrip()
     return get_in_root() / "jobs" / post_guid / job_id / f"{sanitized_title}.mp3"
 
 
