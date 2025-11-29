@@ -7,10 +7,13 @@ from jinja2 import Template
 from litellm.exceptions import InternalServerError
 from litellm.types.utils import Choices
 from pydantic import ValidationError
+from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
+from podcast_processor.boundary_refiner import BoundaryRefiner
+from podcast_processor.cue_detector import CueDetector
 from podcast_processor.llm_concurrency_limiter import (
     ConcurrencyContext,
     LLMConcurrencyLimiter,
@@ -100,6 +103,16 @@ class AdClassifier:
             self.concurrency_limiter = None
             self.logger.info("LLM concurrency limiting disabled")
 
+        # Initialize cue detector for neighbor expansion
+        self.cue_detector = CueDetector()
+
+        # Initialize boundary refiner
+        self.boundary_refiner: Optional[BoundaryRefiner]
+        if getattr(config, "boundary_refinement_enabled", False):
+            self.boundary_refiner = BoundaryRefiner(config, self.logger)
+        else:
+            self.boundary_refiner = None
+
     def classify(
         self,
         *,
@@ -159,6 +172,37 @@ class AdClassifier:
                         "Breaking to avoid infinite loop."
                     )
                     break
+
+            # Expand neighbors using bulk operations
+            ad_identifications = (
+                self.identification_query.join(TranscriptSegment)
+                .filter(
+                    TranscriptSegment.post_id == post.id,
+                    Identification.label == "ad",
+                )
+                .all()
+            )
+
+            if ad_identifications:
+                # Get model_call from first identification
+                model_call = (
+                    ad_identifications[0].model_call if ad_identifications else None
+                )
+                if model_call:
+                    created = self.expand_neighbors_bulk(
+                        ad_identifications=ad_identifications,
+                        model_call=model_call,
+                        post_id=post.id,
+                        window=5,
+                    )
+                    self.logger.info(
+                        f"Created {created} neighbor identifications via bulk ops"
+                    )
+
+            # Pass 2: Refine boundaries
+            if self.boundary_refiner:
+                self._refine_boundaries(transcript_segments, post)
+
         except ClassifyException as e:
             self.logger.error(f"Classification failed for post {post.id}: {e}")
             return
@@ -982,4 +1026,215 @@ class AdClassifier:
         else:
             model_call_obj.error_message = f"Maximum retries ({max_retries}) exceeded without a specific InternalServerError."
         self.db_session.add(model_call_obj)
+        self.db_session.commit()
+
+    def _get_segments_bulk(
+        self, post_id: int, sequence_numbers: List[int]
+    ) -> Dict[int, TranscriptSegment]:
+        """Fetch multiple segments in one query"""
+        segments = TranscriptSegment.query.filter(
+            and_(
+                TranscriptSegment.post_id == post_id,
+                TranscriptSegment.sequence_num.in_(sequence_numbers),
+            )
+        ).all()
+        return {seg.sequence_num: seg for seg in segments}
+
+    def _get_existing_ids_bulk(
+        self, post_id: int, model_call_id: int
+    ) -> Set[Tuple[int, int, str]]:
+        """Fetch all existing identifications as a set for O(1) lookup"""
+        ids = (
+            self.identification_query.join(TranscriptSegment)
+            .filter(
+                and_(
+                    TranscriptSegment.post_id == post_id,
+                    Identification.model_call_id == model_call_id,
+                )
+            )
+            .all()
+        )
+        return {(i.transcript_segment_id, i.model_call_id, i.label) for i in ids}
+
+    def _create_identifications_bulk(
+        self, identifications: List[Dict[str, Any]]
+    ) -> int:
+        """Bulk insert identifications"""
+        if not identifications:
+            return 0
+        self.db_session.bulk_insert_mappings(Identification.__mapper__, identifications)
+        self.db_session.commit()
+        return len(identifications)
+
+    def expand_neighbors_bulk(
+        self,
+        ad_identifications: List[Identification],
+        model_call: ModelCall,
+        post_id: int,
+        window: int = 5,
+    ) -> int:
+        """Expand neighbors using bulk operations (3 queries instead of 900)"""
+
+        # PHASE 1: Bulk data collection (2 queries)
+
+        # Collect all sequence numbers we need
+        sequence_numbers = set()
+        for ident in ad_identifications:
+            base_seq = ident.transcript_segment.sequence_num
+            for offset in range(-window, window + 1):
+                sequence_numbers.add(base_seq + offset)
+
+        # Query 1: Bulk fetch segments
+        segments_by_seq = self._get_segments_bulk(post_id, list(sequence_numbers))
+
+        # Query 2: Bulk fetch existing identifications
+        existing = self._get_existing_ids_bulk(post_id, model_call.id)
+
+        # PHASE 2: In-memory processing (0 queries)
+
+        to_create = []
+        for ident in ad_identifications:
+            base_seq = ident.transcript_segment.sequence_num
+
+            for offset in range(-window, window + 1):
+                if offset == 0:
+                    continue
+
+                neighbor_seq = base_seq + offset
+                seg = segments_by_seq.get(neighbor_seq)
+                if not seg:
+                    continue
+
+                # Check if already exists (O(1) lookup)
+                key = (seg.id, model_call.id, "ad")
+                if key in existing:
+                    continue
+
+                # Check for promotional cues
+                text = (seg.text or "").lower()
+                if self.cue_detector.has_cue(text):
+                    to_create.append(
+                        {
+                            "transcript_segment_id": seg.id,
+                            "model_call_id": model_call.id,
+                            "label": "ad",
+                            "confidence": 0.75,
+                        }
+                    )
+                    existing.add(key)  # Avoid duplicates in this batch
+
+        # PHASE 3: Bulk insert (1 query)
+
+        if to_create:
+            return self._create_identifications_bulk(to_create)
+        return 0
+
+    def _refine_boundaries(
+        self, transcript_segments: List[TranscriptSegment], post: Post
+    ) -> None:
+        """Apply boundary refinement to detected ads"""
+        if not self.boundary_refiner:
+            return
+
+        # Get ad identifications
+        identifications = (
+            self.identification_query.join(TranscriptSegment)
+            .filter(TranscriptSegment.post_id == post.id, Identification.label == "ad")
+            .all()
+        )
+
+        # Group into ad blocks
+        ad_blocks = self._group_into_blocks(identifications)
+
+        for block in ad_blocks:
+            # Skip low confidence or very short blocks
+            if block["confidence"] < 0.6 or (block["end"] - block["start"]) < 15.0:
+                continue
+
+            # Refine
+            refinement = self.boundary_refiner.refine(
+                ad_start=block["start"],
+                ad_end=block["end"],
+                confidence=block["confidence"],
+                all_segments=[
+                    {"start_time": s.start_time, "text": s.text, "end_time": s.end_time}
+                    for s in transcript_segments
+                ],
+            )
+
+            # Apply refinement: delete old identifications, create new ones
+            # Note: Get model_call from block identifications
+            model_call = (
+                block["identifications"][0].model_call
+                if block["identifications"]
+                else None
+            )
+            if model_call:
+                self._apply_refinement(
+                    block, refinement, transcript_segments, post, model_call
+                )
+
+    def _group_into_blocks(
+        self, identifications: List[Identification]
+    ) -> List[Dict[str, Any]]:
+        """Group adjacent identifications into ad blocks"""
+        if not identifications:
+            return []
+
+        identifications = sorted(
+            identifications, key=lambda i: i.transcript_segment.start_time
+        )
+        blocks: List[Dict[str, Any]] = []
+        current: List[Identification] = []
+
+        for ident in identifications:
+            if (
+                not current
+                or ident.transcript_segment.start_time
+                - current[-1].transcript_segment.end_time
+                <= 10.0
+            ):
+                current.append(ident)
+            else:
+                blocks.append(self._create_block(current))
+                current = [ident]
+
+        if current:
+            blocks.append(self._create_block(current))
+
+        return blocks
+
+    def _create_block(self, identifications: List[Identification]) -> Dict[str, Any]:
+        return {
+            "start": min(i.transcript_segment.start_time for i in identifications),
+            "end": max(i.transcript_segment.end_time for i in identifications),
+            "confidence": sum(i.confidence for i in identifications)
+            / len(identifications),
+            "identifications": identifications,
+        }
+
+    def _apply_refinement(
+        self,
+        block: Dict[str, Any],
+        refinement: Any,
+        transcript_segments: List[TranscriptSegment],
+        post: Post,
+        model_call: ModelCall,
+    ) -> None:
+        """Update identifications based on refined boundaries"""
+        # Delete old identifications
+        for ident in block["identifications"]:
+            self.db_session.delete(ident)
+
+        # Create new identifications for refined region
+        for seg in transcript_segments:
+            if refinement.refined_start <= seg.start_time <= refinement.refined_end:
+                new_ident = Identification(
+                    transcript_segment_id=seg.id,
+                    model_call_id=model_call.id,
+                    label="ad",
+                    confidence=block["confidence"],
+                )
+                self.db_session.add(new_ident)
+
         self.db_session.commit()

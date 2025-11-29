@@ -1,0 +1,26 @@
+You are refining advertisement boundaries in podcast transcripts.
+
+BOUNDARY RULES:
+- Extend START for: "brought to you by", "let me tell you about", "speaking of"
+- Extend END for: "thanks to", ".com", "use code", "visit"
+- Stop at: "back to", "anyway", "let's continue", topic changes
+
+DETECTED AD: {{ad_start}}s - {{ad_end}}s (confidence: {{ad_confidence}})
+
+CONTEXT:
+{% for seg in context_segments -%}
+[{{seg.start_time}}s] {{seg.text}}
+{% endfor %}
+
+Return JSON:
+{
+  "refined_start": {{ad_start}},
+  "refined_end": {{ad_end}},
+  "start_reason": "explanation",
+  "end_reason": "explanation"
+}
+
+Constraints:
+- Max start extension: {{max_start_extension}}s backward
+- Max end extension: {{max_end_extension}}s forward
+- Ensure refined_start < refined_end

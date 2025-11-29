@@ -15,22 +15,13 @@
 
 Podly uses Whisper and Chat GPT to remove ads from podcasts.
 
-Here's how it works:
-
-- You request an episode
-- Podly downloads the requested episode
-- Whisper transcribes the episode
-- LLM labels ad segments
-- Podly removes the ad segments
-- Podly delivers the ad-free version of the podcast to you
-
 <img width="100%" src="docs/images/screenshot.png" />
 
 ## How To Run
 
 You have a few options to get started:
 
-- **Deploy on Railway**: 
+- [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/podly?referralCode=NMdeg5&utm_medium=integration&utm_source=template&utm_campaign=generic)
    - quick and easy setup in the cloud, follow our [Railway deployment guide](docs/how_to_run_railway.md). 
    - Use this if you want to share your Podly server with others.
 - **Run Locally**: 
@@ -39,18 +30,30 @@ You have a few options to get started:
    - Use this for the most cost-optimal & private setup.
 - **[Join The Preview Server](https://podly.up.railway.app/)**: 
    - support the project through code contribution or sponsorship
-   - request access in discord
+   - get account  <a href="https://discord.gg/FRB98GtF6N" target="_blank">
+      <img src="https://img.shields.io/badge/discord-join-blue.svg?logo=discord&logoColor=white" alt="Discord">
+  </a>
+
+
+## How it works:
+
+- You request an episode
+- Podly downloads the requested episode
+- Whisper transcribes the episode
+- LLM labels ad segments
+- Podly removes the ad segments
+- Podly delivers the ad-free version of the podcast to you
 
 ### Cost Breakdown
 *Monthly cost breakdown for 5 podcasts*
 
 | Cost    | Hosting  | Transcription | LLM    |
 |---------|----------|---------------|--------|
+| **free**| [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
 | **free**| local    | local         | local  |
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
 | **$10** | public (railway)  | remote        | remote |
-| **$6** | [zeroads](https://zeroads.ai?utm_source=podly)  | for-profit fork of Podly | remote |
 | ? | do you run an ad removal service? | get listed here | sponsor or contribute to project 😀 |
 
 
