@@ -62,12 +62,14 @@ def count_cleanup_candidates(
 
 
 def cleanup_processed_posts(retention_days: Optional[int]) -> int:
-    """Remove posts older than the retention window.
+    """Prune processed posts older than the retention window.
 
     Posts qualify when their processed audio artifact (or, if missing, the
-    latest completed job) is older than the retention window. Returns
-    the number of posts that were deleted. Callers must ensure an application
-    context is active.
+    latest completed job) is older than the retention window. Eligible posts
+    are un-whitelisted, artifacts are removed, and dependent rows are deleted,
+    but the post row is retained to prevent reprocessing. Returns the number of
+    posts that were cleaned. Callers must ensure an application context is
+    active.
     """
     posts_query, cutoff = _build_cleanup_query(retention_days)
     if posts_query is None or cutoff is None:
@@ -93,6 +95,8 @@ def cleanup_processed_posts(retention_days: Optional[int]) -> int:
             post.guid,
             cutoff.isoformat(),
         )
+        # Keep the post record but ensure it cannot be reprocessed.
+        post.whitelisted = False
         affected_run_ids.update(
             run_id
             for (run_id,) in db.session.query(ProcessingJob.jobs_manager_run_id)
@@ -102,12 +106,9 @@ def cleanup_processed_posts(retention_days: Optional[int]) -> int:
             .all()
             if run_id
         )
-        if post.whitelisted:
-            # Ensure future refreshes treat this GUID as inactive.
-            post.whitelisted = False
         _remove_associated_files(post)
+        _clear_post_paths(post)
         _delete_post_related_rows(post)
-        db.session.delete(post)
 
     db.session.flush()
     recalculate_run_counts(db.session)
@@ -156,6 +157,12 @@ def _remove_associated_files(post: Post) -> None:
             logger.info("Cleanup deleted file: %s", file_path)
         except OSError as exc:
             logger.warning("Cleanup unable to delete %s: %s", file_path, exc)
+
+
+def _clear_post_paths(post: Post) -> None:
+    """Clear stored paths now that artifacts are removed."""
+    post.unprocessed_audio_path = None
+    post.processed_audio_path = None
 
 
 def _delete_post_related_rows(post: Post) -> None:

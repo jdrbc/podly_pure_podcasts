@@ -124,7 +124,11 @@ def test_cleanup_removes_expired_posts(app, tmp_path) -> None:
         removed = cleanup_processed_posts(retention_days=5)
 
         assert removed == 1
-        assert Post.query.filter_by(guid="old-guid").first() is None
+        cleaned_old_post = Post.query.filter_by(guid="old-guid").first()
+        assert cleaned_old_post is not None
+        assert cleaned_old_post.whitelisted is False
+        assert cleaned_old_post.processed_audio_path is None
+        assert cleaned_old_post.unprocessed_audio_path is None
         assert Post.query.filter_by(guid="recent-guid").first() is not None
         assert ProcessingJob.query.filter_by(post_guid="old-guid").first() is None
         assert Identification.query.count() == 0
@@ -175,7 +179,11 @@ def test_cleanup_includes_non_whitelisted_processed_posts(app, tmp_path) -> None
 
         removed = cleanup_processed_posts(retention_days=5)
         assert removed == 1
-        assert Post.query.filter_by(guid="non-white").first() is None
+        cleaned_post = Post.query.filter_by(guid="non-white").first()
+        assert cleaned_post is not None
+        assert cleaned_post.whitelisted is False
+        assert cleaned_post.processed_audio_path is None
+        assert cleaned_post.unprocessed_audio_path is None
 
 
 def test_cleanup_skips_unprocessed_unwhitelisted_posts(app) -> None:
