@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [discordEnabled, setDiscordEnabled] = useState(false);
   const [discordLoading, setDiscordLoading] = useState(false);
+  const [showPasswordLogin, setShowPasswordLogin] = useState(false);
 
   // Check for OAuth callback errors in URL
   useEffect(() => {
@@ -36,8 +37,14 @@ export default function LoginPage() {
   // Check if Discord SSO is enabled
   useEffect(() => {
     discordApi.getStatus()
-      .then((status) => setDiscordEnabled(status.enabled))
-      .catch(() => setDiscordEnabled(false));
+      .then((status) => {
+        setDiscordEnabled(status.enabled);
+        setShowPasswordLogin(!status.enabled);
+      })
+      .catch(() => {
+        setDiscordEnabled(false);
+        setShowPasswordLogin(true);
+      });
   }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -83,73 +90,19 @@ export default function LoginPage() {
           <h1 className="text-xl font-semibold text-gray-900">Sign in to Podly</h1>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-              Username
-            </label>
-            <input
-              id="username"
-              name="username"
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              disabled={submitting}
-              required
-            />
+        {error && (
+          <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mb-4">
+            {error}
           </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              disabled={submitting}
-              required
-            />
-          </div>
-
-          {error && (
-            <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full flex justify-center items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {submitting && <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />}
-            {submitting ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
+        )}
 
         {discordEnabled && (
-          <>
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="bg-white px-2 text-gray-500">or</span>
-              </div>
-            </div>
-
+          <div className="space-y-3 mb-4">
             <button
               type="button"
               onClick={handleDiscordLogin}
               disabled={discordLoading}
-              className="w-full flex justify-center items-center gap-2 rounded-md bg-[#5865F2] px-4 py-2 text-white font-medium hover:bg-[#4752C4] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full flex justify-center items-center gap-2 rounded-md bg-[#5865F2] px-4 py-3 text-white font-semibold shadow hover:bg-[#4752C4] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {discordLoading ? (
                 <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
@@ -160,7 +113,66 @@ export default function LoginPage() {
               )}
               {discordLoading ? 'Redirecting…' : 'Continue with Discord'}
             </button>
-          </>
+            {!showPasswordLogin && (
+              <button
+                type="button"
+                onClick={() => setShowPasswordLogin(true)}
+                className="w-full text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
+              >
+                Use username / password
+              </button>
+            )}
+          </div>
+        )}
+
+        {(!discordEnabled || showPasswordLogin) && (
+          <form
+            className={`space-y-4 ${discordEnabled ? 'pt-4 border-t border-gray-200' : ''}`}
+            onSubmit={handleSubmit}
+          >
+            <div>
+              <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+                Username
+              </label>
+              <input
+                id="username"
+                name="username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                disabled={submitting}
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                disabled={submitting}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full flex justify-center items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitting && <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />}
+              {submitting ? 'Signing in…' : 'Sign in'}
+            </button>
+          </form>
         )}
 
         <div className="mt-4 flex justify-center">
