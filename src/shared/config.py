@@ -29,6 +29,15 @@ class OutputConfig(BaseModel):
     min_ad_segment_length_seconds: int
     min_confidence: float
 
+    @property
+    def min_ad_segment_separation_seconds(self) -> int:
+        """Backwards-compatible alias for the misspelled config field."""
+        return self.min_ad_segement_separation_seconds
+
+    @min_ad_segment_separation_seconds.setter
+    def min_ad_segment_separation_seconds(self, value: int) -> None:
+        self.min_ad_segement_separation_seconds = value
+
 
 WhisperConfigTypes = Literal["remote", "local", "test", "groq"]
 
