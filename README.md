@@ -24,14 +24,11 @@ You have a few options to get started:
 - [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/podly?referralCode=NMdeg5&utm_medium=integration&utm_source=template&utm_campaign=generic)
    - quick and easy setup in the cloud, follow our [Railway deployment guide](docs/how_to_run_railway.md). 
    - Use this if you want to share your Podly server with others.
-- **Run Locally**: 
+- or **[Join The Preview Server](https://podly.up.railway.app/)**
+- or **Run Locally**: 
    - For local development and customization, 
    - see our [beginner's guide for running locally](docs/how_to_run_beginners.md). 
    - Use this for the most cost-optimal & private setup.
-- **[Join The Preview Server](https://podly.up.railway.app/)**: 
-   - support the project through code contribution or sponsorship
-   - get account  <a href="https://discord.gg/FRB98GtF6N" target="_blank">
-      <img src="https://img.shields.io/badge/discord-join-blue.svg?logo=discord&logoColor=white" alt="Discord">
   </a>
 
 
@@ -49,11 +46,12 @@ You have a few options to get started:
 
 | Cost    | Hosting  | Transcription | LLM    |
 |---------|----------|---------------|--------|
-| **free**| [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
+| **$1 per 3 hours**| [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
 | **free**| local    | local         | local  |
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
 | **$10** | public (railway)  | remote        | remote |
+| **$5.99** | https://zeroads.ai/  | production fork of podly | |
 | ? | do you run an ad removal service? | get listed here | sponsor or contribute to project 😀 |
 
 
