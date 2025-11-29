@@ -3,11 +3,13 @@ import { Toaster } from 'react-hot-toast';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { AudioPlayerProvider } from './contexts/AudioPlayerContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useQuery } from '@tanstack/react-query';
 import HomePage from './pages/HomePage';
 import JobsPage from './pages/JobsPage';
 import ConfigPage from './pages/ConfigPage';
 import LoginPage from './pages/LoginPage';
 import AudioPlayer from './components/AudioPlayer';
+import { creditsApi } from './services/api';
 import './App.css';
 
 const queryClient = new QueryClient({
@@ -24,6 +26,12 @@ const queryClient = new QueryClient({
 
 function AppShell() {
   const { status, requireAuth, isAuthenticated, user, logout } = useAuth();
+  const { data: balanceData } = useQuery({
+    queryKey: ['credits', 'balance'],
+    queryFn: creditsApi.getBalance,
+    enabled: !!user && requireAuth && isAuthenticated,
+    retry: false,
+  });
 
   if (status === 'loading') {
     return (
@@ -72,11 +80,24 @@ function AppShell() {
                 </Link>
               )}
               {requireAuth && user && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <span className="hidden sm:inline">{user.username}</span>
+                <div className="flex items-center gap-3 text-sm text-gray-600 flex-shrink-0">
+                  {balanceData?.balance && (
+                    <div
+                      className={`px-2 py-1 rounded-md border text-xs whitespace-nowrap ${
+                        parseFloat(balanceData.balance) < 0
+                          ? 'border-red-200 text-red-700 bg-red-50'
+                          : 'border-emerald-200 text-emerald-700 bg-emerald-50'
+                      }`}
+                      title="Credits balance"
+                    >
+                      {parseFloat(balanceData.balance) < 0 ? 'Balance due: ' : 'Credits: '}
+                      {balanceData.balance}
+                    </div>
+                  )}
+                  <span className="hidden sm:inline whitespace-nowrap">{user.username}</span>
                   <button
                     onClick={logout}
-                    className="px-3 py-1 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors"
+                    className="px-3 py-1 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors whitespace-nowrap"
                   >
                     Logout
                   </button>

@@ -1,6 +1,7 @@
 import os
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import validates
 
@@ -30,9 +31,16 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     author = db.Column(db.Text)
     rss_url = db.Column(db.Text, unique=True, nullable=False)
     image_url = db.Column(db.Text)
+    sponsor_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), index=True)
+    sponsor_note = db.Column(db.Text)
 
     posts = db.relationship(
         "Post", backref="feed", lazy=True, order_by="Post.release_date.desc()"
+    )
+    sponsor = db.relationship(
+        "User",
+        foreign_keys=[sponsor_user_id],
+        backref=db.backref("sponsored_feeds", lazy="dynamic"),
     )
 
     def __repr__(self) -> str:
@@ -130,6 +138,9 @@ class User(db.Model):  # type: ignore[name-defined, misc]
     username = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(50), nullable=False, default="user")
+    credits_balance = db.Column(
+        db.Numeric(12, 1), nullable=False, default=Decimal("1.0")
+    )
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -214,6 +225,42 @@ class Identification(db.Model):  # type: ignore[name-defined, misc]
             f"{self.confidence:.2f}" if self.confidence is not None else "N/A"
         )
         return f"<Identification {self.id} TS:{self.transcript_segment_id} MC:{self.model_call_id} L:{self.label} C:{confidence_str}>"
+
+
+class CreditTransaction(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "credit_transaction"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=True, index=True)
+    post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=True, index=True)
+    idempotency_key = db.Column(db.String(128), unique=True, nullable=True)
+    amount_signed = db.Column(db.Numeric(12, 1), nullable=False)
+    type = db.Column(db.String(32), nullable=False)
+    note = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    user = db.relationship(
+        "User", backref=db.backref("credit_transactions", lazy="dynamic")
+    )
+    feed = db.relationship(
+        "Feed", backref=db.backref("credit_transactions", lazy="dynamic")
+    )
+    post = db.relationship(
+        "Post", backref=db.backref("credit_transactions", lazy="dynamic")
+    )
+
+    __table_args__ = (
+        db.Index("ix_credit_transaction_user_created", "user_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<CreditTransaction {self.id} user={self.user_id} feed={self.feed_id} "
+            f"post={self.post_id} amount={self.amount_signed} type={self.type}>"
+        )
 
 
 class JobsManagerRun(db.Model):  # type: ignore[name-defined, misc]
@@ -424,6 +471,9 @@ class AppSettings(db.Model):  # type: ignore[name-defined, misc]
         db.Integer,
         nullable=False,
         default=DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
+    )
+    minutes_per_credit = db.Column(
+        db.Integer, nullable=False, default=DEFAULTS.MINUTES_PER_CREDIT
     )
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

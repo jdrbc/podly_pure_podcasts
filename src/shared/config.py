@@ -125,6 +125,7 @@ class Config(BaseModel):
     number_of_episodes_to_whitelist_from_archive_of_new_feed: int = (
         DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED
     )
+    minutes_per_credit: int = DEFAULTS.MINUTES_PER_CREDIT
 
     def redacted(self) -> Config:
         return self.model_copy(

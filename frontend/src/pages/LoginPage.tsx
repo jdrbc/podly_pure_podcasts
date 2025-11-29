@@ -91,6 +91,12 @@ export default function LoginPage() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <div className="mt-4 flex justify-center">
+          <a href="https://discord.gg/FRB98GtF6N" target="_blank" rel="noopener noreferrer">
+            <img src="https://img.shields.io/badge/discord-join-blue.svg?logo=discord&logoColor=white" alt="Discord" />
+          </a>
+        </div>
       </div>
     </div>
   );

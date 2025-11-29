@@ -36,4 +36,5 @@ def create_standard_test_config(
             num_segments_to_input_to_prompt=num_segments_to_input_to_prompt,
             max_overlap_segments=max_overlap_segments,
         ),
+        minutes_per_credit=60,
     )

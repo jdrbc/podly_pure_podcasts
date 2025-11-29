@@ -128,6 +128,7 @@ def ensure_defaults() -> None:
             "automatically_whitelist_new_episodes": DEFAULTS.APP_AUTOMATICALLY_WHITELIST_NEW_EPISODES,
             "post_cleanup_retention_days": DEFAULTS.APP_POST_CLEANUP_RETENTION_DAYS,
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
+            "minutes_per_credit": DEFAULTS.MINUTES_PER_CREDIT,
         },
     )
 
@@ -430,6 +431,7 @@ def read_combined() -> Dict[str, Any]:
             "automatically_whitelist_new_episodes": app_s.automatically_whitelist_new_episodes,
             "post_cleanup_retention_days": app_s.post_cleanup_retention_days,
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": app_s.number_of_episodes_to_whitelist_from_archive_of_new_feed,
+            "minutes_per_credit": app_s.minutes_per_credit,
         },
     }
 
@@ -539,6 +541,7 @@ def _update_section_app(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[i
         "automatically_whitelist_new_episodes",
         "post_cleanup_retention_days",
         "number_of_episodes_to_whitelist_from_archive_of_new_feed",
+        "minutes_per_credit",
     ]:
         if key in data:
             setattr(row, key, data[key])
@@ -656,6 +659,10 @@ def to_pydantic_config() -> PydanticConfig:
                 DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
             )
             or DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED
+        ),
+        minutes_per_credit=int(
+            data["app"].get("minutes_per_credit", DEFAULTS.MINUTES_PER_CREDIT)
+            or DEFAULTS.MINUTES_PER_CREDIT
         ),
     )
 

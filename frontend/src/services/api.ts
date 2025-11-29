@@ -11,6 +11,8 @@ import type {
   WhisperConfig,
   PodcastSearchResult,
   ConfigResponse,
+  CreditBalanceResponse,
+  CreditLedgerResponse,
 } from '../types';
 
 const API_BASE_URL = '';
@@ -390,6 +392,26 @@ export const authApi = {
   deleteUser: async (username: string): Promise<{ status: string }> => {
     const response = await api.delete(`/api/auth/users/${username}`);
     return response.data;
+  },
+};
+
+export const creditsApi = {
+  getBalance: async (): Promise<CreditBalanceResponse> => {
+    const response = await api.get('/api/credits/balance');
+    return response.data;
+  },
+  getLedger: async (limit = 20, allUsers = false): Promise<CreditLedgerResponse> => {
+    const response = await api.get('/api/credits/ledger', { params: { limit, all: allUsers ? 'true' : undefined } });
+    return response.data;
+  },
+  manualAdjust: async (user_id: number, amount: string, note?: string) => {
+    const response = await api.post('/api/credits/manual-adjust', { user_id, amount, note });
+    return response.data as {
+      transaction: { id: number; amount: string; type: string; note?: string | null; created_at?: string | null };
+      user_id: number;
+      balance: string;
+      updated_by?: string | null;
+    };
   },
 };
 

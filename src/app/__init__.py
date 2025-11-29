@@ -26,10 +26,21 @@ logger = logging.getLogger("global_logger")
 
 
 def setup_dirs() -> None:
+    """Create data directories. Logs a warning and continues if paths are not writable."""
     in_root = get_in_root()
     srv_root = get_srv_root()
-    os.makedirs(in_root, exist_ok=True)
-    os.makedirs(srv_root, exist_ok=True)
+    try:
+        os.makedirs(in_root, exist_ok=True)
+        os.makedirs(srv_root, exist_ok=True)
+    except OSError as exc:
+        # During CLI commands like migrations, the /app path may not exist
+        logger.warning(
+            "Could not create data directories (%s, %s): %s. "
+            "This is expected during migrations on local dev.",
+            in_root,
+            srv_root,
+            exc,
+        )
 
 
 class SchedulerConfig:
@@ -67,6 +78,10 @@ def setup_scheduler(app: Flask) -> None:
 
 
 def create_app() -> Flask:
+    # Setup directories early but only when actually creating the app (not during migrations)
+    if not is_test:
+        setup_dirs()
+
     app = _create_flask_app()
     auth_settings = _load_auth_settings()
 
@@ -89,8 +104,6 @@ def create_app() -> Flask:
     return app
 
 
-if not is_test:
-    setup_dirs()
 print("Config:\n", json.dumps(config.model_dump(), indent=2))
 
 

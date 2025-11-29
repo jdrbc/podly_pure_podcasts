@@ -23,11 +23,14 @@ from flask import (
 from flask.typing import ResponseReturnValue
 
 from app.auth.feed_tokens import create_feed_access_token
+from app.credits import credits_enabled, resolve_sponsor_user
 from app.extensions import db
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.jobs_manager import get_jobs_manager
 from app.models import (
+    CreditTransaction,
     Feed,
+    FeedAccessToken,
     Identification,
     ModelCall,
     Post,
@@ -63,7 +66,8 @@ def add_feed() -> ResponseReturnValue:
         return make_response(("Invalid URL", 400))
 
     try:
-        add_or_refresh_feed(url)
+        feed = add_or_refresh_feed(url)
+        _assign_feed_sponsor(feed)
         app = cast(Any, current_app)._get_current_object()
         Thread(
             target=_enqueue_pending_jobs_async,
@@ -268,6 +272,14 @@ def delete_feed(f_id: int) -> Response:
         for post in posts_to_delete:
             db.session.delete(post)
 
+    # Delete feed access tokens for this feed
+    FeedAccessToken.query.filter(FeedAccessToken.feed_id == feed.id).delete()
+
+    # Nullify feed_id on credit transactions (keep transaction history)
+    CreditTransaction.query.filter(CreditTransaction.feed_id == feed.id).update(
+        {CreditTransaction.feed_id: None}
+    )
+
     # Delete the feed from the database
     db.session.delete(feed)
     db.session.commit()
@@ -397,6 +409,25 @@ def _cleanup_feed_directories(feed: Feed) -> None:
                 )
 
 
+def _assign_feed_sponsor(feed: Feed) -> None:
+    """Set the sponsor for a feed based on the current user or admin fallback."""
+    if not credits_enabled():
+        return
+
+    current = getattr(g, "current_user", None)
+    sponsor_id = None
+    if current is not None:
+        sponsor_id = current.id
+    else:
+        sponsor = resolve_sponsor_user(feed)
+        sponsor_id = getattr(sponsor, "id", None)
+
+    if sponsor_id and feed.sponsor_user_id != sponsor_id:
+        feed.sponsor_user_id = sponsor_id
+        db.session.add(feed)
+        db.session.commit()
+
+
 @feed_bp.route("/<path:something_or_rss>", methods=["GET"])
 def get_feed_by_alt_or_url(something_or_rss: str) -> Response:
     # first try to serve ANY static file matching the path
@@ -429,6 +460,8 @@ def api_feeds() -> Response:
             "author": feed.author,
             "image_url": feed.image_url,
             "posts_count": len(feed.posts),
+            "sponsor_username": feed.sponsor.username if feed.sponsor else None,
+            "sponsor_note": feed.sponsor_note,
         }
         for feed in feeds
     ]

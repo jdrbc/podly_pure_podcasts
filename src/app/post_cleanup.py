@@ -203,7 +203,7 @@ def _load_latest_completed_map(
         .group_by(ProcessingJob.post_guid)
         .all()
     )
-    return {guid: completed_at for guid, completed_at in rows}
+    return dict(rows)
 
 
 def _processed_timestamp_before_cutoff(

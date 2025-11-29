@@ -7,6 +7,13 @@ import litellm
 from jinja2 import Template
 from sqlalchemy.orm import object_session
 
+from app.credits import (
+    CreditsDisabledError,
+    CreditsError,
+    InsufficientCreditsError,
+    credits_enabled,
+    debit_for_post,
+)
 from app.extensions import db
 from app.models import Post, ProcessingJob, TranscriptSegment
 from podcast_processor.ad_classifier import AdClassifier
@@ -100,6 +107,7 @@ class PodcastProcessor:
         else:
             self.audio_processor = audio_processor
 
+    # pylint: disable=too-many-branches, too-many-statements
     def process(
         self,
         post: Post,
@@ -151,6 +159,39 @@ class PodcastProcessor:
             # Step 1: Download (if needed)
             self._handle_download_step(post, job)
             self._raise_if_cancelled(job, cancel_callback)
+
+            if credits_enabled():
+                try:
+                    debit_result = debit_for_post(
+                        feed=post.feed,
+                        post=post,
+                        job_id=job_id,
+                        unprocessed_audio_path=post.unprocessed_audio_path,
+                    )
+                    self.logger.info(
+                        "Debited credits for post %s (minutes=%.2f credits=%s balance=%s)",
+                        getattr(post, "guid", None),
+                        debit_result.estimated_minutes,
+                        debit_result.estimated_credits,
+                        debit_result.balance,
+                    )
+                except InsufficientCreditsError:
+                    self.status_manager.update_job_status(
+                        job,
+                        "failed",
+                        job.current_step or 1,
+                        "Insufficient credits for processing",
+                        job.progress_percentage or 25.0,
+                    )
+                    return str(post.unprocessed_audio_path or "")
+                except CreditsDisabledError:
+                    pass
+                except CreditsError as exc:
+                    self.logger.warning(
+                        "Failed to debit credits for post %s: %s",
+                        getattr(post, "guid", None),
+                        exc,
+                    )
 
             # Get processing paths and acquire lock
             processed_audio_path = self._acquire_processing_lock(post, job)

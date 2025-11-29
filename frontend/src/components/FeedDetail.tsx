@@ -308,6 +308,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 )}
                 <div className="mt-2 text-sm text-gray-500">
                   <span>{feed.posts_count} episodes</span>
+                  {feed.sponsor_username && (
+                    <>
+                      <span className="mx-2">•</span>
+                      <span>Sponsored by {feed.sponsor_username}</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

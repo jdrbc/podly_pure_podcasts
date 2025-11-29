@@ -6,6 +6,8 @@ export interface Feed {
   author?: string;
   image_url?: string;
   posts_count: number;
+  sponsor_username?: string | null;
+  sponsor_note?: string | null;
 }
 
 export interface Episode {
@@ -132,6 +134,7 @@ export interface AppConfigUI {
   automatically_whitelist_new_episodes: boolean;
   post_cleanup_retention_days: number | null;
   number_of_episodes_to_whitelist_from_archive_of_new_feed: number;
+  minutes_per_credit: number;
 }
 
 export interface CombinedConfig {
@@ -174,4 +177,27 @@ export interface AuthUser {
 export interface ManagedUser extends AuthUser {
   created_at: string;
   updated_at: string;
+}
+
+export interface CreditBalanceResponse {
+  username: string;
+  balance: string;
+}
+
+export interface CreditTransaction {
+  id: number;
+  user_id: number;
+  username?: string | null;
+  amount: string;
+  type: string;
+  note?: string | null;
+  feed_id?: number | null;
+  post_id?: number | null;
+  idempotency_key?: string | null;
+  created_at?: string | null;
+}
+
+export interface CreditLedgerResponse {
+  transactions: CreditTransaction[];
+  user_id: number | null;
 }
