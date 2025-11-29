@@ -11,6 +11,7 @@ interface DownloadButtonProps {
   isWhitelisted: boolean;
   hasProcessedAudio: boolean;
   feedId?: number;
+  canModifyEpisodes?: boolean;
   className?: string;
 }
 
@@ -29,6 +30,7 @@ export default function DownloadButton({
   isWhitelisted,
   hasProcessedAudio,
   feedId,
+  canModifyEpisodes = true,
   className = ''
 }: DownloadButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -230,6 +232,7 @@ export default function DownloadButton({
             episodeGuid={episodeGuid}
             isWhitelisted={isWhitelisted}
             feedId={feedId}
+            canModifyEpisodes={canModifyEpisodes}
             onReprocessStart={() => {
               // Reset status to trigger re-processing UI
               setStatus(null);
@@ -244,6 +247,11 @@ export default function DownloadButton({
         )}
       </div>
     );
+  }
+
+  // If user can't modify episodes and there's no processed audio yet, hide entirely
+  if (!canModifyEpisodes && !status?.download_url) {
+    return null;
   }
 
   return (

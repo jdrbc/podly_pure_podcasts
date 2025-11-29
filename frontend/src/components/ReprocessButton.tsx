@@ -6,6 +6,7 @@ interface ReprocessButtonProps {
   episodeGuid: string;
   isWhitelisted: boolean;
   feedId?: number;
+  canModifyEpisodes?: boolean;
   className?: string;
   onReprocessStart?: () => void;
 }
@@ -14,6 +15,7 @@ export default function ReprocessButton({
   episodeGuid,
   isWhitelisted,
   feedId,
+  canModifyEpisodes = true,
   className = '',
   onReprocessStart
 }: ReprocessButtonProps) {
@@ -62,7 +64,7 @@ export default function ReprocessButton({
     }
   };
 
-  if (!isWhitelisted) {
+  if (!isWhitelisted || !canModifyEpisodes) {
     return null;
   }
 

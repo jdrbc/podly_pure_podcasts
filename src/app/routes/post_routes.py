@@ -1,21 +1,60 @@
 import logging
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Tuple
 
 import flask
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, current_app, g, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
-from app.models import Identification, ModelCall, Post, TranscriptSegment
+from app.models import Feed, Identification, ModelCall, Post, TranscriptSegment, User
 from app.posts import clear_post_processing_data
 
 logger = logging.getLogger("global_logger")
 
 
 post_bp = Blueprint("post", __name__)
+
+
+def _require_sponsor_or_admin(
+    feed: Feed,
+    action: str = "perform this action",
+) -> Tuple[User | None, flask.Response | None]:
+    """Check if the current user is the feed sponsor or an admin.
+
+    When auth is disabled, returns (None, None) to allow access.
+
+    Args:
+        feed: The feed to check authorization for.
+        action: A description of the action for the error message.
+    """
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if not settings or not settings.require_auth:
+        return None, None
+
+    current = getattr(g, "current_user", None)
+    if current is None:
+        return None, flask.make_response(
+            flask.jsonify({"error": "Authentication required."}), 401
+        )
+
+    user: User | None = User.query.get(current.id)
+    if user is None:
+        return None, flask.make_response(
+            flask.jsonify({"error": "User not found."}), 404
+        )
+
+    is_admin = user.role == "admin"
+    is_sponsor = feed.sponsor_user_id == user.id
+    if not (is_admin or is_sponsor):
+        return None, flask.make_response(
+            flask.jsonify({"error": f"Only the sponsor or an admin can {action}."}),
+            403,
+        )
+
+    return user, None
 
 
 def _increment_download_count(post: Post) -> None:
@@ -38,7 +77,6 @@ def _increment_download_count(post: Post) -> None:
 @post_bp.route("/api/feeds/<int:feed_id>/posts", methods=["GET"])
 def api_feed_posts(feed_id: int) -> flask.Response:
     """Returns a JSON list of posts for a specific feed."""
-    from app.models import Feed  # local import to avoid circular in other modules
 
     feed = Feed.query.get_or_404(feed_id)
     posts = [
@@ -332,10 +370,21 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
 @post_bp.route("/api/posts/<string:p_guid>/whitelist", methods=["POST"])
 def api_toggle_whitelist(p_guid: str) -> flask.Response:
-    """Toggle whitelist status for a post via API."""
+    """Toggle whitelist status for a post via API.
+
+    Only the feed sponsor or an admin can use this endpoint.
+    """
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(flask.jsonify({"error": "Post not found"}), 404)
+
+    feed = Feed.query.get(post.feed_id)
+    if feed is None:
+        return flask.make_response(flask.jsonify({"error": "Feed not found"}), 404)
+
+    _, error = _require_sponsor_or_admin(feed, "whitelist this episode")
+    if error:
+        return error
 
     data = request.get_json()
     if data is None or "whitelisted" not in data:
@@ -357,10 +406,15 @@ def api_toggle_whitelist(p_guid: str) -> flask.Response:
 
 @post_bp.route("/api/feeds/<int:feed_id>/toggle-whitelist-all", methods=["POST"])
 def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
-    """Intelligently toggle whitelist status for all posts in a feed."""
-    from app.models import Feed  # local import to avoid circular in other modules
+    """Intelligently toggle whitelist status for all posts in a feed.
 
+    Only the feed sponsor or an admin can use this endpoint.
+    """
     feed = Feed.query.get_or_404(feed_id)
+
+    _, error = _require_sponsor_or_admin(feed, "whitelist all posts")
+    if error:
+        return error
 
     if not feed.posts:
         return flask.jsonify(
@@ -393,7 +447,10 @@ def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
 
 @post_bp.route("/api/posts/<string:p_guid>/process", methods=["POST"])
 def api_process_post(p_guid: str) -> ResponseReturnValue:
-    """Start processing a post and return immediately."""
+    """Start processing a post and return immediately.
+
+    Only the feed sponsor or an admin can use this endpoint.
+    """
     post = Post.query.filter_by(guid=p_guid).first()
     if not post:
         return (
@@ -406,6 +463,23 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             ),
             404,
         )
+
+    feed = Feed.query.get(post.feed_id)
+    if feed is None:
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "FEED_NOT_FOUND",
+                    "message": "Feed not found",
+                }
+            ),
+            404,
+        )
+
+    _, error = _require_sponsor_or_admin(feed, "process this episode")
+    if error:
+        return error
 
     if not post.whitelisted:
         return (
@@ -450,7 +524,10 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
 
 @post_bp.route("/api/posts/<string:p_guid>/reprocess", methods=["POST"])
 def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
-    """Clear all processing data for a post and start processing from scratch."""
+    """Clear all processing data for a post and start processing from scratch.
+
+    Only the feed sponsor or an admin can use this endpoint.
+    """
     post = Post.query.filter_by(guid=p_guid).first()
     if not post:
         return (
@@ -463,6 +540,23 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
             ),
             404,
         )
+
+    feed = Feed.query.get(post.feed_id)
+    if feed is None:
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "FEED_NOT_FOUND",
+                    "message": "Feed not found",
+                }
+            ),
+            404,
+        )
+
+    _, error = _require_sponsor_or_admin(feed, "reprocess this episode")
+    if error:
+        return error
 
     if not post.whitelisted:
         return (
