@@ -143,10 +143,10 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         max_start_ext = getattr(self.config, "max_start_extension_seconds", 30.0)
         max_end_ext = getattr(self.config, "max_end_extension_seconds", 15.0)
 
-        if refinement.refined_start < orig_start - max_start_ext:
-            refinement.refined_start = orig_start - max_start_ext
-        if refinement.refined_end > orig_end + max_end_ext:
-            refinement.refined_end = orig_end + max_end_ext
+        refinement.refined_start = max(
+            refinement.refined_start, orig_start - max_start_ext
+        )
+        refinement.refined_end = min(refinement.refined_end, orig_end + max_end_ext)
         if refinement.refined_start >= refinement.refined_end:
             refinement.refined_start = orig_start
             refinement.refined_end = orig_end

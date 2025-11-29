@@ -230,22 +230,32 @@ def discord_callback() -> Response:
     """Handle the OAuth2 callback from Discord."""
     settings = _get_discord_settings()
     if not settings or not settings.enabled:
-        return Response(response="", status=302, headers={"Location": "/?error=discord_not_configured"})
+        return Response(
+            response="",
+            status=302,
+            headers={"Location": "/?error=discord_not_configured"},
+        )
 
     # Verify state to prevent CSRF
     state = request.args.get("state")
     expected_state = session.pop(SESSION_OAUTH_STATE_KEY, None)
     if not state or state != expected_state:
-        return Response(response="", status=302, headers={"Location": "/?error=invalid_state"})
+        return Response(
+            response="", status=302, headers={"Location": "/?error=invalid_state"}
+        )
 
     # Check for error from Discord (e.g., user denied access)
     error = request.args.get("error")
     if error:
-        return Response(response="", status=302, headers={"Location": f"/?error={error}"})
+        return Response(
+            response="", status=302, headers={"Location": f"/?error={error}"}
+        )
 
     code = request.args.get("code")
     if not code:
-        return Response(response="", status=302, headers={"Location": "/?error=missing_code"})
+        return Response(
+            response="", status=302, headers={"Location": "/?error=missing_code"}
+        )
 
     try:
         # Exchange code for token
@@ -259,7 +269,11 @@ def discord_callback() -> Response:
         if settings.guild_ids:
             is_allowed = check_guild_membership(access_token, settings)
             if not is_allowed:
-                return Response(response="", status=302, headers={"Location": "/?error=guild_requirement_not_met"})
+                return Response(
+                    response="",
+                    status=302,
+                    headers={"Location": "/?error=guild_requirement_not_met"},
+                )
 
         # Find or create user
         user = find_or_create_user_from_discord(discord_user, settings)
@@ -277,10 +291,18 @@ def discord_callback() -> Response:
         return Response(response="", status=302, headers={"Location": "/"})
 
     except DiscordRegistrationDisabledError:
-        return Response(response="", status=302, headers={"Location": "/?error=registration_disabled"})
+        return Response(
+            response="",
+            status=302,
+            headers={"Location": "/?error=registration_disabled"},
+        )
     except DiscordAuthError as e:
         logger.warning("Discord auth error: %s", e)
-        return Response(response="", status=302, headers={"Location": "/?error=auth_failed"})
+        return Response(
+            response="", status=302, headers={"Location": "/?error=auth_failed"}
+        )
     except Exception as e:
         logger.exception("Discord auth failed unexpectedly: %s", e)
-        return Response(response="", status=302, headers={"Location": "/?error=auth_failed"})
+        return Response(
+            response="", status=302, headers={"Location": "/?error=auth_failed"}
+        )

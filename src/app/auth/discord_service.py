@@ -111,7 +111,9 @@ def find_or_create_user_from_discord(
 ) -> User:
     """Find an existing user by Discord ID or create a new one."""
     # Check if user exists by Discord ID
-    existing_user: User | None = User.query.filter_by(discord_id=discord_user.id).first()
+    existing_user: User | None = User.query.filter_by(
+        discord_id=discord_user.id
+    ).first()
     if existing_user:
         # Update Discord username (it can change)
         existing_user.discord_username = discord_user.username

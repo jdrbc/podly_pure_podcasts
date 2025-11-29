@@ -200,7 +200,7 @@ def get_feed(f_id: int) -> Response:
 
 
 @feed_bp.route("/feed/<int:f_id>", methods=["DELETE"])
-def delete_feed(f_id: int) -> Response:
+def delete_feed(f_id: int) -> ResponseReturnValue:  # pylint: disable=too-many-branches
     user, error = _require_authenticated_user(allow_missing_auth=True)
     if error:
         return error
@@ -211,9 +211,7 @@ def delete_feed(f_id: int) -> Response:
     if not (is_admin or is_sponsor):
         return (
             jsonify(
-                {
-                    "error": "Only the sponsoring user or an admin can delete this feed."
-                }
+                {"error": "Only the sponsoring user or an admin can delete this feed."}
             ),
             403,
         )
@@ -472,7 +470,7 @@ def api_feeds() -> Response:
 
 
 @feed_bp.route("/api/feeds/<int:feed_id>/sponsor", methods=["POST"])
-def sponsor_feed(feed_id: int) -> Response:
+def sponsor_feed(feed_id: int) -> ResponseReturnValue:
     """Assign the current user as the sponsor for the feed."""
     user, error = _require_authenticated_user()
     if error:
@@ -509,7 +507,9 @@ def sponsor_feed(feed_id: int) -> Response:
     return jsonify(_serialize_feed(feed))
 
 
-def _require_authenticated_user(allow_missing_auth: bool = False) -> tuple[Any, Any]:
+def _require_authenticated_user(
+    allow_missing_auth: bool = False,
+) -> tuple[User | None, ResponseReturnValue | None]:
     settings = current_app.config.get("AUTH_SETTINGS")
     if not settings or not settings.require_auth:
         if allow_missing_auth:
@@ -543,8 +543,8 @@ def _serialize_feed(feed: Feed) -> dict[str, Any]:
         "sponsor_username": feed.sponsor.username if feed.sponsor else None,
         "sponsor_user_id": feed.sponsor_user_id,
         "sponsor_note": feed.sponsor_note,
-        "sponsor_credits_balance": str(sponsor_balance)
-        if feed.sponsor is not None
-        else None,
+        "sponsor_credits_balance": (
+            str(sponsor_balance) if feed.sponsor is not None else None
+        ),
         "sponsor_out_of_credits": out_of_credits,
     }
