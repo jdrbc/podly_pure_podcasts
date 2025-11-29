@@ -14,6 +14,7 @@ from sqlalchemy.engine import Engine
 
 from app.auth import AuthSettings, load_auth_settings
 from app.auth.bootstrap import bootstrap_admin_user
+from app.auth.discord_settings import load_discord_settings
 from app.auth.middleware import init_auth_middleware
 from app.background import add_background_job, schedule_cleanup_job
 from app.extensions import db, migrate, scheduler
@@ -84,8 +85,10 @@ def create_app() -> Flask:
 
     app = _create_flask_app()
     auth_settings = _load_auth_settings()
+    discord_settings = load_discord_settings()
 
     _apply_auth_settings(app, auth_settings)
+    app.config["DISCORD_SETTINGS"] = discord_settings
     _configure_session(app, auth_settings)
     _configure_cors(app)
     _configure_scheduler(app)
@@ -98,6 +101,12 @@ def create_app() -> Flask:
         _run_app_startup(auth_settings)
 
     app.config["AUTH_SETTINGS"] = auth_settings.without_password()
+
+    if discord_settings.enabled:
+        logger.info(
+            "Discord SSO enabled (guild restriction: %s)",
+            "yes" if discord_settings.guild_ids else "no",
+        )
 
     _validate_env_key_conflicts()
     _start_scheduler_and_jobs(app)

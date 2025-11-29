@@ -179,6 +179,10 @@ export interface ManagedUser extends AuthUser {
   updated_at: string;
 }
 
+export interface DiscordStatus {
+  enabled: boolean;
+}
+
 export interface CreditBalanceResponse {
   username: string;
   balance: string;

@@ -21,6 +21,9 @@ _PUBLIC_PATHS: set[str] = {
     "/favicon.ico",
     "/api/auth/login",
     "/api/auth/status",
+    "/api/auth/discord/status",
+    "/api/auth/discord/login",
+    "/api/auth/discord/callback",
 }
 
 _PUBLIC_PREFIXES: tuple[str, ...] = (

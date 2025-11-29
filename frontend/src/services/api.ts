@@ -395,6 +395,54 @@ export const authApi = {
   },
 };
 
+export const discordApi = {
+  getStatus: async (): Promise<{ enabled: boolean }> => {
+    const response = await api.get('/api/auth/discord/status');
+    return response.data;
+  },
+
+  getLoginUrl: async (): Promise<{ authorization_url: string }> => {
+    const response = await api.get('/api/auth/discord/login');
+    return response.data;
+  },
+
+  getConfig: async (): Promise<{
+    config: {
+      enabled: boolean;
+      client_id: string | null;
+      client_secret_preview: string | null;
+      redirect_uri: string | null;
+      guild_ids: string;
+      allow_registration: boolean;
+    };
+    env_overrides: Record<string, { env_var: string; value?: string; is_secret?: boolean }>;
+  }> => {
+    const response = await api.get('/api/auth/discord/config');
+    return response.data;
+  },
+
+  updateConfig: async (payload: {
+    client_id?: string;
+    client_secret?: string;
+    redirect_uri?: string;
+    guild_ids?: string;
+    allow_registration?: boolean;
+  }): Promise<{
+    status: string;
+    config: {
+      enabled: boolean;
+      client_id: string | null;
+      client_secret_preview: string | null;
+      redirect_uri: string | null;
+      guild_ids: string;
+      allow_registration: boolean;
+    };
+  }> => {
+    const response = await api.put('/api/auth/discord/config', payload);
+    return response.data;
+  },
+};
+
 export const creditsApi = {
   getBalance: async (): Promise<CreditBalanceResponse> => {
     const response = await api.get('/api/credits/balance');

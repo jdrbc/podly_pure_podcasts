@@ -145,6 +145,9 @@ class User(db.Model):  # type: ignore[name-defined, misc]
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
+    # Discord SSO fields
+    discord_id = db.Column(db.String(32), unique=True, nullable=True, index=True)
+    discord_username = db.Column(db.String(100), nullable=True)
 
     @validates("username")
     def _normalize_username(self, key: str, value: str) -> str:
@@ -475,6 +478,20 @@ class AppSettings(db.Model):  # type: ignore[name-defined, misc]
     minutes_per_credit = db.Column(
         db.Integer, nullable=False, default=DEFAULTS.MINUTES_PER_CREDIT
     )
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class DiscordSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "discord_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    client_id = db.Column(db.Text, nullable=True)
+    client_secret = db.Column(db.Text, nullable=True)
+    redirect_uri = db.Column(db.Text, nullable=True)
+    guild_ids = db.Column(db.Text, nullable=True)  # Comma-separated list
+    allow_registration = db.Column(db.Boolean, nullable=False, default=True)
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
