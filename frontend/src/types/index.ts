@@ -7,6 +7,9 @@ export interface Feed {
   image_url?: string;
   posts_count: number;
   sponsor_username?: string | null;
+  sponsor_user_id?: number | null;
+  sponsor_credits_balance?: string | null;
+  sponsor_out_of_credits?: boolean;
   sponsor_note?: string | null;
 }
 

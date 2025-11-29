@@ -80,6 +80,11 @@ export const feedsApi = {
     return response.data;
   },
 
+  sponsorFeed: async (feedId: number): Promise<Feed> => {
+    const response = await api.post(`/api/feeds/${feedId}/sponsor`);
+    return response.data;
+  },
+
   searchFeeds: async (
     term: string
   ): Promise<{

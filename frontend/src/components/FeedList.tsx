@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import type { Feed } from '../types';
-import { feedsApi } from '../services/api';
 
 interface FeedListProps {
   feeds: Feed[];
@@ -9,19 +8,8 @@ interface FeedListProps {
   selectedFeedId?: number;
 }
 
-export default function FeedList({ feeds, onFeedDeleted, onFeedSelected, selectedFeedId }: FeedListProps) {
+export default function FeedList({ feeds, onFeedDeleted: _onFeedDeleted, onFeedSelected, selectedFeedId }: FeedListProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const handleDeleteFeed = async (feedId: number) => {
-    if (confirm('Are you sure you want to delete this feed?')) {
-      try {
-        await feedsApi.deleteFeed(feedId);
-        onFeedDeleted();
-      } catch (error) {
-        console.error('Failed to delete feed:', error);
-        alert('Failed to delete feed');
-      }
-    }
-  };
 
   // Ensure feeds is an array
   const feedsArray = Array.isArray(feeds) ? feeds : [];
@@ -73,7 +61,7 @@ export default function FeedList({ feeds, onFeedDeleted, onFeedSelected, selecte
           filteredFeeds.map((feed) => (
             <div 
               key={feed.id} 
-              className={`bg-white rounded-lg shadow border cursor-pointer transition-all hover:shadow-md ${
+              className={`bg-white rounded-lg shadow border cursor-pointer transition-all hover:shadow-md group ${
                 selectedFeedId === feed.id ? 'ring-2 ring-blue-500 border-blue-200' : ''
               }`}
               onClick={() => onFeedSelected(feed)}
@@ -105,15 +93,6 @@ export default function FeedList({ feeds, onFeedDeleted, onFeedSelected, selecte
                     )}
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-xs text-gray-500">{feed.posts_count} episodes</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteFeed(feed.id);
-                        }}
-                        className="text-red-600 hover:text-red-800 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        Delete
-                      </button>
                     </div>
                   </div>
                 </div>

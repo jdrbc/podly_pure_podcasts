@@ -17,7 +17,7 @@ interface FeedDetailProps {
 type SortOption = 'newest' | 'oldest' | 'title';
 
 export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailProps) {
-  const { requireAuth, isAuthenticated } = useAuth();
+  const { requireAuth, isAuthenticated, user } = useAuth();
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [showStickyHeader, setShowStickyHeader] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -25,32 +25,33 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const queryClient = useQueryClient();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const feedHeaderRef = useRef<HTMLDivElement>(null);
+  const [currentFeed, setCurrentFeed] = useState(feed);
 
   const { data: episodes, isLoading, error } = useQuery({
-    queryKey: ['episodes', feed.id],
-    queryFn: () => feedsApi.getFeedPosts(feed.id),
+    queryKey: ['episodes', currentFeed.id],
+    queryFn: () => feedsApi.getFeedPosts(currentFeed.id),
   });
 
   const whitelistMutation = useMutation({
     mutationFn: ({ guid, whitelisted }: { guid: string; whitelisted: boolean }) =>
       feedsApi.togglePostWhitelist(guid, whitelisted),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['episodes', feed.id] });
+      queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
     },
   });
 
   const bulkWhitelistMutation = useMutation({
-    mutationFn: () => feedsApi.toggleAllPostsWhitelist(feed.id),
+    mutationFn: () => feedsApi.toggleAllPostsWhitelist(currentFeed.id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['episodes', feed.id] });
+      queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
     },
   });
 
   const refreshFeedMutation = useMutation({
-    mutationFn: () => feedsApi.refreshFeed(feed.id),
+    mutationFn: () => feedsApi.refreshFeed(currentFeed.id),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['feeds'] });
-      queryClient.invalidateQueries({ queryKey: ['episodes', feed.id] });
+      queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
       toast.success(data?.message ?? 'Feed refreshed');
     },
     onError: (err) => {
@@ -60,14 +61,40 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   });
 
   const deleteFeedMutation = useMutation({
-    mutationFn: () => feedsApi.deleteFeed(feed.id),
+    mutationFn: () => feedsApi.deleteFeed(currentFeed.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['feeds'] });
       if (onFeedDeleted) {
         onFeedDeleted();
       }
     },
+    onError: (err) => {
+      console.error('Failed to delete feed', err);
+      const message = (err as any)?.response?.data?.error;
+      toast.error(message ?? 'Failed to delete feed');
+    },
   });
+
+  const sponsorFeedMutation = useMutation({
+    mutationFn: () => feedsApi.sponsorFeed(currentFeed.id),
+    onSuccess: (updatedFeed) => {
+      setCurrentFeed(updatedFeed);
+      queryClient.setQueryData<Feed[] | undefined>(['feeds'], (existing) => {
+        if (!existing) return existing;
+        return existing.map((f) => (f.id === updatedFeed.id ? updatedFeed : f));
+      });
+      toast.success('You are now sponsoring this feed');
+    },
+    onError: (err) => {
+      console.error('Failed to sponsor feed', err);
+      const message = (err as any)?.response?.data?.error;
+      toast.error(message ?? 'Unable to sponsor this feed right now');
+    },
+  });
+
+  useEffect(() => {
+    setCurrentFeed(feed);
+  }, [feed]);
 
   // Handle scroll to show/hide sticky header
   useEffect(() => {
@@ -112,7 +139,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   };
 
   const handleDeleteFeed = () => {
-    if (confirm(`Are you sure you want to delete "${feed.title}"? This action cannot be undone.`)) {
+    if (confirm(`Are you sure you want to delete "${currentFeed.title}"? This action cannot be undone.`)) {
       deleteFeedMutation.mutate();
     }
   };
@@ -154,6 +181,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     return `${minutes}m`;
   };
 
+  const isAdmin = user?.role === 'admin';
+  const isSponsor = user?.id === currentFeed.sponsor_user_id;
+  const canDeleteFeed = !requireAuth || Boolean(isAdmin || isSponsor);
+  const showSponsorBanner = Boolean(
+    requireAuth &&
+      currentFeed.sponsor_out_of_credits &&
+      currentFeed.sponsor_user_id !== user?.id
+  );
+  const sponsorButtonDisabled =
+    sponsorFeedMutation.isPending || (requireAuth && !user);
+
   const handleCopyRssToClipboard = async () => {
     if (requireAuth && !isAuthenticated) {
       toast.error('Please sign in to copy a protected RSS URL.');
@@ -163,10 +201,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     try {
       let rssUrl: string;
       if (requireAuth) {
-        const response = await feedsApi.createProtectedFeedShareLink(feed.id);
+        const response = await feedsApi.createProtectedFeedShareLink(currentFeed.id);
         rssUrl = response.url;
       } else {
-        rssUrl = new URL(`/feed/${feed.id}`, window.location.origin).toString();
+        rssUrl = new URL(`/feed/${currentFeed.id}`, window.location.origin).toString();
       }
 
       if (navigator.clipboard && window.isSecureContext) {
@@ -199,7 +237,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
   const handleCopyOriginalRssToClipboard = async () => {
     try {
-      const rssUrl = feed.rss_url || '';
+      const rssUrl = currentFeed.rss_url || '';
       if (!rssUrl) throw new Error('No RSS URL');
 
       if (navigator.clipboard && window.isSecureContext) {
@@ -248,17 +286,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
       }`}>
         <div className="p-4">
           <div className="flex items-center gap-3">
-            {feed.image_url && (
+            {currentFeed.image_url && (
               <img
-                src={feed.image_url}
-                alt={feed.title}
+                src={currentFeed.image_url}
+                alt={currentFeed.title}
                 className="w-10 h-10 rounded-lg object-cover"
               />
             )}
             <div className="flex-1 min-w-0">
-              <h2 className="font-semibold text-gray-900 truncate">{feed.title}</h2>
-              {feed.author && (
-                <p className="text-sm text-gray-600 truncate">by {feed.author}</p>
+              <h2 className="font-semibold text-gray-900 truncate">{currentFeed.title}</h2>
+              {currentFeed.author && (
+                <p className="text-sm text-gray-600 truncate">by {currentFeed.author}</p>
               )}
             </div>
             <select
@@ -285,10 +323,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             <div className="flex items-end gap-6">
               {/* Podcast Image */}
               <div className="flex-shrink-0">
-                {feed.image_url ? (
+                {currentFeed.image_url ? (
                   <img
-                    src={feed.image_url}
-                    alt={feed.title}
+                    src={currentFeed.image_url}
+                    alt={currentFeed.title}
                     className="w-32 h-32 sm:w-40 sm:h-40 rounded-lg object-cover shadow-lg"
                   />
                 ) : (
@@ -302,16 +340,22 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
               {/* Title aligned to bottom-left of image */}
               <div className="flex-1 min-w-0 pb-2">
-                <h1 className="text-2xl font-bold text-gray-900 mb-1">{feed.title}</h1>
-                {feed.author && (
-                  <p className="text-lg text-gray-600">by {feed.author}</p>
+                <h1 className="text-2xl font-bold text-gray-900 mb-1">{currentFeed.title}</h1>
+                {currentFeed.author && (
+                  <p className="text-lg text-gray-600">by {currentFeed.author}</p>
                 )}
                 <div className="mt-2 text-sm text-gray-500">
-                  <span>{feed.posts_count} episodes</span>
-                  {feed.sponsor_username && (
+                  <span>{currentFeed.posts_count} episodes</span>
+                  {currentFeed.sponsor_username && !currentFeed.sponsor_out_of_credits && (
                     <>
                       <span className="mx-2">•</span>
-                      <span>Sponsored by {feed.sponsor_username}</span>
+                      <span>Sponsored by {currentFeed.sponsor_username}</span>
+                    </>
+                  )}
+                  {currentFeed.sponsor_out_of_credits && (
+                    <>
+                      <span className="mx-2">•</span>
+                      <span className="text-amber-800 font-semibold">Looking for sponsor!</span>
                     </>
                   )}
                 </div>
@@ -418,30 +462,63 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                       Original RSS feed
                     </button>
 
-                    <div className="border-t border-gray-100 my-1"></div>
+                    {canDeleteFeed && (
+                      <>
+                        <div className="border-t border-gray-100 my-1"></div>
 
-                    <button
-                      onClick={() => {
-                        handleDeleteFeed();
-                        setShowMenu(false);
-                      }}
-                      disabled={deleteFeedMutation.isPending}
-                      className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                      Delete feed
-                    </button>
+                        <button
+                          onClick={() => {
+                            handleDeleteFeed();
+                            setShowMenu(false);
+                          }}
+                          disabled={deleteFeedMutation.isPending}
+                          className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Delete feed
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
             </div>
 
+            {showSponsorBanner && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
+                <p className="text-amber-900 font-semibold">
+                  This feed is no longer sponsored. Would you like to sponsor this feed?
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => sponsorFeedMutation.mutate()}
+                    disabled={sponsorButtonDisabled}
+                    className={`px-4 py-2 rounded-lg font-medium shadow-sm ${
+                      sponsorButtonDisabled
+                        ? 'bg-amber-200 text-amber-700 cursor-not-allowed'
+                        : 'bg-amber-600 text-white hover:bg-amber-700'
+                    }`}
+                  >
+                    {sponsorFeedMutation.isPending ? 'Assigning…' : 'Sponsor this feed'}
+                  </button>
+                  <span className="text-sm text-amber-800">
+                    You’ll become the new sponsor and future processing will use your credits.
+                  </span>
+                </div>
+                {requireAuth && !user && (
+                  <p className="text-xs text-amber-800">
+                    Please sign in to take over sponsorship.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Feed Description */}
-            {feed.description && (
+            {currentFeed.description && (
               <div className="text-gray-700 leading-relaxed">
-                <p>{feed.description.replace(/<[^>]*>/g, '')}</p>
+                <p>{currentFeed.description.replace(/<[^>]*>/g, '')}</p>
               </div>
             )}
           </div>
@@ -519,9 +596,9 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                     <div className="flex items-start gap-3">
                       {/* Episode/Podcast Thumbnail */}
                       <div className="flex-shrink-0">
-                        {(episode.image_url || feed.image_url) ? (
+                        {(episode.image_url || currentFeed.image_url) ? (
                           <img
-                            src={episode.image_url || feed.image_url}
+                            src={episode.image_url || currentFeed.image_url}
                             alt={episode.title}
                             className="w-16 h-16 rounded-lg object-cover"
                           />
@@ -540,7 +617,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                           {episode.title}
                         </h4>
                         <p className="text-sm text-gray-600 text-left">
-                          {feed.title}
+                          {currentFeed.title}
                         </p>
                       </div>
                     </div>
@@ -609,7 +686,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                             episodeGuid={episode.guid}
                             isWhitelisted={episode.whitelisted}
                             hasProcessedAudio={episode.has_processed_audio}
-                            feedId={feed.id}
+                            feedId={currentFeed.id}
                             className="min-w-[100px]"
                           />
 

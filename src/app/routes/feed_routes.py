@@ -1,5 +1,6 @@
 import logging
 import re
+from decimal import Decimal
 from pathlib import Path
 from threading import Thread
 from typing import Any, cast
@@ -200,7 +201,22 @@ def get_feed(f_id: int) -> Response:
 
 @feed_bp.route("/feed/<int:f_id>", methods=["DELETE"])
 def delete_feed(f_id: int) -> Response:
+    user, error = _require_authenticated_user(allow_missing_auth=True)
+    if error:
+        return error
+
     feed = Feed.query.get_or_404(f_id)
+    is_admin = getattr(user, "role", None) == "admin"
+    is_sponsor = user is not None and feed.sponsor_user_id == user.id
+    if not (is_admin or is_sponsor):
+        return (
+            jsonify(
+                {
+                    "error": "Only the sponsoring user or an admin can delete this feed."
+                }
+            ),
+            403,
+        )
 
     # Get all post IDs for this feed
     post_ids = [post.id for post in feed.posts]
@@ -451,18 +467,84 @@ def get_feed_by_alt_or_url(something_or_rss: str) -> Response:
 @feed_bp.route("/feeds", methods=["GET"])
 def api_feeds() -> Response:
     feeds = Feed.query.all()
-    feeds_data = [
-        {
-            "id": feed.id,
-            "title": feed.title,
-            "rss_url": feed.rss_url,
-            "description": feed.description,
-            "author": feed.author,
-            "image_url": feed.image_url,
-            "posts_count": len(feed.posts),
-            "sponsor_username": feed.sponsor.username if feed.sponsor else None,
-            "sponsor_note": feed.sponsor_note,
-        }
-        for feed in feeds
-    ]
+    feeds_data = [_serialize_feed(feed) for feed in feeds]
     return jsonify(feeds_data)
+
+
+@feed_bp.route("/api/feeds/<int:feed_id>/sponsor", methods=["POST"])
+def sponsor_feed(feed_id: int) -> Response:
+    """Assign the current user as the sponsor for the feed."""
+    user, error = _require_authenticated_user()
+    if error:
+        return error
+    if user is None:
+        return jsonify({"error": "Authentication is disabled."}), 404
+
+    feed = Feed.query.get_or_404(feed_id)
+    if feed.sponsor_user_id == user.id:
+        return jsonify(_serialize_feed(feed))
+
+    existing_sponsor = (
+        User.query.get(feed.sponsor_user_id) if feed.sponsor_user_id else None
+    )
+    if existing_sponsor and Decimal(existing_sponsor.credits_balance or 0) > Decimal(
+        "1.0"
+    ):
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Current sponsor still has available credits; "
+                        "feed ownership cannot be changed."
+                    )
+                }
+            ),
+            403,
+        )
+
+    feed.sponsor_user_id = user.id
+    db.session.add(feed)
+    db.session.commit()
+
+    return jsonify(_serialize_feed(feed))
+
+
+def _require_authenticated_user(allow_missing_auth: bool = False) -> tuple[Any, Any]:
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if not settings or not settings.require_auth:
+        if allow_missing_auth:
+            return None, None
+        return None, (jsonify({"error": "Authentication is disabled."}), 404)
+
+    current = getattr(g, "current_user", None)
+    if current is None:
+        return None, (jsonify({"error": "Authentication required."}), 401)
+
+    user = User.query.get(current.id)
+    if user is None:
+        return None, (jsonify({"error": "User not found."}), 404)
+
+    return user, None
+
+
+def _serialize_feed(feed: Feed) -> dict[str, Any]:
+    sponsor_balance = (
+        Decimal(feed.sponsor.credits_balance or 0) if feed.sponsor else Decimal("0")
+    )
+    out_of_credits = feed.sponsor is not None and sponsor_balance <= Decimal(0)
+    return {
+        "id": feed.id,
+        "title": feed.title,
+        "rss_url": feed.rss_url,
+        "description": feed.description,
+        "author": feed.author,
+        "image_url": feed.image_url,
+        "posts_count": len(feed.posts),
+        "sponsor_username": feed.sponsor.username if feed.sponsor else None,
+        "sponsor_user_id": feed.sponsor_user_id,
+        "sponsor_note": feed.sponsor_note,
+        "sponsor_credits_balance": str(sponsor_balance)
+        if feed.sponsor is not None
+        else None,
+        "sponsor_out_of_credits": out_of_credits,
+    }
