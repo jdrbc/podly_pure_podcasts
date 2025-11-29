@@ -172,6 +172,22 @@ def test_cleanup_includes_non_whitelisted_processed_posts(app, tmp_path) -> None
         processed = tmp_path / "processed.mp3"
         processed.write_text("audio")
         post.processed_audio_path = str(processed)
+        
+        # Add old completed job so post qualifies for cleanup
+        completed_at = datetime.utcnow() - timedelta(days=10)
+        db.session.add(
+            ProcessingJob(
+                id="job-non-white",
+                post_guid=post.guid,
+                status="completed",
+                current_step=4,
+                total_steps=4,
+                progress_percentage=100.0,
+                created_at=completed_at,
+                started_at=completed_at,
+                completed_at=completed_at,
+            )
+        )
         db.session.commit()
 
         count, _ = count_cleanup_candidates(retention_days=5)

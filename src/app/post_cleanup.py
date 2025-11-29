@@ -35,9 +35,8 @@ def _build_cleanup_query(
         .exists()
     )
 
-    posts_query = (
-        Post.query.filter(Post.processed_audio_path.isnot(None))
-        .filter(~active_jobs_exists)
+    posts_query = Post.query.filter(Post.processed_audio_path.isnot(None)).filter(
+        ~active_jobs_exists
     )
 
     return posts_query, cutoff
@@ -189,7 +188,9 @@ def _delete_post_related_rows(post: Post) -> None:
     )
 
 
-def _load_latest_completed_map(post_guids: Sequence[str]) -> Dict[str, Optional[datetime]]:
+def _load_latest_completed_map(
+    post_guids: Sequence[str],
+) -> Dict[str, Optional[datetime]]:
     if not post_guids:
         return {}
 
@@ -211,6 +212,7 @@ def _processed_timestamp_before_cutoff(
     file_timestamp = _get_processed_file_timestamp(post)
     job_timestamp = latest_completed.get(post.guid)
 
+    candidate: Optional[datetime]
     if file_timestamp and job_timestamp:
         candidate = min(file_timestamp, job_timestamp)
     else:
@@ -239,9 +241,7 @@ def _get_processed_file_timestamp(post: Post) -> Optional[datetime]:
     try:
         mtime = file_path.stat().st_mtime
     except OSError as exc:
-        logger.warning(
-            "Cleanup: unable to stat processed file %s: %s", file_path, exc
-        )
+        logger.warning("Cleanup: unable to stat processed file %s: %s", file_path, exc)
         return None
 
     return datetime.utcfromtimestamp(mtime)
