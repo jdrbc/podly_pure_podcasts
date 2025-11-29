@@ -86,7 +86,10 @@ def upgrade():
     with op.batch_alter_table("users", schema=None) as batch_op:
         batch_op.add_column(
             sa.Column(
-                "credits_balance", sa.Numeric(precision=12, scale=1), nullable=False
+                "credits_balance",
+                sa.Numeric(precision=12, scale=1),
+                nullable=False,
+                server_default=sa.text("1"),
             )
         )
 
