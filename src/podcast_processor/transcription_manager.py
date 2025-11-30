@@ -38,7 +38,9 @@ class TranscriptionManager:
         self.logger = logger
         self.config = config
         self.transcriber = transcriber or self._create_transcriber()
+        self._model_call_query_provided = model_call_query is not None
         self.model_call_query = model_call_query or ModelCall.query
+        self._segment_query_provided = segment_query is not None
         self.segment_query = segment_query or TranscriptSegment.query
         self.db_session = db_session or db.session
 
@@ -63,13 +65,23 @@ class TranscriptionManager:
         self, post: Post
     ) -> Optional[List[TranscriptSegment]]:
         """Checks for existing successful transcription and returns segments if valid.
-        
-        NOTE: Uses self.db_session.query() instead of self.model_call_query/segment_query
-        to ensure all operations use the same session consistently.
+
+        NOTE: Defaults to using self.db_session for queries to keep a single session,
+        but will honor injected model_call_query/segment_query when provided (e.g. tests).
         """
+        model_call_query = (
+            self.model_call_query
+            if self._model_call_query_provided
+            else self.db_session.query(ModelCall)
+        )
+        segment_query = (
+            self.segment_query
+            if self._segment_query_provided
+            else self.db_session.query(TranscriptSegment)
+        )
+
         existing_whisper_call = (
-            self.db_session.query(ModelCall)
-            .filter_by(
+            model_call_query.filter_by(
                 post_id=post.id,
                 model_name=self.transcriber.model_name,
                 status="success",
@@ -83,8 +95,7 @@ class TranscriptionManager:
                 f"Found existing successful Whisper ModelCall {existing_whisper_call.id} for post {post.id}."
             )
             db_segments: List[TranscriptSegment] = (
-                self.db_session.query(TranscriptSegment)
-                .filter_by(post_id=post.id)
+                segment_query.filter_by(post_id=post.id)
                 .order_by(TranscriptSegment.sequence_num)
                 .all()
             )
@@ -112,31 +123,35 @@ class TranscriptionManager:
 
     def _get_or_create_whisper_model_call(self, post: Post) -> ModelCall:
         """Create or reuse the placeholder ModelCall row for a Whisper run.
-        
+
         NOTE: This method uses self.db_session.query(ModelCall) instead of
         self.model_call_query to ensure all operations use the same session.
         Using ModelCall.query (the Flask-SQLAlchemy scoped session) would cause
         "not persistent within this Session" errors when we try to expire or
         modify objects fetched from a different session.
         """
-        placeholder_filters = {
+        placeholder_filters: dict[str, Any] = {
             "post_id": post.id,
             "model_name": self.transcriber.model_name,
             "first_segment_sequence_num": 0,
             "last_segment_sequence_num": -1,
         }
-        reset_fields = {
-            "status": "pending",
-            "prompt": "Whisper transcription job",
-            "retry_attempts": 0,
-            "error_message": None,
-            "response": None,
+        reset_fields: dict[Any, Any] = {
+            ModelCall.status: "pending",
+            ModelCall.prompt: "Whisper transcription job",
+            ModelCall.retry_attempts: 0,
+            ModelCall.error_message: None,
+            ModelCall.response: None,
         }
 
-        existing = cast(
+        query_for_existing = (
+            self.model_call_query
+            if self._model_call_query_provided
+            else self.db_session.query(ModelCall)
+        )
+        existing: Optional[ModelCall] = cast(
             Optional[ModelCall],
-            self.db_session.query(ModelCall)
-            .filter_by(**placeholder_filters)
+            query_for_existing.filter_by(**placeholder_filters)
             .order_by(ModelCall.timestamp.desc())
             .first(),
         )
@@ -148,8 +163,8 @@ class TranscriptionManager:
                 existing.status,
             )
             needs_update = any(
-                getattr(existing, field) != value
-                for field, value in reset_fields.items()
+                getattr(existing, column.key) != value
+                for column, value in reset_fields.items()
             )
             if not needs_update:
                 return existing
@@ -167,7 +182,7 @@ class TranscriptionManager:
             self.db_session.expire(existing)
             return existing
 
-        current_whisper_call = ModelCall(
+        current_whisper_call: Optional[ModelCall] = ModelCall(
             post_id=post.id,
             model_name=self.transcriber.model_name,
             first_segment_sequence_num=0,  # Placeholder, will be updated
@@ -202,13 +217,13 @@ class TranscriptionManager:
                 post.id,
             )
             needs_update = any(
-                getattr(current_whisper_call, field) != value
-                for field, value in reset_fields.items()
+                getattr(current_whisper_call, column.key) != value
+                for column, value in reset_fields.items()
             )
             if needs_update:
-                self.db_session.query(ModelCall).filter_by(id=current_whisper_call.id).update(
-                    reset_fields, synchronize_session=False
-                )
+                self.db_session.query(ModelCall).filter_by(
+                    id=current_whisper_call.id
+                ).update(reset_fields, synchronize_session=False)
                 commit_with_profile(
                     self.db_session,
                     must_succeed=True,
@@ -216,6 +231,11 @@ class TranscriptionManager:
                     logger_obj=self.logger,
                 )
 
+        if current_whisper_call is None:
+            raise RuntimeError(
+                "Failed to create or recover Whisper ModelCall for post "
+                f"{post.id} after IntegrityError."
+            )
         return current_whisper_call
 
     def transcribe(self, post: Post) -> List[TranscriptSegment]:

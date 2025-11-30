@@ -23,6 +23,7 @@ class AudioProcessor:
     ):
         self.logger = logger or logging.getLogger("global_logger")
         self.config = config
+        self._identification_query_provided = identification_query is not None
         self.identification_query = identification_query or Identification.query
         self.transcript_segment_query = (
             transcript_segment_query or TranscriptSegment.query
@@ -46,9 +47,14 @@ class AudioProcessor:
         """
         self.logger.info(f"Retrieving ad segments from database for post {post.id}.")
 
+        query = (
+            self.identification_query
+            if self._identification_query_provided
+            else self.db_session.query(Identification)
+        )
+
         ad_identifications = (
-            self.db_session.query(Identification)
-            .join(
+            query.join(
                 TranscriptSegment,
                 Identification.transcript_segment_id == TranscriptSegment.id,
             )

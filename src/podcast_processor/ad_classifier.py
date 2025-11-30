@@ -682,7 +682,7 @@ class AdClassifier:
         user_prompt_str: str,
     ) -> Optional[ModelCall]:
         """Get an existing ModelCall or create a new one.
-        
+
         NOTE: Uses self.db_session.query() instead of self.model_call_query
         to ensure all operations use the same session consistently.
         """
@@ -981,7 +981,7 @@ class AdClassifier:
 
     def _segment_has_ad_identification(self, transcript_segment_id: int) -> bool:
         """Check if a transcript segment already has an ad identification.
-        
+
         NOTE: Uses self.db_session.query() for session consistency.
         """
         return (
@@ -989,7 +989,8 @@ class AdClassifier:
             .filter_by(
                 transcript_segment_id=transcript_segment_id,
                 label="ad",
-            ).first()
+            )
+            .first()
             is not None
         )
 
@@ -1179,25 +1180,29 @@ class AdClassifier:
         self, post_id: int, sequence_numbers: List[int]
     ) -> Dict[int, TranscriptSegment]:
         """Fetch multiple segments in one query.
-        
+
         NOTE: Must use self.db_session.query() instead of TranscriptSegment.query
         to ensure we use the same session. Using TranscriptSegment.query
         (the Flask-SQLAlchemy scoped session) can cause deadlock with SQLite
         pessimistic locking when another query on self.db_session holds the write lock.
         """
-        segments = self.db_session.query(TranscriptSegment).filter(
-            and_(
-                TranscriptSegment.post_id == post_id,
-                TranscriptSegment.sequence_num.in_(sequence_numbers),
+        segments = (
+            self.db_session.query(TranscriptSegment)
+            .filter(
+                and_(
+                    TranscriptSegment.post_id == post_id,
+                    TranscriptSegment.sequence_num.in_(sequence_numbers),
+                )
             )
-        ).all()
+            .all()
+        )
         return {seg.sequence_num: seg for seg in segments}
 
     def _get_existing_ids_bulk(
         self, post_id: int, model_call_id: int
     ) -> Set[Tuple[int, int, str]]:
         """Fetch all existing identifications as a set for O(1) lookup.
-        
+
         NOTE: Uses self.db_session.query() for session consistency.
         """
         ids = (
@@ -1318,7 +1323,7 @@ class AdClassifier:
         self, transcript_segments: List[TranscriptSegment], post: Post
     ) -> None:
         """Apply boundary refinement to detected ads.
-        
+
         NOTE: Uses self.db_session.query() for session consistency.
         """
         if not self.boundary_refiner:

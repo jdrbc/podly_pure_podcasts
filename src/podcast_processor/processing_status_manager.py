@@ -54,7 +54,7 @@ class ProcessingStatusManager:
 
     def cancel_existing_jobs(self, post_guid: str, current_job_id: str) -> None:
         """Delete any existing active jobs for this post (called when we acquire the lock).
-        
+
         NOTE: Must use self.db_session.query() instead of ProcessingJob.query
         to ensure we use the same session. Using ProcessingJob.query
         (the Flask-SQLAlchemy scoped session) can cause deadlock with SQLite

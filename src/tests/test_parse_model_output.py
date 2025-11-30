@@ -58,3 +58,35 @@ def test_clean_parse_output_with_content_type() -> None:
         content_type="promotional_external",
         confidence=0.91,
     )
+
+
+def test_clean_parse_output_truncated_missing_closing_brackets() -> None:
+    """Test parsing truncated JSON missing closing ]} at the end."""
+    model_output = '{"ad_segments":[{"segment_offset":10.5,"confidence":0.92}'
+    result = clean_and_parse_model_output(model_output)
+    assert result == AdSegmentPredictionList(
+        ad_segments=[AdSegmentPrediction(segment_offset=10.5, confidence=0.92)]
+    )
+
+
+def test_clean_parse_output_truncated_multiple_segments() -> None:
+    """Test parsing truncated JSON with multiple complete segments but missing closing."""
+    model_output = '{"ad_segments":[{"segment_offset":10.5,"confidence":0.92},{"segment_offset":25.0,"confidence":0.85}'
+    result = clean_and_parse_model_output(model_output)
+    assert result == AdSegmentPredictionList(
+        ad_segments=[
+            AdSegmentPrediction(segment_offset=10.5, confidence=0.92),
+            AdSegmentPrediction(segment_offset=25.0, confidence=0.85),
+        ]
+    )
+
+
+def test_clean_parse_output_truncated_with_content_type() -> None:
+    """Test parsing truncated JSON that includes content_type but is missing final }."""
+    model_output = '{"ad_segments":[{"segment_offset":12.0,"confidence":0.86}],"content_type":"promotional_external","confidence":0.92'
+    result = clean_and_parse_model_output(model_output)
+    assert result == AdSegmentPredictionList(
+        ad_segments=[AdSegmentPrediction(segment_offset=12.0, confidence=0.86)],
+        content_type="promotional_external",
+        confidence=0.92,
+    )
