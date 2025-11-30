@@ -8,6 +8,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.credits import credits_enabled, get_balance, manual_adjust
+from app.db_concurrency import pessimistic_write_lock
 from app.extensions import db
 from app.models import CreditTransaction, User
 
@@ -142,10 +143,12 @@ def api_manual_adjust() -> flask.Response:
         return flask.make_response(jsonify({"error": "Invalid amount"}), 400)
 
     try:
-        txn, balance = manual_adjust(
-            user=target_user, amount_signed=amount_signed, note=note
-        )
-        db.session.commit()
+        # Credits/ledger updates must succeed atomically; serialize writes.
+        with pessimistic_write_lock():
+            txn, balance = manual_adjust(
+                user=target_user, amount_signed=amount_signed, note=note
+            )
+            db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
         return flask.make_response(jsonify({"error": "Failed to update credits"}), 500)

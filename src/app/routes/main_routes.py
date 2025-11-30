@@ -3,6 +3,7 @@ import os
 
 import flask
 from flask import Blueprint, current_app, send_from_directory
+from sqlalchemy.exc import OperationalError
 
 from app.extensions import db
 from app.models import Feed, Post
@@ -52,9 +53,25 @@ def catch_all(path: str) -> flask.Response:
 @main_bp.route("/feed/<int:f_id>/toggle-whitelist-all/<val>", methods=["POST"])
 def whitelist_all(f_id: str, val: str) -> flask.Response:
     feed = Feed.query.get_or_404(f_id)
-    for post in feed.posts:
-        post.whitelisted = val.lower() == "true"
-    db.session.commit()
+    new_status = val.lower() == "true"
+    try:
+        Post.query.filter_by(feed_id=feed.id).update(
+            {Post.whitelisted: new_status}, synchronize_session=False
+        )
+        db.session.commit()
+    except OperationalError:
+        db.session.rollback()
+        return flask.make_response(
+            (
+                flask.jsonify(
+                    {
+                        "error": "Database busy, please retry",
+                        "retry_after_seconds": 1,
+                    }
+                ),
+                503,
+            )
+        )
     return flask.make_response("", 200)
 
 
@@ -66,6 +83,20 @@ def set_whitelist(p_guid: str, val: str) -> flask.Response:
         return flask.make_response(("Post not found", 404))
 
     post.whitelisted = val.lower() == "true"
-    db.session.commit()
+    try:
+        db.session.commit()
+    except OperationalError:
+        db.session.rollback()
+        return flask.make_response(
+            (
+                flask.jsonify(
+                    {
+                        "error": "Database busy, please retry",
+                        "retry_after_seconds": 1,
+                    }
+                ),
+                503,
+            )
+        )
 
     return index()

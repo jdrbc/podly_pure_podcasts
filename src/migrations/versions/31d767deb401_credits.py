@@ -30,7 +30,9 @@ def upgrade():
             sa.Column("feed_id", sa.Integer(), nullable=True),
             sa.Column("post_id", sa.Integer(), nullable=True),
             sa.Column("idempotency_key", sa.String(length=128), nullable=True),
-            sa.Column("amount_signed", sa.Numeric(precision=12, scale=1), nullable=False),
+            sa.Column(
+                "amount_signed", sa.Numeric(precision=12, scale=1), nullable=False
+            ),
             sa.Column("type", sa.String(length=32), nullable=False),
             sa.Column("note", sa.Text(), nullable=True),
             sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -82,10 +84,14 @@ def upgrade():
         feed_columns = {col["name"] for col in inspector.get_columns("feed")}
         if "sponsor_user_id" not in feed_columns:
             with op.batch_alter_table("feed", schema=None) as batch_op:
-                batch_op.add_column(sa.Column("sponsor_user_id", sa.Integer(), nullable=True))
+                batch_op.add_column(
+                    sa.Column("sponsor_user_id", sa.Integer(), nullable=True)
+                )
                 batch_op.add_column(sa.Column("sponsor_note", sa.Text(), nullable=True))
                 batch_op.create_index(
-                    batch_op.f("ix_feed_sponsor_user_id"), ["sponsor_user_id"], unique=False
+                    batch_op.f("ix_feed_sponsor_user_id"),
+                    ["sponsor_user_id"],
+                    unique=False,
                 )
                 batch_op.create_foreign_key(
                     "fk_feed_sponsor_user_id",
@@ -129,7 +135,9 @@ def downgrade():
                 if "fk_feed_sponsor_user_id" in {
                     fk["name"] for fk in inspector.get_foreign_keys("feed")
                 }:
-                    batch_op.drop_constraint("fk_feed_sponsor_user_id", type_="foreignkey")
+                    batch_op.drop_constraint(
+                        "fk_feed_sponsor_user_id", type_="foreignkey"
+                    )
                 if "ix_feed_sponsor_user_id" in {
                     idx["name"] for idx in inspector.get_indexes("feed")
                 }:
@@ -147,7 +155,9 @@ def downgrade():
 
     if "credit_transaction" in existing_tables:
         with op.batch_alter_table("credit_transaction", schema=None) as batch_op:
-            existing_indexes = {idx["name"] for idx in inspector.get_indexes("credit_transaction")}
+            existing_indexes = {
+                idx["name"] for idx in inspector.get_indexes("credit_transaction")
+            }
             if batch_op.f("ix_credit_transaction_user_id") in existing_indexes:
                 batch_op.drop_index(batch_op.f("ix_credit_transaction_user_id"))
             if "ix_credit_transaction_user_created" in existing_indexes:

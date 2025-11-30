@@ -38,6 +38,7 @@ discord_bp = Blueprint("discord", __name__)
 
 SESSION_OAUTH_STATE_KEY = "discord_oauth_state"
 SESSION_USER_KEY = "user_id"
+SESSION_OAUTH_PROMPT_UPGRADED = "discord_prompt_upgraded"
 
 
 def _get_discord_settings() -> DiscordSettings | None:
@@ -218,10 +219,12 @@ def discord_login() -> Response | tuple[Response, int]:
     if not settings or not settings.enabled:
         return jsonify({"error": "Discord SSO is not configured."}), 404
 
+    prompt = request.args.get("prompt", "none")
     state = generate_oauth_state()
     session[SESSION_OAUTH_STATE_KEY] = state
+    session[SESSION_OAUTH_PROMPT_UPGRADED] = prompt == "consent"
 
-    auth_url = build_authorization_url(settings, state)
+    auth_url = build_authorization_url(settings, state, prompt=prompt)
     return jsonify({"authorization_url": auth_url})
 
 
@@ -247,6 +250,17 @@ def discord_callback() -> Response:
     # Check for error from Discord (e.g., user denied access)
     error = request.args.get("error")
     if error:
+        if error in {"interaction_required", "login_required", "consent_required"}:
+            # Try again with an explicit consent prompt (only once) to avoid loops.
+            if not session.get(SESSION_OAUTH_PROMPT_UPGRADED):
+                new_state = generate_oauth_state()
+                session[SESSION_OAUTH_STATE_KEY] = new_state
+                session[SESSION_OAUTH_PROMPT_UPGRADED] = True
+                auth_url = build_authorization_url(
+                    settings, new_state, prompt="consent"
+                )
+                return Response(response="", status=302, headers={"Location": auth_url})
+
         return Response(
             response="", status=302, headers={"Location": f"/?error={error}"}
         )
@@ -282,6 +296,7 @@ def discord_callback() -> Response:
         session.clear()
         session[SESSION_USER_KEY] = user.id
         session.permanent = True
+        session.pop(SESSION_OAUTH_PROMPT_UPGRADED, None)
 
         logger.info(
             "Discord SSO login successful for user %s (discord_id=%s)",

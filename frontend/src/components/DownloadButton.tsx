@@ -153,6 +153,15 @@ export default function DownloadButton({
 
     try {
       setError(null);
+      // Immediately show progress state while the request is in flight.
+      setIsProcessing(true);
+      setStatus({
+        status: 'starting',
+        step: 0,
+        step_name: 'Starting',
+        total_steps: 4,
+        message: 'Requesting processing...'
+      });
 
       const response = await feedsApi.processPost(episodeGuid);
 
@@ -189,6 +198,7 @@ export default function DownloadButton({
         if (response.status === 'not_started') {
           setError('No processing job found');
         }
+        setIsProcessing(false);
       }
     } catch (err: unknown) {
       console.error('Error starting processing:', err);
@@ -196,6 +206,7 @@ export default function DownloadButton({
         ? (err as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to start processing'
         : 'Failed to start processing';
       setError(errorMessage);
+      setIsProcessing(false);
     }
   };
 

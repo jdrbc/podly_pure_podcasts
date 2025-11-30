@@ -6,6 +6,7 @@ from typing import Dict, Tuple
 import flask
 from flask import Blueprint, current_app, g, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
+from sqlalchemy.exc import OperationalError
 
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
@@ -369,7 +370,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
 
 @post_bp.route("/api/posts/<string:p_guid>/whitelist", methods=["POST"])
-def api_toggle_whitelist(p_guid: str) -> flask.Response:
+def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
     """Toggle whitelist status for a post via API.
 
     Only the feed sponsor or an admin can use this endpoint.
@@ -393,7 +394,19 @@ def api_toggle_whitelist(p_guid: str) -> flask.Response:
         )
 
     post.whitelisted = bool(data["whitelisted"])
-    db.session.commit()
+    try:
+        db.session.commit()
+    except OperationalError:
+        db.session.rollback()
+        return (
+            flask.jsonify(
+                {
+                    "error": "Database busy, please retry",
+                    "retry_after_seconds": 1,
+                }
+            ),
+            503,
+        )
 
     return flask.jsonify(
         {
@@ -405,7 +418,7 @@ def api_toggle_whitelist(p_guid: str) -> flask.Response:
 
 
 @post_bp.route("/api/feeds/<int:feed_id>/toggle-whitelist-all", methods=["POST"])
-def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
+def api_toggle_whitelist_all(feed_id: int) -> ResponseReturnValue:
     """Intelligently toggle whitelist status for all posts in a feed.
 
     Only the feed sponsor or an admin can use this endpoint.
@@ -428,19 +441,33 @@ def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
     all_whitelisted = all(post.whitelisted for post in feed.posts)
     new_status = not all_whitelisted
 
-    for post in feed.posts:
-        post.whitelisted = new_status
+    try:
+        updated = Post.query.filter_by(feed_id=feed.id).update(
+            {Post.whitelisted: new_status}, synchronize_session=False
+        )
+        db.session.commit()
+    except OperationalError:
+        db.session.rollback()
+        return (
+            flask.jsonify(
+                {
+                    "error": "Database busy, please retry",
+                    "retry_after_seconds": 1,
+                }
+            ),
+            503,
+        )
 
-    db.session.commit()
-
-    whitelisted_count = sum(1 for post in feed.posts if post.whitelisted)
+    whitelisted_count = Post.query.filter_by(feed_id=feed.id, whitelisted=True).count()
+    total_count = Post.query.filter_by(feed_id=feed.id).count()
 
     return flask.jsonify(
         {
             "message": f"{'Whitelisted' if new_status else 'Unwhitelisted'} all posts",
             "whitelisted_count": whitelisted_count,
-            "total_count": len(feed.posts),
+            "total_count": total_count,
             "all_whitelisted": new_status,
+            "updated_count": updated,
         }
     )
 

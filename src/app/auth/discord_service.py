@@ -39,7 +39,9 @@ def generate_oauth_state() -> str:
     return secrets.token_urlsafe(32)
 
 
-def build_authorization_url(settings: DiscordSettings, state: str) -> str:
+def build_authorization_url(
+    settings: DiscordSettings, state: str, prompt: str = "none"
+) -> str:
     """Build the Discord OAuth2 authorization URL."""
     scopes = ["identify"]
     if settings.guild_ids:
@@ -52,6 +54,8 @@ def build_authorization_url(settings: DiscordSettings, state: str) -> str:
         "scope": " ".join(scopes),
         "state": state,
     }
+    if prompt:
+        params["prompt"] = prompt
     return f"{DISCORD_OAUTH2_AUTHORIZE}?{urlencode(params)}"
 
 

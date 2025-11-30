@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from app.db_concurrency import pessimistic_write_lock
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, ProcessingJob, TranscriptSegment
 from podcast_processor.podcast_downloader import get_and_make_download_path
@@ -84,46 +85,51 @@ def clear_post_processing_data(post: Post) -> None:
         # Remove audio files first
         remove_associated_files(post)
 
-        # Get segment IDs for this post to delete related identifications
-        segment_ids = [
-            row[0]
-            for row in db.session.query(TranscriptSegment.id)
-            .filter_by(post_id=post.id)
-            .all()
-        ]
+        def _chunked_delete_segments(batch_size: int = 500) -> None:
+            """Chunk deletes to shorten lock hold time."""
+            while True:
+                ids_batch = [
+                    row[0]
+                    for row in db.session.query(TranscriptSegment.id)
+                    .filter_by(post_id=post.id)
+                    .limit(batch_size)
+                    .all()
+                ]
+                if not ids_batch:
+                    break
 
-        if segment_ids:
-            # Delete identifications that reference these segments
-            db.session.query(Identification).filter(
-                Identification.transcript_segment_id.in_(segment_ids)
-            ).delete(synchronize_session=False)
-            logger.info(f"Deleted identifications for post {post.id}")
+                db.session.query(Identification).filter(
+                    Identification.transcript_segment_id.in_(ids_batch)
+                ).delete(synchronize_session=False)
 
-        # Delete transcript segments for this post
-        db.session.query(TranscriptSegment).filter_by(post_id=post.id).delete(
-            synchronize_session=False
-        )
-        logger.info(f"Deleted transcript segments for post {post.id}")
+                db.session.query(TranscriptSegment).filter(
+                    TranscriptSegment.id.in_(ids_batch)
+                ).delete(synchronize_session=False)
 
-        # Delete model calls for this post
-        db.session.query(ModelCall).filter_by(post_id=post.id).delete(
-            synchronize_session=False
-        )
-        logger.info(f"Deleted model calls for post {post.id}")
+        # Use pessimistic lock for the multi-delete operation to avoid "database is locked"
+        with pessimistic_write_lock():
+            _chunked_delete_segments()
+            logger.info(f"Deleted transcript segments and identifications for post {post.id}")
 
-        # Delete processing jobs for this post
-        db.session.query(ProcessingJob).filter_by(post_guid=post.guid).delete(
-            synchronize_session=False
-        )
-        logger.info(f"Deleted processing jobs for post {post.id}")
+            # Delete model calls for this post
+            db.session.query(ModelCall).filter_by(post_id=post.id).delete(
+                synchronize_session=False
+            )
+            logger.info(f"Deleted model calls for post {post.id}")
 
-        # Reset post audio paths and duration
-        post.unprocessed_audio_path = None
-        post.processed_audio_path = None
-        post.duration = None
+            # Delete processing jobs for this post
+            db.session.query(ProcessingJob).filter_by(post_guid=post.guid).delete(
+                synchronize_session=False
+            )
+            logger.info(f"Deleted processing jobs for post {post.id}")
 
-        # Commit all changes
-        db.session.commit()
+            # Reset post audio paths and duration
+            post.unprocessed_audio_path = None
+            post.processed_audio_path = None
+            post.duration = None
+
+            # Commit all changes
+            db.session.commit()
 
         logger.info(
             f"Successfully cleared all processing data for post: {post.title} (ID: {post.id})"

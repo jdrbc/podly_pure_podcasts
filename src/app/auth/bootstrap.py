@@ -4,6 +4,7 @@ import logging
 
 from flask import current_app
 
+from app.db_concurrency import pessimistic_write_lock
 from app.extensions import db
 from app.models import User
 
@@ -38,8 +39,9 @@ def bootstrap_admin_user(auth_settings: AuthSettings) -> None:
     user = User(username=username, role="admin")
     user.set_password(password)
 
-    db.session.add(user)
-    db.session.commit()
+    with pessimistic_write_lock():
+        db.session.add(user)
+        db.session.commit()
 
     logger.info(
         "Bootstrapped initial admin user '%s'. Ensure environment secrets are stored securely.",

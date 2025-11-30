@@ -17,6 +17,11 @@ from app.auth.bootstrap import bootstrap_admin_user
 from app.auth.discord_settings import load_discord_settings
 from app.auth.middleware import init_auth_middleware
 from app.background import add_background_job, schedule_cleanup_job
+from app.db_concurrency import (
+    SQLiteConcurrencySettings,
+    configure_sqlite_concurrency,
+    default_sqlite_concurrency_settings,
+)
 from app.extensions import db, migrate, scheduler
 from app.logger import setup_logger
 from app.runtime_config import config, is_test
@@ -24,6 +29,10 @@ from shared.processing_paths import get_in_root, get_srv_root
 
 setup_logger("global_logger", "src/instance/logs/app.log")
 logger = logging.getLogger("global_logger")
+
+
+def _get_sqlite_busy_timeout_ms() -> int:
+    return 2000
 
 
 def setup_dirs() -> None:
@@ -62,11 +71,11 @@ def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:
         return
 
     cursor = dbapi_connection.cursor()
+    busy_timeout_ms = _get_sqlite_busy_timeout_ms()
     try:
         cursor.execute("PRAGMA journal_mode=WAL;")
         cursor.execute("PRAGMA synchronous=NORMAL;")
-        # Keep busy timeout low so our explicit retry logic can respond quickly.
-        cursor.execute("PRAGMA busy_timeout=2000;")
+        cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms};")
     finally:
         cursor.close()
 
@@ -85,27 +94,28 @@ def create_app() -> Flask:
 
     app = _create_flask_app()
     auth_settings = _load_auth_settings()
-    discord_settings = load_discord_settings()
+    sqlite_concurrency_settings = default_sqlite_concurrency_settings()
 
     _apply_auth_settings(app, auth_settings)
-    app.config["DISCORD_SETTINGS"] = discord_settings
     _configure_session(app, auth_settings)
     _configure_cors(app)
     _configure_scheduler(app)
-    _configure_database(app)
+    _configure_database(app, sqlite_concurrency_settings)
     _configure_external_loggers()
-    _initialize_extensions(app)
+    _initialize_extensions(app, sqlite_concurrency_settings)
     _register_routes_and_middleware(app)
 
     with app.app_context():
         _run_app_startup(auth_settings)
+        discord_settings = load_discord_settings()
+        app.config["DISCORD_SETTINGS"] = discord_settings
 
     app.config["AUTH_SETTINGS"] = auth_settings.without_password()
 
-    if discord_settings.enabled:
+    if app.config["DISCORD_SETTINGS"].enabled:
         logger.info(
             "Discord SSO enabled (guild restriction: %s)",
-            "yes" if discord_settings.guild_ids else "no",
+            "yes" if app.config["DISCORD_SETTINGS"].guild_ids else "no",
         )
 
     _validate_env_key_conflicts()
@@ -241,14 +251,27 @@ def _configure_scheduler(app: Flask) -> None:
     app.config.from_object(SchedulerConfig())
 
 
-def _configure_database(app: Flask) -> None:
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db?timeout=90"
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+def _configure_database(
+    app: Flask, sqlite_concurrency_settings: SQLiteConcurrencySettings
+) -> None:
+    def _get_sqlite_connect_timeout() -> int:
+        return 30
+
+    app.config["SQLITE_CONCURRENCY_SETTINGS"] = sqlite_concurrency_settings
+    connect_timeout = _get_sqlite_connect_timeout()
+    app.config["SQLALCHEMY_DATABASE_URI"] = (
+        f"sqlite:///sqlite3.db?timeout={connect_timeout}"
+    )
+    engine_options: dict[str, Any] = {
         "connect_args": {
-            "timeout": 90,
+            "timeout": connect_timeout,
             "check_same_thread": False,
         },
+        "pool_size": 5,
+        "max_overflow": 5,
     }
+
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_options
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 
@@ -257,9 +280,15 @@ def _configure_external_loggers() -> None:
     groq_logger.setLevel(logging.INFO)
 
 
-def _initialize_extensions(app: Flask) -> None:
+def _initialize_extensions(
+    app: Flask, sqlite_concurrency_settings: SQLiteConcurrencySettings
+) -> None:
     db.init_app(app)
     migrate.init_app(app, db)
+
+    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
+        with app.app_context():
+            configure_sqlite_concurrency(db.engine, sqlite_concurrency_settings)
 
 
 def _register_routes_and_middleware(app: Flask) -> None:
