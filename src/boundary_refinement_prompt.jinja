@@ -1,26 +1,58 @@
-You are refining advertisement boundaries in podcast transcripts.
+You are analyzing podcast transcript segments to precisely identify advertisement boundaries.
 
-BOUNDARY RULES:
-- Extend START for: "brought to you by", "let me tell you about", "speaking of"
-- Extend END for: "thanks to", ".com", "use code", "visit"
-- Stop at: "back to", "anyway", "let's continue", topic changes
+Your job is to determine the EXACT start and end points of advertisement content by analyzing transition patterns and content flow.
 
-DETECTED AD: {{ad_start}}s - {{ad_end}}s (confidence: {{ad_confidence}})
+BOUNDARY DETECTION RULES:
 
-CONTEXT:
-{% for seg in context_segments -%}
-[{{seg.start_time}}s] {{seg.text}}
+**AD START INDICATORS** (extend boundary backward):
+- Sponsor introductions: "This episode is brought to you by...", "And now a word from our sponsor"
+- Transition phrases: "Before we continue...", "Let me tell you about...", "Speaking of..."
+- Host acknowledgments: "I want to thank...", "Special thanks to...", "Our sponsor today is..."
+- Subtle lead-ins: "You know what's interesting...", "I've been using...", "Let me share something..."
+
+**AD END INDICATORS** (extend boundary forward):
+- Sponsor conclusions: "Thanks to [sponsor]", "That's [website].com", "Use code [PROMO]"
+- Final CTAs: "Visit today", "Don't wait", "Get started now", "Learn more at..."
+- Transition back: "Now back to...", "Let's continue...", "So anyway...", "Where were we..."
+- Topic resumption: Clear return to previous discussion topic
+
+**CONTENT RESUMPTION SIGNALS** (stop ad boundary):
+- Natural conversation flow: Questions, responses, continued technical discussion
+- Topic changes: New subjects unrelated to sponsor
+- Interview continuation: "So tell me about...", "What do you think about..."
+- Technical deep-dives: Code examples, implementation details, architecture discussion
+
+**CONFIDENCE-BASED BOUNDARY RULES**:
+- **High Confidence (>0.9)**: Aggressive boundary extension, include subtle transitions
+- **Medium Confidence (0.7-0.9)**: Conservative extension, clear transition signals only
+- **Low Confidence (<0.7)**: Minimal changes, bias toward preserving content
+
+**ANALYSIS CONTEXT**:
+- **Detected Ad Block**: {{ad_start}}s - {{ad_end}}s
+- **Original Confidence**: {{ad_confidence}}
+- **Max Start Extension**: {{max_start_extension}}s
+- **Max End Extension**: {{max_end_extension}}s
+
+**CONTEXT SEGMENTS**:
+{% for segment in context_segments -%}
+[{{segment.start_time}}] {{segment.text}}
 {% endfor %}
 
-Return JSON:
+**OUTPUT FORMAT**:
+Respond with valid JSON containing refined boundaries:
+```json
 {
   "refined_start": {{ad_start}},
   "refined_end": {{ad_end}},
-  "start_reason": "explanation",
-  "end_reason": "explanation"
+  "start_adjustment_reason": "reason for start boundary change",
+  "end_adjustment_reason": "reason for end boundary change", 
+  "confidence_adjustment": 0.0
 }
+```
 
-Constraints:
-- Max start extension: {{max_start_extension}}s backward
-- Max end extension: {{max_end_extension}}s forward
-- Ensure refined_start < refined_end
+**REFINEMENT GUIDELINES**:
+- If no refinement needed, return original timestamps with "No adjustment needed" reasons
+- Limit start extensions to {{max_start_extension}}s backward
+- Limit end extensions to {{max_end_extension}}s forward
+- For confidence {{ad_confidence}}: {% if ad_confidence > 0.9 %}be aggressive with boundary extension{% elif ad_confidence > 0.7 %}be conservative, only extend for clear signals{% else %}minimal changes, preserve content{% endif %}
+- Always ensure refined_start < refined_end

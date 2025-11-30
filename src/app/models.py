@@ -139,7 +139,7 @@ class User(db.Model):  # type: ignore[name-defined, misc]
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(50), nullable=False, default="user")
     credits_balance = db.Column(
-        db.Numeric(12, 1), nullable=False, default=Decimal("1.0")
+        db.Numeric(12, 2), nullable=False, default=Decimal("1.0")
     )
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -240,7 +240,7 @@ class CreditTransaction(db.Model):  # type: ignore[name-defined, misc]
     feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=True, index=True)
     post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=True, index=True)
     idempotency_key = db.Column(db.String(128), unique=True, nullable=True)
-    amount_signed = db.Column(db.Numeric(12, 1), nullable=False)
+    amount_signed = db.Column(db.Numeric(12, 2), nullable=False)
     type = db.Column(db.String(32), nullable=False)
     note = db.Column(db.Text)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

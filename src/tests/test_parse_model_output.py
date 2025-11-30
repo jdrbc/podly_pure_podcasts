@@ -46,3 +46,15 @@ def test_clean_parse_output_malformed() -> None:
 """
     with pytest.raises(ValidationError):
         clean_and_parse_model_output(model_outupt)
+
+
+def test_clean_parse_output_with_content_type() -> None:
+    model_output = """
+{"ad_segments": [{"segment_offset": 12.0, "confidence": 0.86}], "content_type": "promotional_external", "confidence": 0.91}
+"""
+
+    assert clean_and_parse_model_output(model_output) == AdSegmentPredictionList(
+        ad_segments=[AdSegmentPrediction(segment_offset=12.0, confidence=0.86)],
+        content_type="promotional_external",
+        confidence=0.91,
+    )

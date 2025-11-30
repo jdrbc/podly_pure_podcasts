@@ -109,7 +109,9 @@ def clear_post_processing_data(post: Post) -> None:
         # Use pessimistic lock for the multi-delete operation to avoid "database is locked"
         with pessimistic_write_lock():
             _chunked_delete_segments()
-            logger.info(f"Deleted transcript segments and identifications for post {post.id}")
+            logger.info(
+                f"Deleted transcript segments and identifications for post {post.id}"
+            )
 
             # Delete model calls for this post
             db.session.query(ModelCall).filter_by(post_id=post.id).delete(

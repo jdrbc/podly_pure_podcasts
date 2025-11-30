@@ -24,7 +24,7 @@ function CreditAdjustmentSection() {
     note: '',
   });
 
-  const { data: managedUsers } = useQuery<ManagedUser[]>({
+  const { data: managedUsers, refetch: refetchUsers } = useQuery<ManagedUser[]>({
     queryKey: ['auth-users'],
     queryFn: async () => {
       const response = await authApi.listUsers();
@@ -38,6 +38,7 @@ function CreditAdjustmentSection() {
     onSuccess: () => {
       toast.success('Credits updated.');
       setAdjustForm({ userId: '', amount: '', note: '' });
+      void refetchUsers();
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, 'Failed to adjust credits.'));
@@ -63,7 +64,7 @@ function CreditAdjustmentSection() {
             <option value="">Select user</option>
             {managedUsers?.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.username} ({u.role})
+                {u.username} ({u.role}) — Balance: {u.credits_balance ?? '0'}
               </option>
             ))}
           </select>

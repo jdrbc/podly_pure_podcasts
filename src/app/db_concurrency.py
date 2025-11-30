@@ -3,7 +3,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, TypeVar
+from typing import Any
 
 from flask_sqlalchemy.session import Session as FlaskSession
 from sqlalchemy import event
@@ -28,7 +28,6 @@ _WRITE_PREFIXES = (
 DEFAULT_SQLITE_MODE = "optimistic"
 DEFAULT_SQLITE_RETRY_ATTEMPTS = 5
 DEFAULT_SQLITE_RETRY_BACKOFF_MS = 50
-T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -94,7 +93,7 @@ class RetryingSession(FlaskSession):
     def configure_retry(cls, settings: SQLiteConcurrencySettings) -> None:
         cls._retry_settings = settings if settings.enabled else None
 
-    def _run_with_retry(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    def commit(self) -> None:
         settings = self._retry_settings
         bind = self.get_bind()
         if (
@@ -103,33 +102,64 @@ class RetryingSession(FlaskSession):
             or bind.dialect.name != "sqlite"
             or settings.retry_attempts <= 1
         ):
-            return func(*args, **kwargs)
+            super().commit()
+            return
 
         delay = settings.retry_backoff_ms / 1000
         attempts = settings.retry_attempts
-        last_exc: OperationalError | None = None
 
         for attempt in range(attempts):
             try:
-                return func(*args, **kwargs)
+                super().commit()
+                return
             except OperationalError as exc:
-                last_exc = exc
                 if not _is_sqlite_locked_error(exc):
                     raise
                 if attempt == attempts - 1:
                     raise
+                # Rollback to reset session state before retry
+                logger.warning(
+                    "SQLite database locked on commit (attempt %d/%d), rolling back and retrying...",
+                    attempt + 1,
+                    attempts,
+                )
+                super().rollback()
                 time.sleep(delay)
                 delay *= 2
 
-        if last_exc:
-            raise last_exc
-        return func(*args, **kwargs)
-
-    def commit(self) -> None:
-        self._run_with_retry(super().commit)
-
     def flush(self, objects: Any = None) -> None:
-        self._run_with_retry(super().flush, objects=objects)
+        settings = self._retry_settings
+        bind = self.get_bind()
+        if (
+            settings is None
+            or bind is None
+            or bind.dialect.name != "sqlite"
+            or settings.retry_attempts <= 1
+        ):
+            super().flush(objects=objects)
+            return
+
+        delay = settings.retry_backoff_ms / 1000
+        attempts = settings.retry_attempts
+
+        for attempt in range(attempts):
+            try:
+                super().flush(objects=objects)
+                return
+            except OperationalError as exc:
+                if not _is_sqlite_locked_error(exc):
+                    raise
+                if attempt == attempts - 1:
+                    raise
+                # Rollback to reset session state before retry
+                logger.warning(
+                    "SQLite database locked on flush (attempt %d/%d), rolling back and retrying...",
+                    attempt + 1,
+                    attempts,
+                )
+                super().rollback()
+                time.sleep(delay)
+                delay *= 2
 
 
 def _is_sqlite_locked_error(exc: OperationalError) -> bool:

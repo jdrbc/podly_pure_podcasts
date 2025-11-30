@@ -15,8 +15,9 @@ from shared.config import Config
 class BoundaryRefinement:
     refined_start: float
     refined_end: float
-    start_reason: str
-    end_reason: str
+    start_adjustment_reason: str
+    end_adjustment_reason: str
+    confidence_adjustment: float = 0.0
 
 
 class BoundaryRefiner:
@@ -86,8 +87,15 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                     BoundaryRefinement(
                         refined_start=float(data["refined_start"]),
                         refined_end=float(data["refined_end"]),
-                        start_reason=data.get("start_reason", ""),
-                        end_reason=data.get("end_reason", ""),
+                        start_adjustment_reason=data.get(
+                            "start_adjustment_reason", data.get("start_reason", "")
+                        ),
+                        end_adjustment_reason=data.get(
+                            "end_adjustment_reason", data.get("end_reason", "")
+                        ),
+                        confidence_adjustment=float(
+                            data.get("confidence_adjustment", 0.0)
+                        ),
                     ),
                 )
         except Exception as e:
@@ -134,7 +142,12 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 if any(p in seg["text"].lower() for p in outro_patterns):
                     refined_end = seg.get("end_time", seg["start_time"] + 5.0)
 
-        return BoundaryRefinement(refined_start, refined_end, "heuristic", "heuristic")
+        return BoundaryRefinement(
+            refined_start,
+            refined_end,
+            "heuristic",
+            "heuristic",
+        )
 
     def _validate(
         self, orig_start: float, orig_end: float, refinement: BoundaryRefinement

@@ -1,5 +1,6 @@
 # pylint: disable=too-many-lines
 import logging
+import math
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -436,69 +437,60 @@ class AdClassifier:
         max_overlap_segments: int,
     ) -> List[TranscriptSegment]:
         """Determine which segments should be carried forward to the next chunk."""
-        if not identified_segments or max_overlap_segments <= 0:
-            self.logger.debug(
-                "Skipping overlap computation: identified_segments=%s, max_overlap=%s",
-                len(identified_segments) if identified_segments else 0,
-                max_overlap_segments,
-            )
+        if max_overlap_segments <= 0 or not chunk_segments:
             return []
 
-        # Find the earliest identified ad segment in the chunk
-        identified_ids = {seg.id for seg in identified_segments}
-        earliest_index = None
-        for i, seg in enumerate(chunk_segments):
-            if seg.id in identified_ids:
-                earliest_index = i
-                break
+        # Baseline: carry ~50% of the chunk to guarantee overlap even without detections
+        base_tail_count = max(1, math.ceil(len(chunk_segments) / 2))
+        overlap_candidates = list(chunk_segments[-base_tail_count:])
 
-        if earliest_index is None:
-            self.logger.debug(
-                "No ad segments found in chunk; no overlap to carry forward"
+        if identified_segments:
+            # Preserve from earliest detected ad through the end of the chunk
+            identified_ids = {seg.id for seg in identified_segments}
+            earliest_index = None
+            for i, seg in enumerate(chunk_segments):
+                if seg.id in identified_ids:
+                    earliest_index = i
+                    break
+
+            if earliest_index is not None:
+                ad_tail = chunk_segments[earliest_index:]
+                overlap_candidates = self._combine_overlap_segments(
+                    overlap_segments=ad_tail,
+                    base_segments=overlap_candidates,
+                )
+
+            # Conditional tail replay: always include the final ~15 seconds when ads are present
+            tail_replay_segments = self._segments_covering_tail(
+                chunk_segments=chunk_segments, seconds=15.0
             )
-            return []
-
-        self.logger.debug(
-            "Found earliest ad segment at index %s (seq_num %s)",
-            earliest_index,
-            chunk_segments[earliest_index].sequence_num,
-        )
-
-        # Take from earliest ad to end of chunk
-        overlap_segments = chunk_segments[earliest_index:]
-
-        self.logger.debug(
-            "Taking from earliest ad to end: %s segments (seq_nums %s-%s)",
-            len(overlap_segments),
-            overlap_segments[0].sequence_num,
-            overlap_segments[-1].sequence_num,
-        )
-
-        # Cap at max_overlap_segments from the end
-        if len(overlap_segments) > max_overlap_segments:
-            trimmed = overlap_segments[-max_overlap_segments:]
-            self.logger.debug(
-                "Trimming overlap from %s to %s segments (max=%s). "
-                "Keeping seq_nums: %s",
-                len(overlap_segments),
-                len(trimmed),
-                max_overlap_segments,
-                [seg.sequence_num for seg in trimmed],
+            overlap_candidates = self._combine_overlap_segments(
+                overlap_segments=tail_replay_segments,
+                base_segments=overlap_candidates,
             )
-            return trimmed
 
-        self.logger.debug(
-            "Carrying forward %s overlap segments: seq_nums %s",
-            len(overlap_segments),
-            [seg.sequence_num for seg in overlap_segments],
+        capped = self._apply_overlap_cap(
+            overlap_candidates, max_override=max_overlap_segments
         )
-        return overlap_segments
+        self.logger.debug(
+            "Carrying forward %s overlap segments: seq_nums %s (identified=%s)",
+            len(capped),
+            [seg.sequence_num for seg in capped],
+            bool(identified_segments),
+        )
+        return capped
 
     def _apply_overlap_cap(
-        self, overlap_segments: List[TranscriptSegment]
+        self,
+        overlap_segments: List[TranscriptSegment],
+        max_override: Optional[int] = None,
     ) -> List[TranscriptSegment]:
         """Ensure stored overlap obeys configured limits."""
-        max_overlap = self.config.processing.max_overlap_segments
+        max_overlap = (
+            self.config.processing.max_overlap_segments
+            if max_override is None
+            else max_override
+        )
         if max_overlap <= 0 or not overlap_segments:
             if max_overlap <= 0 and overlap_segments:
                 self.logger.debug(
@@ -526,6 +518,28 @@ class AdClassifier:
             [seg.sequence_num for seg in trimmed],
         )
         return trimmed
+
+    def _segments_covering_tail(
+        self, *, chunk_segments: List[TranscriptSegment], seconds: float
+    ) -> List[TranscriptSegment]:
+        """Return the minimal set of segments covering the last `seconds` of audio."""
+        if not chunk_segments:
+            return []
+
+        last_end_time = (
+            chunk_segments[-1].end_time
+            if chunk_segments[-1].end_time is not None
+            else chunk_segments[-1].start_time
+        )
+        cutoff = last_end_time - seconds
+
+        tail_segments: List[TranscriptSegment] = []
+        for seg in reversed(chunk_segments):
+            tail_segments.append(seg)
+            if seg.start_time <= cutoff:
+                break
+
+        return list(reversed(tail_segments))
 
     def _validate_token_limit(self, user_prompt_str: str, system_prompt: str) -> bool:
         """Validate that the prompt doesn't exceed the configured token limit."""
@@ -797,9 +811,15 @@ class AdClassifier:
         created_count = 0
         matched_segments: List[TranscriptSegment] = []
         processed_segment_ids: Set[int] = set()
+        content_type = prediction_list.content_type
 
         for pred in prediction_list.ad_segments:
-            if pred.confidence < self.config.output.min_confidence:
+            adjusted_confidence = self._adjust_confidence(
+                base_confidence=pred.confidence,
+                content_type=content_type,
+            )
+
+            if adjusted_confidence < self.config.output.min_confidence:
                 self.logger.info(
                     f"Ad prediction offset {pred.segment_offset:.2f} for post {model_call.post_id} ignored due to low confidence: {pred.confidence:.2f} (min: {self.config.output.min_confidence})"
                 )
@@ -834,12 +854,76 @@ class AdClassifier:
                 transcript_segment_id=matched_segment.id,
                 model_call_id=model_call.id,
                 label="ad",
-                confidence=pred.confidence,
+                confidence=adjusted_confidence,
             )
             self.db_session.add(identification)
             created_count += 1
+            created_count += self._maybe_add_preroll_context(
+                matched_segment=matched_segment,
+                current_chunk_db_segments=current_chunk_db_segments,
+                model_call=model_call,
+                processed_segment_ids=processed_segment_ids,
+                matched_segments=matched_segments,
+                base_confidence=adjusted_confidence,
+            )
 
         return created_count, matched_segments
+
+    def _adjust_confidence(
+        self, *, base_confidence: float, content_type: Optional[str]
+    ) -> float:
+        """Demote confidence for self-promo/educational contexts."""
+        if not content_type:
+            return base_confidence
+
+        if content_type in {"educational/self_promo", "technical_discussion"}:
+            return max(0.0, base_confidence - 0.25)
+        if content_type == "transition":
+            return max(0.0, base_confidence - 0.1)
+        return base_confidence
+
+    def _maybe_add_preroll_context(
+        self,
+        *,
+        matched_segment: TranscriptSegment,
+        current_chunk_db_segments: List[TranscriptSegment],
+        model_call: ModelCall,
+        processed_segment_ids: Set[int],
+        matched_segments: List[TranscriptSegment],
+        base_confidence: float,
+    ) -> int:
+        """If an ad is detected within the first 45s, include up to 3 preceding intro segments."""
+        if matched_segment.start_time > 45.0:
+            return 0
+
+        created = 0
+        matched_index = current_chunk_db_segments.index(matched_segment)
+        start_index = max(0, matched_index - 3)
+        for seg in current_chunk_db_segments[start_index:matched_index]:
+            if seg.id in processed_segment_ids:
+                continue
+            if self._segment_has_ad_identification(seg.id):
+                continue
+
+            processed_segment_ids.add(seg.id)
+            matched_segments.append(seg)
+            identification = Identification(
+                transcript_segment_id=seg.id,
+                model_call_id=model_call.id,
+                label="ad",
+                confidence=max(base_confidence, self.config.output.min_confidence),
+            )
+            self.db_session.add(identification)
+            created += 1
+
+        if created:
+            self.logger.debug(
+                "Pre-roll look-back added %s intro segments before %s (post %s)",
+                created,
+                matched_segment.sequence_num,
+                model_call.post_id,
+            )
+        return created
 
     def _find_matching_segment(
         self,
@@ -1111,18 +1195,41 @@ class AdClassifier:
                 if key in existing:
                     continue
 
-                # Check for promotional cues
-                text = (seg.text or "").lower()
-                if self.cue_detector.has_cue(text):
-                    to_create.append(
-                        {
-                            "transcript_segment_id": seg.id,
-                            "model_call_id": model_call.id,
-                            "label": "ad",
-                            "confidence": 0.75,
-                        }
-                    )
-                    existing.add(key)  # Avoid duplicates in this batch
+                text = seg.text or ""
+                signals = self.cue_detector.analyze(text)
+                has_strong_cue = (
+                    signals["url"]
+                    or signals["promo"]
+                    or signals["phone"]
+                    or signals["cta"]
+                )
+                is_transition = signals["transition"]
+                is_self_promo = signals["self_promo"]
+
+                gap_seconds = abs(
+                    (seg.start_time or 0.0)
+                    - (ident.transcript_segment.start_time or 0.0)
+                )
+
+                if not (has_strong_cue or is_transition):
+                    if gap_seconds > 10.0:
+                        continue
+
+                confidence = 0.72 if is_transition else 0.75
+                if has_strong_cue:
+                    confidence = 0.85 if gap_seconds <= 10.0 else 0.8
+                if is_self_promo:
+                    confidence = max(0.5, confidence - 0.25)
+
+                to_create.append(
+                    {
+                        "transcript_segment_id": seg.id,
+                        "model_call_id": model_call.id,
+                        "label": "ad",
+                        "confidence": confidence,
+                    }
+                )
+                existing.add(key)  # Avoid duplicates in this batch
 
         # PHASE 3: Bulk insert (1 query)
 

@@ -9,7 +9,7 @@ def create_standard_test_config(
     llm_api_key: str = "test-key",
     llm_max_input_tokens_per_call: int | None = None,
     num_segments_to_input_to_prompt: int = 400,
-    max_overlap_segments: int = 6,
+    max_overlap_segments: int = 30,
 ) -> Config:
     """
     Create a standardized configuration for testing and demos.

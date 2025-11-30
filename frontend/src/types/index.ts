@@ -180,6 +180,7 @@ export interface AuthUser {
 export interface ManagedUser extends AuthUser {
   created_at: string;
   updated_at: string;
+  credits_balance?: string;
 }
 
 export interface DiscordStatus {

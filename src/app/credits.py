@@ -71,11 +71,11 @@ def _credits_from_minutes(minutes: float) -> Decimal:
         or DEFAULTS.MINUTES_PER_CREDIT
     )
     credits = Decimal(minutes / float(minutes_per_credit)).quantize(
-        Decimal("0.1"), rounding=ROUND_DOWN
+        Decimal("0.01"), rounding=ROUND_DOWN
     )
-    # Ensure we always charge at least a tenth of a credit for non-zero durations.
+    # Ensure we always charge at least a hundredth of a credit for non-zero durations.
     if credits <= 0:
-        return Decimal("0.1")
+        return Decimal("0.01")
     return credits
 
 
@@ -115,7 +115,7 @@ def apply_transaction(
             )
             return existing, balance
 
-    amount_signed = amount_signed.quantize(Decimal("0.1"))
+    amount_signed = amount_signed.quantize(Decimal("0.01"))
 
     try:
         locked_user = (

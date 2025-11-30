@@ -181,6 +181,9 @@ class AdMerger:
     def _is_valid_group(self, group: AdGroup) -> bool:
         """Filter out weak single-segment groups"""
         duration = group.end_time - group.start_time
+        if duration > 180.0 and not group.keywords and group.confidence_avg < 0.9:
+            # Long sponsor monologues without clear cues are likely educational/self-promo
+            return False
         if len(group.segments) < 2 or duration <= 10.0:
             # Keep only if has strong keywords or high confidence
             return len(group.keywords) >= 1 or group.confidence_avg >= 0.9

@@ -176,6 +176,7 @@ def list_users_route() -> RouteResult:
                     "role": u.role,
                     "created_at": u.created_at.isoformat(),
                     "updated_at": u.updated_at.isoformat(),
+                    "credits_balance": str(u.credits_balance or 0),
                 }
                 for u in users
             ]

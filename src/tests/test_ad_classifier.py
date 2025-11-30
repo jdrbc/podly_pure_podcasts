@@ -270,7 +270,7 @@ def test_compute_next_overlap_segments_includes_context(
         max_overlap_segments=6,
     )
 
-    assert [seg.sequence_num for seg in result] == [2, 3, 4, 5]
+    assert [seg.sequence_num for seg in result] == [0, 1, 2, 3, 4, 5]
 
 
 def test_compute_next_overlap_segments_respects_cap(
@@ -297,6 +297,29 @@ def test_compute_next_overlap_segments_respects_cap(
     )
 
     assert [seg.sequence_num for seg in result] == [4, 5]
+
+
+def test_compute_next_overlap_segments_baseline_overlap_without_ads(
+    test_classifier_with_mocks: AdClassifier,
+) -> None:
+    classifier = test_classifier_with_mocks
+    segments = [
+        TranscriptSegment(
+            id=i + 1,
+            post_id=1,
+            sequence_num=i,
+            start_time=float(i),
+            end_time=float(i + 1),
+            text=f"Segment {i}",
+        )
+        for i in range(8)
+    ]
+
+    result = classifier._compute_next_overlap_segments(
+        chunk_segments=segments, identified_segments=[], max_overlap_segments=4
+    )
+
+    assert [seg.sequence_num for seg in result] == [4, 5, 6, 7]
 
 
 def test_create_identifications_skips_existing_ad_label(

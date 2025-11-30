@@ -21,30 +21,23 @@ def transcript_excerpt_for_prompt(
 
 
 def generate_system_prompt() -> str:
-    valid_non_empty_example = AdSegmentPredictionList(
-        ad_segments=[
-            AdSegmentPrediction(segment_offset=12.34, confidence=0.9),
-            AdSegmentPrediction(segment_offset=56.78, confidence=0.8),
-        ]
-    ).model_dump_json()
-
-    valid_empty_example = AdSegmentPredictionList(ad_segments=[]).model_dump_json()
+    valid_empty_example = AdSegmentPredictionList(ad_segments=[]).model_dump_json(
+        exclude_none=True
+    )
 
     output_for_one_shot_example = AdSegmentPredictionList(
         ad_segments=[
-            AdSegmentPrediction(segment_offset=59.8, confidence=0.9),
-            AdSegmentPrediction(segment_offset=64.8, confidence=0.8),
-            AdSegmentPrediction(segment_offset=73.8, confidence=0.9),
+            AdSegmentPrediction(segment_offset=59.8, confidence=0.95),
+            AdSegmentPrediction(segment_offset=64.8, confidence=0.9),
+            AdSegmentPrediction(segment_offset=73.8, confidence=0.92),
             AdSegmentPrediction(segment_offset=77.8, confidence=0.98),
-            AdSegmentPrediction(segment_offset=79.8, confidence=0.88),
-        ]
-    ).model_dump_json()
+            AdSegmentPrediction(segment_offset=79.8, confidence=0.9),
+        ],
+        content_type="promotional_external",
+        confidence=0.96,
+    ).model_dump_json(exclude_none=True)
 
-    example_output_for_prompt = (
-        output_for_one_shot_example[:-1]
-        if output_for_one_shot_example.endswith("}")
-        else output_for_one_shot_example
-    )
+    example_output_for_prompt = output_for_one_shot_example.strip()
 
     one_shot_transcript_example = transcript_excerpt_for_prompt(
         [
@@ -87,25 +80,64 @@ def generate_system_prompt() -> str:
         includes_end=False,
     )
 
+    technical_example = transcript_excerpt_for_prompt(
+        [
+            Segment(
+                start=4762.7,
+                end=-1,
+                text="Our brains are configured differently.",
+            ),
+            Segment(
+                start=4765.6,
+                end=-1,
+                text="My brain is configured perfectly for Ruby, perfectly for a dynamically typed language.",
+            ),
+            Segment(
+                start=4831.3,
+                end=-1,
+                text="Shopify exists at a scale most programmers never touch, and it still runs on Rails.",
+            ),
+            Segment(start=4933.2, end=-1, text="Shopify.com has supported this show."),
+        ],
+        includes_start=False,
+        includes_end=False,
+    )
+
     # pylint: disable=line-too-long
-    return f"""Your job is to identify ads in excerpts of podcast transcripts. Ads are for other network podcasts and products or services.
+    return f"""Your job is to identify advertisements in podcast transcript excerpts with high precision, continuity awareness, and content-context sensitivity.
 
-There may be a pre-roll ad before the intro, as well as mid-roll and an end-roll ad after the outro.
+CRITICAL: distinguish external sponsor ads from technical discussion and self-promotion.
 
-Ad breaks are between 15 seconds and 120 seconds long.
+CONTENT-AWARE TAXONOMY:
+- technical_discussion: Educational content, case studies, implementation details. Company names may appear as examples; do not mark as ads.
+- educational/self_promo: Host discussing their own products, newsletters, funds, or courses (may include CTAs but are first-party).
+- promotional_external: True sponsor ads for external companies with sales intent, URLs, promo codes, or explicit offers.
+- transition: Brief bumpers that connect to or from ads; include if they are part of an ad block.
 
-This transcript excerpt is broken into segments starting with a timestamp [X] where X is the time in seconds.
+JSON CONTRACT (strict):
+- Always respond with: {{"ad_segments": [...], "content_type": "<taxonomy>", "confidence": <0.0-1.0>}}
+- Each ad_segments item must be: {{"segment_offset": <seconds.float>, "confidence": <0.0-1.0>}}
+- If there are no ads, respond with: {valid_empty_example} (no extra keys).
 
-Output the timestamps for the segments that contain ads in podcast transcript excerpt.
+DURATION AND CUE GUIDANCE:
+- Ads are typically 15–120 seconds and contain CTAs, URLs/domains, promo/discount codes, phone numbers, or phrases like "brought to you by".
+- Integrated ads can be longer but maintain sales intent; continuous mention of the same sponsor for >3 minutes without CTAs is likely educational/self_promo.
+- Pre-roll/mid-roll/post-roll intros ("a word from our sponsor") and quick outros ("back to the show") belong to the ad block.
 
-Include a confidence score out of 1 for the the classification, with 1 being the most confident and 0 being the least confident.
+DECISION RULES:
+1) Continuous ads: once an ad starts, follow it to its natural conclusion; include 1–5 second transitions.
+2) Strong cues: treat URLs/domains, promo/discount language, and phone numbers as strong sponsor indicators.
+3) Self-promotion guardrail: host promoting their own products/platforms → classify as educational/self_promo with lower confidence unless explicit external sponsorship language is present.
+4) Boundary bias: if later segments clearly form an ad for a sponsor, pull in the prior two intro/transition lines as ad content.
+5) Prefer labeling as content unless multiple strong ad cues appear with clear external branding.
 
-Respond with valid JSON: {valid_non_empty_example}.
+This transcript excerpt is broken into segments starting with a timestamp [X] (seconds). Output every segment that is advertisement content.
 
-If there are no ads respond: {valid_empty_example}. Do not respond with anything else.
-
-For example, given the transcript excerpt:
-
+Example (external sponsor with CTA):
 {one_shot_transcript_example}
+Output: {example_output_for_prompt}
 
-Output: {example_output_for_prompt}.\n\n"""
+Example (technical mention, not an ad):
+{technical_example}
+Output: {{"ad_segments": [{{"segment_offset": 4933.2, "confidence": 0.75}}], "content_type": "technical_discussion", "confidence": 0.45}}
+\n\n"""

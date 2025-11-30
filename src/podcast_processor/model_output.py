@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -10,6 +10,15 @@ class AdSegmentPrediction(BaseModel):
 
 class AdSegmentPredictionList(BaseModel):
     ad_segments: List[AdSegmentPrediction]
+    content_type: Optional[
+        Literal[
+            "technical_discussion",
+            "educational/self_promo",
+            "promotional_external",
+            "transition",
+        ]
+    ] = None
+    confidence: Optional[float] = None
 
 
 def clean_and_parse_model_output(model_output: str) -> AdSegmentPredictionList:
