@@ -4,14 +4,9 @@ import flask
 from flask import Blueprint, request
 from flask.typing import ResponseReturnValue
 
-from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
-from app.jobs_manager_run_service import (
-    get_active_run,
-    recalculate_run_counts,
-    serialize_run,
-)
+from app.jobs_manager_run_service import build_run_status_snapshot
 from app.post_cleanup import cleanup_processed_posts, count_cleanup_candidates
 from app.runtime_config import config as runtime_config
 
@@ -43,19 +38,8 @@ def api_list_all_jobs() -> ResponseReturnValue:
 
 @jobs_bp.route("/api/job-manager/status", methods=["GET"])
 def api_job_manager_status() -> ResponseReturnValue:
-    run = get_active_run(db.session)
-    if run:
-        recalculate_run_counts(db.session)
-
-    # Persist any aggregate updates performed above
-    commit_with_profile(
-        db.session,
-        must_succeed=False,
-        context="job_manager_status",
-        logger_obj=logger,
-    )
-
-    return flask.jsonify({"run": serialize_run(run) if run else None})
+    run_snapshot = build_run_status_snapshot(db.session)
+    return flask.jsonify({"run": run_snapshot})
 
 
 @jobs_bp.route("/api/jobs/<string:job_id>/cancel", methods=["POST"])

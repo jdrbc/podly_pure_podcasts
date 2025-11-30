@@ -6,7 +6,7 @@ import pytest
 from flask import Flask
 
 from app.extensions import db
-from app.models import ModelCall, Post, TranscriptSegment
+from app.models import Feed, ModelCall, Post, TranscriptSegment
 from podcast_processor.transcribe import Segment, Transcriber
 from podcast_processor.transcription_manager import TranscriptionManager
 from shared.config import Config, TestWhisperConfig
@@ -249,3 +249,54 @@ def test_transcribe_handles_error(
         assert mock_db_session.rollback.called
         assert mock_db_session.add.called
         assert mock_db_session.commit.called
+
+
+def test_transcribe_reuses_placeholder_model_call(
+    test_config: Config,
+    test_logger: logging.Logger,
+    app: Flask,
+) -> None:
+    """Ensure we reuse existing placeholder ModelCall rows instead of crashing on uniqueness."""
+    with app.app_context():
+        feed = Feed(title="Test Feed", rss_url="http://example.com/rss.xml")
+        post = Post(
+            feed=feed,
+            guid="guid-123",
+            download_url="http://example.com/audio.mp3",
+            title="Test Post",
+            unprocessed_audio_path="/tmp/audio.mp3",
+        )
+        db.session.add_all([feed, post])
+        db.session.commit()
+
+        existing_call = ModelCall(
+            post_id=post.id,
+            model_name="mock_transcriber",
+            first_segment_sequence_num=0,
+            last_segment_sequence_num=-1,
+            prompt="Whisper transcription job",
+            status="failed_permanent",
+        )
+        db.session.add(existing_call)
+        db.session.commit()
+
+        manager = TranscriptionManager(
+            test_logger,
+            test_config,
+            db_session=db.session,
+            transcriber=MockTranscriber(
+                [
+                    Segment(start=0.0, end=5.0, text="Segment 1"),
+                    Segment(start=5.0, end=10.0, text="Segment 2"),
+                ]
+            ),
+        )
+
+        segments = manager.transcribe(post)
+
+        assert len(segments) == 2
+        assert ModelCall.query.count() == 1
+        refreshed_call = ModelCall.query.first()
+        assert refreshed_call.id == existing_call.id
+        assert refreshed_call.status == "success"
+        assert refreshed_call.last_segment_sequence_num == 1

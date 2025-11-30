@@ -177,3 +177,64 @@ def serialize_run(run: JobsManagerRun) -> Dict[str, object]:
         ),
         "progress_percentage": round(progress_percentage, 2),
     }
+
+
+def build_run_status_snapshot(session: Any) -> Optional[Dict[str, object]]:
+    """
+    Return a fresh, non-persisted snapshot of the current run counters.
+
+    This mirrors recalculate_run_counts but does not mutate or flush the
+    JobsManagerRun row, making it safe for high-frequency polling without
+    competing for SQLite write locks.
+    """
+    run = get_active_run(session)
+    if not run:
+        return None
+
+    cutoff = run.counters_reset_at
+    query = session.query(
+        ProcessingJob.status,
+        func.count(ProcessingJob.id),  # pylint: disable=not-callable
+    ).filter(ProcessingJob.jobs_manager_run_id == run.id)
+    if cutoff:
+        query = query.filter(ProcessingJob.created_at >= cutoff)
+    counts = dict(query.group_by(ProcessingJob.status).all())
+
+    queued = counts.get("pending", 0) + counts.get("queued", 0)
+    running = counts.get("running", 0)
+    completed = counts.get("completed", 0)
+    failed = counts.get("failed", 0) + counts.get("cancelled", 0)
+    skipped = counts.get("skipped", 0)
+    total_jobs = sum(counts.values())
+
+    has_active_work = (queued + running) > 0
+    status = run.status
+    if has_active_work:
+        status = "running" if running > 0 else "pending"
+    else:
+        status = "pending"
+
+    progress_denom = max(total_jobs or 0, 1)
+    progress_percentage = (
+        ((completed + skipped) / progress_denom) * 100.0 if total_jobs else 0.0
+    )
+
+    return {
+        "id": run.id,
+        "status": status,
+        "trigger": run.trigger,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+        "total_jobs": total_jobs,
+        "queued_jobs": queued,
+        "running_jobs": running,
+        "completed_jobs": completed,
+        "failed_jobs": failed,
+        "skipped_jobs": skipped,
+        "context": run.context_json,
+        "counters_reset_at": (
+            run.counters_reset_at.isoformat() if run.counters_reset_at else None
+        ),
+        "progress_percentage": round(progress_percentage, 2),
+    }

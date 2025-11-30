@@ -1,5 +1,5 @@
 import logging
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 
 from sqlalchemy.exc import IntegrityError
 
@@ -104,25 +104,55 @@ class TranscriptionManager:
             )
         return None
 
-    def transcribe(self, post: Post) -> List[TranscriptSegment]:
-        """
-        Transcribes a podcast audio file, or retrieves existing transcription.
+    def _get_or_create_whisper_model_call(self, post: Post) -> ModelCall:
+        """Create or reuse the placeholder ModelCall row for a Whisper run."""
+        placeholder_filters = {
+            "post_id": post.id,
+            "model_name": self.transcriber.model_name,
+            "first_segment_sequence_num": 0,
+            "last_segment_sequence_num": -1,
+        }
+        reset_fields = {
+            "status": "pending",
+            "prompt": "Whisper transcription job",
+            "retry_attempts": 0,
+            "error_message": None,
+            "response": None,
+        }
 
-        Args:
-            post: The Post object containing the podcast audio to transcribe
-
-        Returns:
-            A list of TranscriptSegment objects with the transcription results
-        """
-        self.logger.info(
-            f"Starting transcription process for post {post.id} using {self.transcriber.model_name}"
+        existing = cast(
+            Optional[ModelCall],
+            self.model_call_query.filter_by(**placeholder_filters)
+            .order_by(ModelCall.timestamp.desc())
+            .first(),
         )
+        if existing:
+            self.logger.info(
+                "Reusing existing Whisper ModelCall %s for post %s (status=%s). Resetting to pending if needed.",
+                existing.id,
+                post.id,
+                existing.status,
+            )
+            needs_update = any(
+                getattr(existing, field) != value
+                for field, value in reset_fields.items()
+            )
+            if not needs_update:
+                return existing
 
-        existing_segments = self._check_existing_transcription(post)
-        if existing_segments is not None:
-            return existing_segments
+            # Atomic single update to minimize lock churn
+            self.model_call_query.filter_by(id=existing.id).update(
+                reset_fields, synchronize_session=False
+            )
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="reuse_whisper_model_call",
+                logger_obj=self.logger,
+            )
+            self.db_session.expire(existing)
+            return existing
 
-        # Create a new ModelCall record for this transcription attempt (upsert-safe)
         current_whisper_call = ModelCall(
             post_id=post.id,
             model_name=self.transcriber.model_name,
@@ -142,22 +172,59 @@ class TranscriptionManager:
         except IntegrityError:
             # Another process/thread created the same unique ModelCall concurrently
             self.db_session.rollback()
-            current_whisper_call = (
-                self.model_call_query.filter_by(
-                    post_id=post.id,
-                    model_name=self.transcriber.model_name,
-                    first_segment_sequence_num=0,
-                    last_segment_sequence_num=-1,
-                )
+            current_whisper_call = cast(
+                Optional[ModelCall],
+                self.model_call_query.filter_by(**placeholder_filters)
                 .order_by(ModelCall.timestamp.desc())
-                .first()
+                .first(),
             )
             if not current_whisper_call:
                 # If not found despite conflict, re-raise
                 raise
+            self.logger.info(
+                "Found concurrent Whisper ModelCall %s for post %s after IntegrityError. Resetting to pending if needed.",
+                current_whisper_call.id,
+                post.id,
+            )
+            needs_update = any(
+                getattr(current_whisper_call, field) != value
+                for field, value in reset_fields.items()
+            )
+            if needs_update:
+                self.model_call_query.filter_by(id=current_whisper_call.id).update(
+                    reset_fields, synchronize_session=False
+                )
+                commit_with_profile(
+                    self.db_session,
+                    must_succeed=True,
+                    context="recover_whisper_model_call",
+                    logger_obj=self.logger,
+                )
 
+        return current_whisper_call
+
+    def transcribe(self, post: Post) -> List[TranscriptSegment]:
+        """
+        Transcribes a podcast audio file, or retrieves existing transcription.
+
+        Args:
+            post: The Post object containing the podcast audio to transcribe
+
+        Returns:
+            A list of TranscriptSegment objects with the transcription results
+        """
         self.logger.info(
-            f"Created new Whisper ModelCall {current_whisper_call.id} for post {post.id}."
+            f"Starting transcription process for post {post.id} using {self.transcriber.model_name}"
+        )
+
+        existing_segments = self._check_existing_transcription(post)
+        if existing_segments is not None:
+            return existing_segments
+
+        # Create or reuse the ModelCall record for this transcription attempt
+        current_whisper_call = self._get_or_create_whisper_model_call(post)
+        self.logger.info(
+            f"Prepared Whisper ModelCall {current_whisper_call.id} for post {post.id}."
         )
 
         try:
@@ -233,35 +300,85 @@ class TranscriptionManager:
     # ------------------------ Internal helpers ------------------------
     def _delete_existing_segments_for_post(self, post_id: int) -> None:
         """Delete existing transcript segments and their identifications for a post."""
-        batch_size = 200
-        while True:
-            ids_batch = [
-                row[0]
-                for row in self.db_session.query(TranscriptSegment.id)
-                .filter_by(post_id=post_id)
-                .limit(batch_size)
-                .all()
-            ]
-            if not ids_batch:
-                break
+        # Expire (don't rollback!) to release any stale state without detaching objects.
+        # A rollback would detach the ModelCall we just committed, causing
+        # "not persistent within this Session" errors later.
+        self.db_session.expire_all()
 
-            # Delete identifications for this batch
-            self.db_session.query(Identification).filter(
-                Identification.transcript_segment_id.in_(ids_batch)
-            ).delete(synchronize_session=False)
+        # Smaller batches reduce SQLite lock hold times; no_autoflush prevents unrelated
+        # dirty objects from being flushed as part of the delete.
+        batch_size = 50
+        batch_num = 0
+        with self.db_session.no_autoflush:
+            while True:
+                ids_batch = [
+                    row[0]
+                    for row in self.db_session.query(TranscriptSegment.id)
+                    .filter_by(post_id=post_id)
+                    .limit(batch_size)
+                    .all()
+                ]
+                if not ids_batch:
+                    break
 
-            # Delete transcript segments for this batch
-            self.segment_query.filter(TranscriptSegment.id.in_(ids_batch)).delete(
-                synchronize_session=False
-            )
+                batch_num += 1
+                self.logger.info(
+                    "[TRANSCRIPT_DELETE] post_id=%s batch=%s size=%s",
+                    post_id,
+                    batch_num,
+                    len(ids_batch),
+                )
+                # Delete identifications for this batch
+                try:
+                    self.logger.debug(
+                        "[TRANSCRIPT_DELETE] post_id=%s batch=%s deleting identifications and segments",
+                        post_id,
+                        batch_num,
+                    )
+                    self.db_session.query(Identification).filter(
+                        Identification.transcript_segment_id.in_(ids_batch)
+                    ).delete(synchronize_session=False)
 
-            # Commit per batch to release locks quickly
-            commit_with_profile(
-                self.db_session,
-                must_succeed=False,
-                context="delete_transcript_segments_batch",
-                logger_obj=self.logger,
-            )
+                    # Delete transcript segments for this batch
+                    # NOTE: Must use self.db_session.query() instead of self.segment_query
+                    # to ensure we use the same session. Using TranscriptSegment.query
+                    # (the Flask-SQLAlchemy scoped session) causes deadlock with SQLite
+                    # pessimistic locking when another query on self.db_session holds
+                    # the write lock.
+                    self.db_session.query(TranscriptSegment).filter(
+                        TranscriptSegment.id.in_(ids_batch)
+                    ).delete(synchronize_session=False)
+
+                    # Commit per batch to release locks quickly
+                    commit_with_profile(
+                        self.db_session,
+                        must_succeed=True,
+                        context="delete_transcript_segments_batch",
+                        logger_obj=self.logger,
+                    )
+                    self.logger.info(
+                        "[TRANSCRIPT_DELETE] post_id=%s batch=%s committed",
+                        post_id,
+                        batch_num,
+                    )
+                except Exception as exc:  # pylint: disable=broad-except
+                    self.logger.error(
+                        "[TRANSCRIPT_DELETE] post_id=%s batch=%s failed during delete/commit: %s",
+                        post_id,
+                        batch_num,
+                        exc,
+                        exc_info=True,
+                    )
+                    try:
+                        self.db_session.rollback()
+                    except Exception:  # pylint: disable=broad-except
+                        self.logger.error(
+                            "[TRANSCRIPT_DELETE] post_id=%s batch=%s rollback failed after error",
+                            post_id,
+                            batch_num,
+                            exc_info=True,
+                        )
+                    raise
 
     def _persist_segments(
         self, post_id: int, pydantic_segments: List[Any]

@@ -115,6 +115,23 @@ class ProcessingStatusManager:
             context="update_job_status",
             logger_obj=self.logger,
         )
+        if status in {"failed", "cancelled"}:
+            progress_to_log = (
+                progress
+                if progress is not None
+                else (
+                    job.progress_percentage or 0.0 if job.progress_percentage else 0.0
+                )
+            )
+            self.logger.error(
+                "[JOB_STATUS_ERROR] job_id=%s post_guid=%s status=%s step=%s step_name=%s progress=%.2f",
+                getattr(job, "id", None),
+                getattr(job, "post_guid", None),
+                status,
+                step,
+                step_name,
+                progress_to_log,
+            )
         if self.logger:
             self.logger.debug(
                 (

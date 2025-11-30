@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from flask_sqlalchemy.session import Session as FlaskSession
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import scoped_session
 
 logger = logging.getLogger("global_logger")
+_db_trace_logger: logging.Logger | None = None
 
 # Ensure database lock errors are always visible on stdout
 _stdout_handler = logging.StreamHandler(sys.stdout)
@@ -24,7 +26,8 @@ _stdout_handler.setFormatter(
 _db_lock_logger = logging.getLogger("podly.db_lock")
 _db_lock_logger.addHandler(_stdout_handler)
 _db_lock_logger.setLevel(logging.WARNING)
-_db_lock_logger.propagate = False
+# Allow propagation so platform log collectors that listen to root (e.g., Railway UI) also see DB_LOCK entries
+_db_lock_logger.propagate = True
 
 _WRITE_LOCK = threading.RLock()
 _WRITE_PREFIXES = (
@@ -39,9 +42,9 @@ _WRITE_PREFIXES = (
     "pragma",
 )
 
-DEFAULT_SQLITE_MODE = "optimistic"
-DEFAULT_SQLITE_RETRY_ATTEMPTS = 8
-DEFAULT_SQLITE_RETRY_BACKOFF_MS = 100
+DEFAULT_SQLITE_MODE = "pessimistic"  # serialize SQLite writers to avoid lock storms
+DEFAULT_SQLITE_RETRY_ATTEMPTS = 12
+DEFAULT_SQLITE_RETRY_BACKOFF_MS = 200
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ def configure_sqlite_concurrency(
     engine: Engine, settings: SQLiteConcurrencySettings
 ) -> None:
     """Attach locking/retry behaviors to a SQLite engine."""
+    _install_query_trace(engine)
     if engine.dialect.name != "sqlite" or not settings.enabled:
         return
 
@@ -206,6 +210,14 @@ class RetryingSession(FlaskSession):
                     str(exc),
                     delay,
                 )
+                _db_lock_logger.error(
+                    _format_sqlite_lock_log(
+                        exc,
+                        statement=getattr(exc, "statement", None),
+                        params=getattr(exc, "params", None),
+                        context="commit",
+                    )
+                )
                 logger.warning(
                     "SQLite database locked on commit (attempt %d/%d), rolling back and retrying...",
                     attempt + 1,
@@ -254,6 +266,14 @@ class RetryingSession(FlaskSession):
                     attempts,
                     str(exc),
                     delay,
+                )
+                _db_lock_logger.error(
+                    _format_sqlite_lock_log(
+                        exc,
+                        statement=getattr(exc, "statement", None),
+                        params=getattr(exc, "params", None),
+                        context="flush",
+                    )
                 )
                 logger.warning(
                     "SQLite database locked on flush (attempt %d/%d), rolling back and retrying...",
@@ -324,6 +344,116 @@ def _install_write_lock(engine: Engine) -> None:
         if ctx is not None and getattr(ctx, "_podly_write_lock_acquired", False):
             _WRITE_LOCK.release()
             ctx._podly_write_lock_acquired = False
+        orig = exception_context.original_exception
+        if isinstance(orig, OperationalError) and _is_sqlite_locked_error(orig):
+            _db_lock_logger.error(
+                _format_sqlite_lock_log(
+                    orig,
+                    statement=getattr(exception_context, "statement", None),
+                    params=getattr(exception_context, "parameters", None),
+                    context="handle_error",
+                )
+            )
 
     engine._podly_write_lock_installed = True  # type: ignore[attr-defined]
     logger.info("SQLite pessimistic concurrency enabled (single-writer lock).")
+
+
+def _format_sqlite_lock_log(
+    exc: OperationalError, *, statement: Any = None, params: Any = None, context: str
+) -> str:
+    stmt_preview = ""
+    if isinstance(statement, str):
+        stmt_preview = statement.strip().replace("\n", " ")
+        if len(stmt_preview) > 300:
+            stmt_preview = stmt_preview[:300] + "...<truncated>"
+    params_preview = ""
+    if params is not None:
+        params_str = str(params)
+        if len(params_str) > 300:
+            params_preview = params_str[:300] + "...<truncated>"
+        else:
+            params_preview = params_str
+    return (
+        f"[SQLITE_LOCK] context={context} thread={threading.current_thread().name} "
+        f'time={datetime.utcnow().isoformat()} statement="{stmt_preview}" '
+        f'params="{params_preview}" exc={exc}'
+    )
+
+
+def _preview(obj: Any, max_len: int = 500) -> str:
+    if obj is None:
+        return ""
+    text = str(obj).replace("\n", " ").strip()
+    if len(text) > max_len:
+        return text[:max_len] + "...<truncated>"
+    return text
+
+
+def _install_query_trace(engine: Engine) -> None:
+    """
+    Attach detailed tracing for every SQL execution. Logs start/end with thread, duration,
+    statement, and params to the global logger (DEBUG level).
+    """
+    if getattr(engine, "_podly_query_trace_installed", False):
+        return
+
+    def _trace_logger() -> logging.Logger:
+        global _db_trace_logger  # pylint: disable=global-statement
+        if _db_trace_logger is not None:
+            return _db_trace_logger
+        _db_trace_logger = logging.getLogger("podly.db_trace")
+        _db_trace_logger.setLevel(logging.DEBUG)
+        _db_trace_logger.propagate = False
+        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        # File handler only to avoid flooding stdout in production
+        try:
+            fh = logging.FileHandler("src/instance/logs/db_trace.log")
+            fh.setFormatter(fmt)
+            _db_trace_logger.addHandler(fh)
+        except OSError:
+            pass
+        return _db_trace_logger
+
+    trace_logger = _trace_logger()
+
+    def _before_execute(
+        conn: Any,
+        cursor: Any,
+        statement: Any,
+        parameters: Any,
+        context: Any,
+        executemany: Any,
+    ) -> None:
+        context._podly_trace_start = time.perf_counter()
+        trace_logger.debug(
+            '[DB_TRACE][start] thread=%s statement="%s" params="%s"',
+            threading.current_thread().name,
+            _preview(statement),
+            _preview(parameters),
+        )
+
+    def _after_execute(
+        conn: Any,
+        cursor: Any,
+        statement: Any,
+        parameters: Any,
+        context: Any,
+        executemany: Any,
+    ) -> None:
+        start = getattr(context, "_podly_trace_start", None)
+        duration_ms = (time.perf_counter() - start) * 1000 if start else 0.0
+        rowcount = getattr(cursor, "rowcount", None)
+        trace_logger.debug(
+            '[DB_TRACE][end] thread=%s duration_ms=%.2f rowcount=%s statement="%s" params="%s"',
+            threading.current_thread().name,
+            duration_ms,
+            rowcount,
+            _preview(statement),
+            _preview(parameters),
+        )
+
+    event.listen(engine, "before_cursor_execute", _before_execute)
+    event.listen(engine, "after_cursor_execute", _after_execute)
+    engine._podly_query_trace_installed = True  # type: ignore[attr-defined]
+    logger.info("DB trace logging enabled for engine.")

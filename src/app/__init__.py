@@ -33,7 +33,8 @@ logger = logging.getLogger("global_logger")
 
 
 def _get_sqlite_busy_timeout_ms() -> int:
-    return 30000
+    # Longer timeout to allow large batch deletes/updates to finish before giving up
+    return 90000
 
 
 def setup_dirs() -> None:
@@ -270,6 +271,7 @@ def _configure_database(
         "connect_args": {
             "timeout": connect_timeout,
         },
+        # Keep pool small to reduce concurrent SQLite writers
         "pool_size": 5,
         "max_overflow": 5,
     }

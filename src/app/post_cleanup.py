@@ -172,7 +172,9 @@ def _clear_post_paths(post: Post) -> None:
 
 def _delete_post_related_rows(post: Post) -> None:
     """Remove dependent rows linked to a post."""
-    batch_size = 200
+    # Smaller batches reduce lock time on SQLite
+    batch_size = 50
+    batch_num = 0
 
     # Delete transcript segments and identifications in batches
     while True:
@@ -186,6 +188,13 @@ def _delete_post_related_rows(post: Post) -> None:
         if not segment_ids:
             break
 
+        batch_num += 1
+        logger.info(
+            "[CLEANUP_DELETE] post_id=%s batch=%s size=%s",
+            post.id,
+            batch_num,
+            len(segment_ids),
+        )
         db.session.query(Identification).filter(
             Identification.transcript_segment_id.in_(segment_ids)
         ).delete(synchronize_session=False)
@@ -199,6 +208,9 @@ def _delete_post_related_rows(post: Post) -> None:
             must_succeed=False,
             context="delete_transcript_segments_batch",
             logger_obj=logger,
+        )
+        logger.info(
+            "[CLEANUP_DELETE] post_id=%s batch=%s committed", post.id, batch_num
         )
 
     # Delete model calls in batches
