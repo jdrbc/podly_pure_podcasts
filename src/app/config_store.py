@@ -5,6 +5,7 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 from app.background import add_background_job, schedule_cleanup_job
+from app.db_concurrency import commit_with_profile
 from app.extensions import db, scheduler
 from app.models import (
     AppSettings,
@@ -71,7 +72,12 @@ def _ensure_row(model: type, defaults: Dict[str, Any]) -> Any:
     if row is None:
         row = model(id=1, **defaults)
         db.session.add(row)
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="ensure_settings_row",
+            logger_obj=logger,
+        )
     return row
 
 
@@ -363,7 +369,12 @@ def _apply_env_overrides_to_db_first_boot() -> None:
     # Future: add processing/output/app env-to-db seeding if envs defined
 
     if changed:
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="env_overrides_to_db",
+            logger_obj=logger,
+        )
 
 
 def read_combined() -> Dict[str, Any]:
@@ -456,7 +467,12 @@ def _update_section_llm(data: Dict[str, Any]) -> None:
             if key == "llm_api_key" and _is_empty(new_val):
                 continue
             setattr(row, key, new_val)
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="update_llm_settings",
+        logger_obj=logger,
+    )
 
 
 def _update_section_whisper(data: Dict[str, Any]) -> None:
@@ -503,7 +519,12 @@ def _update_section_whisper(data: Dict[str, Any]) -> None:
     else:
         # test type has no extra fields
         pass
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="update_whisper_settings",
+        logger_obj=logger,
+    )
 
 
 def _update_section_processing(data: Dict[str, Any]) -> None:
@@ -514,7 +535,12 @@ def _update_section_processing(data: Dict[str, Any]) -> None:
     ]:
         if key in data:
             setattr(row, key, data[key])
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="update_processing_settings",
+        logger_obj=logger,
+    )
 
 
 def _update_section_output(data: Dict[str, Any]) -> None:
@@ -528,7 +554,12 @@ def _update_section_output(data: Dict[str, Any]) -> None:
     ]:
         if key in data:
             setattr(row, key, data[key])
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="update_output_settings",
+        logger_obj=logger,
+    )
 
 
 def _update_section_app(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
@@ -545,7 +576,12 @@ def _update_section_app(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[i
     ]:
         if key in data:
             setattr(row, key, data[key])
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="update_app_settings",
+        logger_obj=logger,
+    )
     return old_interval, old_retention
 
 

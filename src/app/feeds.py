@@ -9,6 +9,7 @@ import feedparser  # type: ignore[import-untyped]
 import PyRSS2Gen  # type: ignore[import-untyped]
 from flask import current_app, g, request
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import Feed, Post, ProcessingJob
 from app.runtime_config import config
@@ -103,7 +104,12 @@ number_of_episodes_to_whitelist_from_archive_of_new_feed setting: {entry.title}"
                 p.whitelisted = config.automatically_whitelist_new_episodes
             _ensure_job_for_post_guid(p.guid, status_manager)
             db.session.add(p)
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="refresh_feed",
+        logger_obj=logger,
+    )
 
     for post in feed.posts:  # type: ignore[attr-defined]
         _ensure_job_for_post_guid(post.guid, status_manager)
@@ -135,7 +141,12 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
             image_url=feed_data.feed.image.href,
         )
         db.session.add(feed)
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="add_feed_initial",
+            logger_obj=logger,
+        )
 
         status_manager = ProcessingStatusManager(db_session=db.session, logger=logger)
         num_posts_added = 0
@@ -156,7 +167,12 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
                 p.whitelisted = config.automatically_whitelist_new_episodes
             db.session.add(p)
             _ensure_job_for_post_guid(p.guid, status_manager)
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="add_feed_posts",
+            logger_obj=logger,
+        )
         logger.info(f"Feed stored with ID: {feed.id}")
         return feed
     except Exception as e:

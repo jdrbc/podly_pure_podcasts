@@ -130,7 +130,10 @@ class OpenAIWhisperTranscriber(Transcriber):
         return self.config.model  # e.g. "whisper-1"
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
-        self.logger.info("Using remote whisper")
+        self.logger.info(
+            "[WHISPER_REMOTE] Starting remote whisper transcription for: %s",
+            audio_file_path,
+        )
         audio_chunk_path = audio_file_path + "_parts"
 
         chunks = split_audio(
@@ -139,14 +142,31 @@ class OpenAIWhisperTranscriber(Transcriber):
             self.config.chunksize_mb * 1024 * 1024,
         )
 
+        self.logger.info("[WHISPER_REMOTE] Processing %d chunks", len(chunks))
         all_segments: List[TranscriptionSegment] = []
 
-        for chunk in chunks:
+        for idx, chunk in enumerate(chunks):
             chunk_path, offset = chunk
+            self.logger.info(
+                "[WHISPER_REMOTE] Processing chunk %d/%d: %s",
+                idx + 1,
+                len(chunks),
+                chunk_path,
+            )
             segments = self.get_segments_for_chunk(str(chunk_path))
+            self.logger.info(
+                "[WHISPER_REMOTE] Chunk %d/%d complete: %d segments",
+                idx + 1,
+                len(chunks),
+                len(segments),
+            )
             all_segments.extend(self.add_offset_to_segments(segments, offset))
 
         shutil.rmtree(audio_chunk_path)
+        self.logger.info(
+            "[WHISPER_REMOTE] Transcription complete: %d total segments",
+            len(all_segments),
+        )
         return self.convert_segments(all_segments)
 
     @staticmethod
@@ -173,7 +193,11 @@ class OpenAIWhisperTranscriber(Transcriber):
 
     def get_segments_for_chunk(self, chunk_path: str) -> List[TranscriptionSegment]:
         with open(chunk_path, "rb") as f:
-            self.logger.info(f"Transcribing chunk {chunk_path}")
+            self.logger.info(
+                "[WHISPER_API_CALL] Sending chunk to API: %s (timeout=%ds)",
+                chunk_path,
+                self.config.timeout_sec,
+            )
 
             transcription = self.openai_client.audio.transcriptions.create(
                 model=self.config.model,
@@ -214,21 +238,41 @@ class GroqWhisperTranscriber(Transcriber):
         return f"groq_{self.config.model}"
 
     def transcribe(self, audio_file_path: str) -> List[Segment]:
-        self.logger.info("Using Groq whisper")
+        self.logger.info(
+            "[WHISPER_GROQ] Starting Groq whisper transcription for: %s",
+            audio_file_path,
+        )
         audio_chunk_path = audio_file_path + "_parts"
 
         chunks = split_audio(
             Path(audio_file_path), Path(audio_chunk_path), 12 * 1024 * 1024
         )
 
+        self.logger.info("[WHISPER_GROQ] Processing %d chunks", len(chunks))
         all_segments: List[GroqTranscriptionSegment] = []
 
-        for chunk in chunks:
+        for idx, chunk in enumerate(chunks):
             chunk_path, offset = chunk
+            self.logger.info(
+                "[WHISPER_GROQ] Processing chunk %d/%d: %s",
+                idx + 1,
+                len(chunks),
+                chunk_path,
+            )
             segments = self.get_segments_for_chunk(str(chunk_path))
+            self.logger.info(
+                "[WHISPER_GROQ] Chunk %d/%d complete: %d segments",
+                idx + 1,
+                len(chunks),
+                len(segments),
+            )
             all_segments.extend(self.add_offset_to_segments(segments, offset))
 
         shutil.rmtree(audio_chunk_path)
+        self.logger.info(
+            "[WHISPER_GROQ] Transcription complete: %d total segments",
+            len(all_segments),
+        )
         return self.convert_segments(all_segments)
 
     @staticmethod
@@ -255,17 +299,21 @@ class GroqWhisperTranscriber(Transcriber):
 
     def get_segments_for_chunk(self, chunk_path: str) -> List[GroqTranscriptionSegment]:
 
-        self.logger.info(f"Transcribing chunk {chunk_path} using groq client")
+        self.logger.info("[GROQ_API_CALL] Sending chunk to Groq API: %s", chunk_path)
         transcription = self.client.audio.transcriptions.create(
             file=Path(chunk_path),
             model=self.config.model,
             response_format="verbose_json",  # Ensure segments are included
             language=self.config.language,
         )
-        self.logger.debug("Got transcription from groq client")
+        self.logger.info(
+            "[GROQ_API_CALL] Received response from Groq API for: %s", chunk_path
+        )
 
         if transcription.segments is None:  # type: ignore [attr-defined]
-            self.logger.warning(f"No segments found in transcription for {chunk_path}")
+            self.logger.warning(
+                "[GROQ_API_CALL] No segments found in transcription for %s", chunk_path
+            )
             return []
 
         groq_segments = [
@@ -275,5 +323,7 @@ class GroqWhisperTranscriber(Transcriber):
             for seg in transcription.segments  # type: ignore [attr-defined]
         ]
 
-        self.logger.debug(f"Got {len(groq_segments)} segments")
+        self.logger.info(
+            "[GROQ_API_CALL] Got %d segments from chunk", len(groq_segments)
+        )
         return groq_segments

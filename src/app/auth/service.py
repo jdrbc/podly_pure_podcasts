@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Sequence, cast
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import User
+
+logger = logging.getLogger("global_logger")
 
 
 class AuthServiceError(Exception):
@@ -69,7 +73,9 @@ def create_user(username: str, password: str, role: str = "user") -> User:
     user.set_password(password)
 
     db.session.add(user)
-    db.session.commit()
+    commit_with_profile(
+        db.session, must_succeed=True, context="create_user", logger_obj=logger
+    )
     return user
 
 
@@ -83,7 +89,9 @@ def change_password(user: User, current_password: str, new_password: str) -> Non
 def update_password(user: User, new_password: str) -> None:
     user.set_password(new_password)
     db.session.add(user)
-    db.session.commit()
+    commit_with_profile(
+        db.session, must_succeed=True, context="update_password", logger_obj=logger
+    )
 
 
 def delete_user(user: User) -> None:
@@ -91,7 +99,9 @@ def delete_user(user: User) -> None:
         raise LastAdminRemovalError("Cannot remove the last admin user.")
 
     db.session.delete(user)
-    db.session.commit()
+    commit_with_profile(
+        db.session, must_succeed=True, context="delete_user", logger_obj=logger
+    )
 
 
 def set_role(user: User, role: str) -> None:
@@ -103,7 +113,9 @@ def set_role(user: User, role: str) -> None:
 
     user.role = role
     db.session.add(user)
-    db.session.commit()
+    commit_with_profile(
+        db.session, must_succeed=True, context="set_role", logger_obj=logger
+    )
 
 
 def _count_admins() -> int:

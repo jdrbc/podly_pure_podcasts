@@ -25,6 +25,7 @@ from flask.typing import ResponseReturnValue
 
 from app.auth.feed_tokens import create_feed_access_token
 from app.credits import credits_enabled, resolve_sponsor_user
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
 from app.jobs_manager import get_jobs_manager
@@ -93,7 +94,7 @@ def create_feed_share_link(feed_id: int) -> ResponseReturnValue:
         return jsonify({"error": "Authentication required."}), 401
 
     feed = Feed.query.get_or_404(feed_id)
-    user = User.query.get(current.id)
+    user = db.session.get(User, current.id)
     if user is None:
         return jsonify({"error": "User not found."}), 404
 
@@ -244,42 +245,73 @@ def delete_feed(f_id: int) -> ResponseReturnValue:  # pylint: disable=too-many-b
     _cleanup_feed_directories(feed)
 
     # Delete related database records in the correct order to avoid foreign key constraints
+    batch_size = 200
     if post_ids:
-        # Delete identifications for all posts in this feed
-        identifications_to_delete = (
-            db.session.query(Identification)
-            .join(
-                TranscriptSegment,
-                Identification.transcript_segment_id == TranscriptSegment.id,
+        # Delete identifications and transcript segments in batches
+        while True:
+            seg_ids = [
+                seg_id
+                for (seg_id,) in db.session.query(TranscriptSegment.id)
+                .filter(TranscriptSegment.post_id.in_(post_ids))
+                .limit(batch_size)
+                .all()
+            ]
+            if not seg_ids:
+                break
+            db.session.query(Identification).filter(
+                Identification.transcript_segment_id.in_(seg_ids)
+            ).delete(synchronize_session=False)
+            db.session.query(TranscriptSegment).filter(
+                TranscriptSegment.id.in_(seg_ids)
+            ).delete(synchronize_session=False)
+            commit_with_profile(
+                db.session,
+                must_succeed=False,
+                context="delete_feed_segments_batch",
+                logger_obj=logger,
             )
-            .filter(TranscriptSegment.post_id.in_(post_ids))
-            .all()
-        )
 
-        for identification in identifications_to_delete:
-            db.session.delete(identification)
+        # Delete model calls in batches
+        while True:
+            mc_ids = [
+                mc_id
+                for (mc_id,) in db.session.query(ModelCall.id)
+                .filter(ModelCall.post_id.in_(post_ids))
+                .limit(batch_size)
+                .all()
+            ]
+            if not mc_ids:
+                break
+            db.session.query(ModelCall).filter(ModelCall.id.in_(mc_ids)).delete(
+                synchronize_session=False
+            )
+            commit_with_profile(
+                db.session,
+                must_succeed=False,
+                context="delete_feed_model_calls_batch",
+                logger_obj=logger,
+            )
 
-        # Delete model calls for all posts in this feed
-        model_calls_to_delete = ModelCall.query.filter(
-            ModelCall.post_id.in_(post_ids)
-        ).all()
-        for model_call in model_calls_to_delete:
-            db.session.delete(model_call)
-
-        # Delete transcript segments for all posts in this feed
-        transcript_segments_to_delete = TranscriptSegment.query.filter(
-            TranscriptSegment.post_id.in_(post_ids)
-        ).all()
-        for segment in transcript_segments_to_delete:
-            db.session.delete(segment)
-
-        # Delete processing jobs for all posts in this feed
-        if post_guids:
-            processing_jobs_to_delete = ProcessingJob.query.filter(
-                ProcessingJob.post_guid.in_(post_guids)
-            ).all()
-            for job in processing_jobs_to_delete:
-                db.session.delete(job)
+        # Delete processing jobs in batches
+        while True:
+            job_ids = [
+                job_id
+                for (job_id,) in db.session.query(ProcessingJob.id)
+                .filter(ProcessingJob.post_guid.in_(post_guids))
+                .limit(batch_size)
+                .all()
+            ]
+            if not job_ids:
+                break
+            db.session.query(ProcessingJob).filter(
+                ProcessingJob.id.in_(job_ids)
+            ).delete(synchronize_session=False)
+            commit_with_profile(
+                db.session,
+                must_succeed=False,
+                context="delete_feed_jobs_batch",
+                logger_obj=logger,
+            )
 
         # Delete all posts for this feed
         posts_to_delete = Post.query.filter(Post.feed_id == feed.id).all()
@@ -296,7 +328,12 @@ def delete_feed(f_id: int) -> ResponseReturnValue:  # pylint: disable=too-many-b
 
     # Delete the feed from the database
     db.session.delete(feed)
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="delete_feed_final",
+        logger_obj=logger,
+    )
 
     logger.info(
         f"Deleted feed: {feed.title} (ID: {feed.id}) with {len(post_ids)} posts"
@@ -333,7 +370,7 @@ def refresh_feed_endpoint(f_id: int) -> ResponseReturnValue:
 
 def _refresh_feed_background(app: Flask, feed_id: int) -> None:
     with app.app_context():
-        feed = Feed.query.get(feed_id)
+        feed = db.session.get(Feed, feed_id)
         if not feed:
             logger.warning("Feed %s disappeared before refresh could run", feed_id)
             return
@@ -439,7 +476,12 @@ def _assign_feed_sponsor(feed: Feed) -> None:
     if sponsor_id and feed.sponsor_user_id != sponsor_id:
         feed.sponsor_user_id = sponsor_id
         db.session.add(feed)
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="assign_feed_sponsor",
+            logger_obj=logger,
+        )
 
 
 @feed_bp.route("/<path:something_or_rss>", methods=["GET"])
@@ -483,7 +525,7 @@ def sponsor_feed(feed_id: int) -> ResponseReturnValue:
         return jsonify(_serialize_feed(feed))
 
     existing_sponsor = (
-        User.query.get(feed.sponsor_user_id) if feed.sponsor_user_id else None
+        db.session.get(User, feed.sponsor_user_id) if feed.sponsor_user_id else None
     )
     if existing_sponsor and Decimal(existing_sponsor.credits_balance or 0) > Decimal(
         "1.0"
@@ -502,7 +544,12 @@ def sponsor_feed(feed_id: int) -> ResponseReturnValue:
 
     feed.sponsor_user_id = user.id
     db.session.add(feed)
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="sponsor_feed",
+        logger_obj=logger,
+    )
 
     return jsonify(_serialize_feed(feed))
 
@@ -520,7 +567,7 @@ def _require_authenticated_user(
     if current is None:
         return None, (jsonify({"error": "Authentication required."}), 401)
 
-    user = User.query.get(current.id)
+    user = db.session.get(User, current.id)
     if user is None:
         return None, (jsonify({"error": "User not found."}), 404)
 

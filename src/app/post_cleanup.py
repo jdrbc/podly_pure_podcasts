@@ -10,6 +10,7 @@ from typing import Dict, Optional, Sequence, Set, Tuple
 from sqlalchemy import func
 from sqlalchemy.orm import Query
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db, scheduler
 from app.jobs_manager_run_service import recalculate_run_counts
 from app.models import Identification, ModelCall, Post, ProcessingJob, TranscriptSegment
@@ -111,7 +112,12 @@ def cleanup_processed_posts(retention_days: Optional[int]) -> int:
 
     db.session.flush()
     recalculate_run_counts(db.session)
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="cleanup_processed_posts",
+        logger_obj=logger,
+    )
 
     logger.info(
         "Cleanup job removed %s posts%s",
@@ -166,26 +172,76 @@ def _clear_post_paths(post: Post) -> None:
 
 def _delete_post_related_rows(post: Post) -> None:
     """Remove dependent rows linked to a post."""
-    segment_ids = [
-        segment_id
-        for (segment_id,) in db.session.query(TranscriptSegment.id)
-        .filter(TranscriptSegment.post_id == post.id)
-        .all()
-    ]
-    if segment_ids:
+    batch_size = 200
+
+    # Delete transcript segments and identifications in batches
+    while True:
+        segment_ids = [
+            segment_id
+            for (segment_id,) in db.session.query(TranscriptSegment.id)
+            .filter(TranscriptSegment.post_id == post.id)
+            .limit(batch_size)
+            .all()
+        ]
+        if not segment_ids:
+            break
+
         db.session.query(Identification).filter(
             Identification.transcript_segment_id.in_(segment_ids)
         ).delete(synchronize_session=False)
 
-    db.session.query(TranscriptSegment).filter(
-        TranscriptSegment.post_id == post.id
-    ).delete(synchronize_session=False)
-    db.session.query(ModelCall).filter(ModelCall.post_id == post.id).delete(
-        synchronize_session=False
-    )
-    db.session.query(ProcessingJob).filter(ProcessingJob.post_guid == post.guid).delete(
-        synchronize_session=False
-    )
+        db.session.query(TranscriptSegment).filter(
+            TranscriptSegment.id.in_(segment_ids)
+        ).delete(synchronize_session=False)
+
+        commit_with_profile(
+            db.session,
+            must_succeed=False,
+            context="delete_transcript_segments_batch",
+            logger_obj=logger,
+        )
+
+    # Delete model calls in batches
+    while True:
+        model_call_ids = [
+            mc_id
+            for (mc_id,) in db.session.query(ModelCall.id)
+            .filter(ModelCall.post_id == post.id)
+            .limit(batch_size)
+            .all()
+        ]
+        if not model_call_ids:
+            break
+        db.session.query(ModelCall).filter(ModelCall.id.in_(model_call_ids)).delete(
+            synchronize_session=False
+        )
+        commit_with_profile(
+            db.session,
+            must_succeed=False,
+            context="delete_model_calls_batch",
+            logger_obj=logger,
+        )
+
+    # Delete processing jobs in batches
+    while True:
+        job_ids = [
+            job_id
+            for (job_id,) in db.session.query(ProcessingJob.id)
+            .filter(ProcessingJob.post_guid == post.guid)
+            .limit(batch_size)
+            .all()
+        ]
+        if not job_ids:
+            break
+        db.session.query(ProcessingJob).filter(ProcessingJob.id.in_(job_ids)).delete(
+            synchronize_session=False
+        )
+        commit_with_profile(
+            db.session,
+            must_succeed=False,
+            context="delete_processing_jobs_batch",
+            logger_obj=logger,
+        )
 
 
 def _load_latest_completed_map(

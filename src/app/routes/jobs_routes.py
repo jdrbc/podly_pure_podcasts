@@ -4,6 +4,7 @@ import flask
 from flask import Blueprint, request
 from flask.typing import ResponseReturnValue
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
 from app.jobs_manager_run_service import (
@@ -47,7 +48,12 @@ def api_job_manager_status() -> ResponseReturnValue:
         recalculate_run_counts(db.session)
 
     # Persist any aggregate updates performed above
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=False,
+        context="job_manager_status",
+        logger_obj=logger,
+    )
 
     return flask.jsonify({"run": serialize_run(run) if run else None})
 

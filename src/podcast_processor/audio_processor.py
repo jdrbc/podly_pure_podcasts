@@ -1,6 +1,7 @@
 import logging
 from typing import Any, List, Optional, Tuple
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
 from podcast_processor.ad_merger import AdMerger
@@ -226,7 +227,12 @@ class AudioProcessor:
         )
 
         post.processed_audio_path = output_path
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="audio_processor_save_path",
+            logger_obj=self.logger,
+        )
 
         self.logger.info(
             f"Audio processing complete for post {post.id}, saved to {output_path}"

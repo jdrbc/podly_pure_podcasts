@@ -1,3 +1,4 @@
+import importlib
 import json
 import logging
 import os
@@ -32,7 +33,7 @@ logger = logging.getLogger("global_logger")
 
 
 def _get_sqlite_busy_timeout_ms() -> int:
-    return 2000
+    return 30000
 
 
 def setup_dirs() -> None:
@@ -76,6 +77,8 @@ def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:
         cursor.execute("PRAGMA journal_mode=WAL;")
         cursor.execute("PRAGMA synchronous=NORMAL;")
         cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms};")
+        # Limit WAL file size to prevent checkpoint starvation
+        cursor.execute("PRAGMA wal_autocheckpoint=1000;")
     finally:
         cursor.close()
 
@@ -255,17 +258,17 @@ def _configure_database(
     app: Flask, sqlite_concurrency_settings: SQLiteConcurrencySettings
 ) -> None:
     def _get_sqlite_connect_timeout() -> int:
-        return 30
+        return 60
 
+    uri_scheme = "sqlite"
     app.config["SQLITE_CONCURRENCY_SETTINGS"] = sqlite_concurrency_settings
     connect_timeout = _get_sqlite_connect_timeout()
     app.config["SQLALCHEMY_DATABASE_URI"] = (
-        f"sqlite:///sqlite3.db?timeout={connect_timeout}"
+        f"{uri_scheme}:///sqlite3.db?timeout={connect_timeout}"
     )
     engine_options: dict[str, Any] = {
         "connect_args": {
             "timeout": connect_timeout,
-            "check_same_thread": False,
         },
         "pool_size": 5,
         "max_overflow": 5,

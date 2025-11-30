@@ -25,6 +25,7 @@ from app.auth.discord_service import (
     get_discord_user,
 )
 from app.auth.discord_settings import reload_discord_settings
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import DiscordSettings as DiscordSettingsModel
 from app.models import User
@@ -55,7 +56,7 @@ def _require_admin() -> tuple[User | None, tuple[Response, int] | None]:
     if current is None:
         return None, (jsonify({"error": "Authentication required."}), 401)
 
-    user: User | None = User.query.get(current.id)
+    user: User | None = db.session.get(User, current.id)
     if user is None or user.role != "admin":
         return None, (jsonify({"error": "Admin privileges required."}), 403)
 
@@ -181,7 +182,12 @@ def discord_config_put() -> Response | tuple[Response, int]:
         ):
             db_settings.allow_registration = bool(payload["allow_registration"])
 
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="discord_config_update",
+            logger_obj=logger,
+        )
 
         # Reload settings into app config
         new_settings = reload_discord_settings(current_app)

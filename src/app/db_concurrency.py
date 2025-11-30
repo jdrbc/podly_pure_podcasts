@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -9,8 +10,21 @@ from flask_sqlalchemy.session import Session as FlaskSession
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import scoped_session
 
 logger = logging.getLogger("global_logger")
+
+# Ensure database lock errors are always visible on stdout
+_stdout_handler = logging.StreamHandler(sys.stdout)
+_stdout_handler.setLevel(logging.WARNING)
+_stdout_handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] [DB_LOCK] %(message)s")
+)
+_db_lock_logger = logging.getLogger("podly.db_lock")
+_db_lock_logger.addHandler(_stdout_handler)
+_db_lock_logger.setLevel(logging.WARNING)
+_db_lock_logger.propagate = False
 
 _WRITE_LOCK = threading.RLock()
 _WRITE_PREFIXES = (
@@ -26,8 +40,8 @@ _WRITE_PREFIXES = (
 )
 
 DEFAULT_SQLITE_MODE = "optimistic"
-DEFAULT_SQLITE_RETRY_ATTEMPTS = 5
-DEFAULT_SQLITE_RETRY_BACKOFF_MS = 50
+DEFAULT_SQLITE_RETRY_ATTEMPTS = 8
+DEFAULT_SQLITE_RETRY_BACKOFF_MS = 100
 
 
 @dataclass(frozen=True)
@@ -68,6 +82,7 @@ def configure_sqlite_concurrency(
         settings.retry_backoff_ms,
     )
 
+    RetryingSession.configure_mode(settings.mode)
     RetryingSession.configure_retry(settings)
 
     if settings.pessimistic:
@@ -84,14 +99,78 @@ def pessimistic_write_lock() -> Any:
         _WRITE_LOCK.release()
 
 
+def commit_with_profile(
+    session: FlaskSession | OrmSession | scoped_session[Any],
+    *,
+    must_succeed: bool,
+    context: str,
+    logger_obj: logging.Logger | None = None,
+) -> None:
+    """
+    Commit with optional pessimistic serialization; always rollback on failure to avoid
+    leaving the session in an unusable state after lock errors.
+    """
+    log = logger_obj or logger
+    lock_cm = (
+        pessimistic_write_lock()
+        if must_succeed and RetryingSession.is_pessimistic_mode()
+        else contextlib.nullcontext()
+    )
+    with lock_cm:
+        try:
+            session.commit()
+        except Exception as exc:  # pylint: disable=broad-except
+            is_lock_error = isinstance(
+                exc, OperationalError
+            ) and _is_sqlite_locked_error(exc)
+            if is_lock_error:
+                _db_lock_logger.error(
+                    "DATABASE LOCKED in commit_with_profile context=%s: %s",
+                    context,
+                    str(exc),
+                )
+            log.error(
+                "Commit failed in %s, rolling back: %s", context, exc, exc_info=True
+            )
+            try:
+                session.rollback()
+            except Exception as rb_exc:  # pylint: disable=broad-except
+                log.error(
+                    "Rollback also failed in %s: %s", context, rb_exc, exc_info=True
+                )
+            raise
+
+
 class RetryingSession(FlaskSession):
     """Session that retries SQLite writes on lock errors."""
 
     _retry_settings: SQLiteConcurrencySettings | None = None
+    _mode: str = DEFAULT_SQLITE_MODE
 
     @classmethod
     def configure_retry(cls, settings: SQLiteConcurrencySettings) -> None:
         cls._retry_settings = settings if settings.enabled else None
+
+    @classmethod
+    def configure_mode(cls, mode: str) -> None:
+        cls._mode = mode
+
+    @classmethod
+    def is_pessimistic_mode(cls) -> bool:
+        return cls._mode == "pessimistic"
+
+    def _rollback_safely(self, context: str) -> None:
+        """Rollback after an error without tripping illegal state changes."""
+        try:
+            if self.is_active:
+                super().rollback()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error(
+                "Rollback failed while handling SQLite lock during %s: %s",
+                context,
+                exc,
+                exc_info=True,
+            )
 
     def commit(self) -> None:
         settings = self._retry_settings
@@ -111,19 +190,34 @@ class RetryingSession(FlaskSession):
         for attempt in range(attempts):
             try:
                 super().commit()
+                if attempt > 0:
+                    _db_lock_logger.info(
+                        "SQLite commit succeeded after %d retries", attempt
+                    )
                 return
             except OperationalError as exc:
                 if not _is_sqlite_locked_error(exc):
                     raise
-                if attempt == attempts - 1:
-                    raise
-                # Rollback to reset session state before retry
+                self._rollback_safely("commit")
+                _db_lock_logger.warning(
+                    "DATABASE LOCKED on commit (attempt %d/%d): %s - retrying in %.2fs",
+                    attempt + 1,
+                    attempts,
+                    str(exc),
+                    delay,
+                )
                 logger.warning(
                     "SQLite database locked on commit (attempt %d/%d), rolling back and retrying...",
                     attempt + 1,
                     attempts,
                 )
-                super().rollback()
+                if attempt == attempts - 1:
+                    _db_lock_logger.error(
+                        "DATABASE LOCKED FAILED after %d attempts: %s",
+                        attempts,
+                        str(exc),
+                    )
+                    raise
                 time.sleep(delay)
                 delay *= 2
 
@@ -145,19 +239,34 @@ class RetryingSession(FlaskSession):
         for attempt in range(attempts):
             try:
                 super().flush(objects=objects)
+                if attempt > 0:
+                    _db_lock_logger.info(
+                        "SQLite flush succeeded after %d retries", attempt
+                    )
                 return
             except OperationalError as exc:
                 if not _is_sqlite_locked_error(exc):
                     raise
-                if attempt == attempts - 1:
-                    raise
-                # Rollback to reset session state before retry
+                self._rollback_safely("flush")
+                _db_lock_logger.warning(
+                    "DATABASE LOCKED on flush (attempt %d/%d): %s - retrying in %.2fs",
+                    attempt + 1,
+                    attempts,
+                    str(exc),
+                    delay,
+                )
                 logger.warning(
                     "SQLite database locked on flush (attempt %d/%d), rolling back and retrying...",
                     attempt + 1,
                     attempts,
                 )
-                super().rollback()
+                if attempt == attempts - 1:
+                    _db_lock_logger.error(
+                        "DATABASE LOCKED FAILED after %d attempts: %s",
+                        attempts,
+                        str(exc),
+                    )
+                    raise
                 time.sleep(delay)
                 delay *= 2
 

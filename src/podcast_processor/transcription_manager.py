@@ -3,6 +3,7 @@ from typing import Any, List, Optional
 
 from sqlalchemy.exc import IntegrityError
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
 from shared.config import (
@@ -132,7 +133,12 @@ class TranscriptionManager:
         )
         try:
             self.db_session.add(current_whisper_call)
-            self.db_session.commit()
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="create_whisper_model_call",
+                logger_obj=self.logger,
+            )
         except IntegrityError:
             # Another process/thread created the same unique ModelCall concurrently
             self.db_session.rollback()
@@ -156,11 +162,14 @@ class TranscriptionManager:
 
         try:
             self.logger.info(
-                f"Calling transcriber {self.transcriber.model_name} for post {post.id}..."
+                f"[TRANSCRIBE_START] Calling transcriber {self.transcriber.model_name} for post {post.id}, audio: {post.unprocessed_audio_path}"
             )
+            # Expire session state before long-running transcription to avoid stale locks
+            self.db_session.expire_all()
+
             pydantic_segments = self.transcriber.transcribe(post.unprocessed_audio_path)
             self.logger.info(
-                f"Transcription by {self.transcriber.model_name} for post {post.id} resulted in {len(pydantic_segments)} segments."
+                f"[TRANSCRIBE_COMPLETE] Transcription by {self.transcriber.model_name} for post {post.id} resulted in {len(pydantic_segments)} segments."
             )
 
             self._delete_existing_segments_for_post(post.id)
@@ -177,7 +186,12 @@ class TranscriptionManager:
             )
             current_whisper_call.status = "success"
 
-            self.db_session.commit()
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="transcription_success",
+                logger_obj=self.logger,
+            )
             self.logger.info(
                 f"Successfully stored {len(db_transcript_segments)} transcript segments and updated ModelCall {current_whisper_call.id} for post {post.id}."
             )
@@ -190,16 +204,21 @@ class TranscriptionManager:
             )
             self.db_session.rollback()  # Rollback any potential partial additions from the try block
 
-            # Re-fetch the ModelCall using THIS session to avoid cross-session conflicts
+            # Re-fetch the ModelCall using session.get() to avoid cross-session conflicts
             call_to_update = (
-                self.db_session.query(ModelCall).get(current_whisper_call.id)
+                self.db_session.get(ModelCall, current_whisper_call.id)
                 if current_whisper_call.id
                 else None
             )
             if call_to_update:
                 call_to_update.status = "failed_permanent"
                 call_to_update.error_message = str(e)
-                self.db_session.commit()
+                commit_with_profile(
+                    self.db_session,
+                    must_succeed=True,
+                    context="transcription_failed",
+                    logger_obj=self.logger,
+                )
                 self.logger.info(
                     f"Updated ModelCall {call_to_update.id} to status 'failed_permanent' for post {post.id}."
                 )
@@ -214,21 +233,35 @@ class TranscriptionManager:
     # ------------------------ Internal helpers ------------------------
     def _delete_existing_segments_for_post(self, post_id: int) -> None:
         """Delete existing transcript segments and their identifications for a post."""
-        existing_segment_ids = [
-            row[0]
-            for row in self.db_session.query(TranscriptSegment.id)
-            .filter_by(post_id=post_id)
-            .all()
-        ]
-        if not existing_segment_ids:
-            return
-        # Delete identifications that reference existing segments
-        self.db_session.query(Identification).filter(
-            Identification.transcript_segment_id.in_(existing_segment_ids)
-        ).delete(synchronize_session=False)
-        # Delete existing transcript segments
-        self.segment_query.filter_by(post_id=post_id).delete(synchronize_session=False)
-        self.db_session.flush()
+        batch_size = 200
+        while True:
+            ids_batch = [
+                row[0]
+                for row in self.db_session.query(TranscriptSegment.id)
+                .filter_by(post_id=post_id)
+                .limit(batch_size)
+                .all()
+            ]
+            if not ids_batch:
+                break
+
+            # Delete identifications for this batch
+            self.db_session.query(Identification).filter(
+                Identification.transcript_segment_id.in_(ids_batch)
+            ).delete(synchronize_session=False)
+
+            # Delete transcript segments for this batch
+            self.segment_query.filter(TranscriptSegment.id.in_(ids_batch)).delete(
+                synchronize_session=False
+            )
+
+            # Commit per batch to release locks quickly
+            commit_with_profile(
+                self.db_session,
+                must_succeed=False,
+                context="delete_transcript_segments_batch",
+                logger_obj=self.logger,
+            )
 
     def _persist_segments(
         self, post_id: int, pydantic_segments: List[Any]

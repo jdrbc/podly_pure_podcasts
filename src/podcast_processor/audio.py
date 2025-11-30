@@ -1,20 +1,28 @@
+import logging
 import math
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import ffmpeg  # type: ignore[import-untyped]
 
+logger = logging.getLogger("global_logger")
+
 
 def get_audio_duration_ms(file_path: str) -> Optional[int]:
     try:
+        logger.debug("[FFMPEG_PROBE] Probing audio file: %s", file_path)
         probe = ffmpeg.probe(file_path)
         format_info = probe["format"]
         duration_seconds = float(format_info["duration"])
         duration_milliseconds = duration_seconds * 1000
+        logger.debug("[FFMPEG_PROBE] Duration: %.2f seconds", duration_seconds)
         return int(duration_milliseconds)
     except ffmpeg.Error as e:
-        print("An error occurred while trying to probe the file:")
-        print(e.stderr.decode())
+        logger.error(
+            "[FFMPEG_PROBE] Error probing file %s: %s",
+            file_path,
+            e.stderr.decode() if e.stderr else str(e),
+        )
         return None
 
 
@@ -57,7 +65,14 @@ def clip_segments_with_fade(
             )
         )
 
+    logger.info(
+        "[FFMPEG_CONCAT] Starting audio concatenation: %s -> %s (%d segments)",
+        in_path,
+        out_path,
+        len(trimmed_list),
+    )
     ffmpeg.concat(*trimmed_list, v=0, a=1).output(out_path).overwrite_output().run()
+    logger.info("[FFMPEG_CONCAT] Completed audio concatenation: %s", out_path)
 
 
 def trim_file(in_path: Path, out_path: Path, start_ms: int, end_ms: int) -> None:
@@ -69,6 +84,13 @@ def trim_file(in_path: Path, out_path: Path, start_ms: int, end_ms: int) -> None
     start_sec = max(start_ms, 0) / 1000.0
     duration_sec = duration_ms / 1000.0
 
+    logger.debug(
+        "[FFMPEG_TRIM] Trimming %s -> %s (start=%.2fs, duration=%.2fs)",
+        in_path,
+        out_path,
+        start_sec,
+        duration_sec,
+    )
     (
         ffmpeg.input(str(in_path))
         .output(
@@ -91,6 +113,11 @@ def split_audio(
 
     audio_chunk_path.mkdir(parents=True, exist_ok=True)
 
+    logger.info(
+        "[FFMPEG_SPLIT] Splitting audio file: %s into chunks of %d bytes",
+        audio_file_path,
+        chunk_size_bytes,
+    )
     duration_ms = get_audio_duration_ms(str(audio_file_path))
     assert duration_ms is not None
     if chunk_size_bytes <= 0:
@@ -104,6 +131,11 @@ def split_audio(
     chunk_duration_ms = max(1, math.ceil(duration_ms * chunk_ratio))
 
     num_chunks = max(1, math.ceil(duration_ms / chunk_duration_ms))
+    logger.info(
+        "[FFMPEG_SPLIT] Will create %d chunks (duration per chunk: %d ms)",
+        num_chunks,
+        chunk_duration_ms,
+    )
 
     chunks: List[Tuple[Path, int]] = []
 
@@ -115,7 +147,11 @@ def split_audio(
         end_offset_ms = min(duration_ms, (i + 1) * chunk_duration_ms)
 
         export_path = audio_chunk_path / f"{i}.mp3"
+        logger.debug(
+            "[FFMPEG_SPLIT] Creating chunk %d/%d: %s", i + 1, num_chunks, export_path
+        )
         trim_file(audio_file_path, export_path, start_offset_ms, end_offset_ms)
         chunks.append((export_path, start_offset_ms))
 
+    logger.info("[FFMPEG_SPLIT] Split complete: created %d chunks", len(chunks))
     return chunks

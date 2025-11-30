@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from app.db_concurrency import pessimistic_write_lock
+from app.db_concurrency import commit_with_profile, pessimistic_write_lock
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, ProcessingJob, TranscriptSegment
 from podcast_processor.podcast_downloader import get_and_make_download_path
@@ -113,16 +113,48 @@ def clear_post_processing_data(post: Post) -> None:
                 f"Deleted transcript segments and identifications for post {post.id}"
             )
 
-            # Delete model calls for this post
-            db.session.query(ModelCall).filter_by(post_id=post.id).delete(
-                synchronize_session=False
-            )
+            # Delete model calls for this post in batches
+            while True:
+                model_call_ids = [
+                    row[0]
+                    for row in db.session.query(ModelCall.id)
+                    .filter_by(post_id=post.id)
+                    .limit(500)
+                    .all()
+                ]
+                if not model_call_ids:
+                    break
+                db.session.query(ModelCall).filter(
+                    ModelCall.id.in_(model_call_ids)
+                ).delete(synchronize_session=False)
+                commit_with_profile(
+                    db.session,
+                    must_succeed=False,
+                    context="clear_post_model_calls",
+                    logger_obj=logger,
+                )
             logger.info(f"Deleted model calls for post {post.id}")
 
-            # Delete processing jobs for this post
-            db.session.query(ProcessingJob).filter_by(post_guid=post.guid).delete(
-                synchronize_session=False
-            )
+            # Delete processing jobs for this post in batches
+            while True:
+                job_ids = [
+                    row[0]
+                    for row in db.session.query(ProcessingJob.id)
+                    .filter_by(post_guid=post.guid)
+                    .limit(500)
+                    .all()
+                ]
+                if not job_ids:
+                    break
+                db.session.query(ProcessingJob).filter(
+                    ProcessingJob.id.in_(job_ids)
+                ).delete(synchronize_session=False)
+                commit_with_profile(
+                    db.session,
+                    must_succeed=False,
+                    context="clear_post_processing_jobs",
+                    logger_obj=logger,
+                )
             logger.info(f"Deleted processing jobs for post {post.id}")
 
             # Reset post audio paths and duration
@@ -131,7 +163,12 @@ def clear_post_processing_data(post: Post) -> None:
             post.duration = None
 
             # Commit all changes
-            db.session.commit()
+            commit_with_profile(
+                db.session,
+                must_succeed=True,
+                context="clear_post_final",
+                logger_obj=logger,
+            )
 
         logger.info(
             f"Successfully cleared all processing data for post: {post.title} (ID: {post.id})"

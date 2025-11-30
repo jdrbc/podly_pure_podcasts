@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal, InvalidOperation
 from typing import List, Tuple
 
@@ -8,9 +9,11 @@ from flask import Blueprint, current_app, g, jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.credits import credits_enabled, get_balance, manual_adjust
-from app.db_concurrency import pessimistic_write_lock
+from app.db_concurrency import commit_with_profile, pessimistic_write_lock
 from app.extensions import db
 from app.models import CreditTransaction, User
+
+logger = logging.getLogger("global_logger")
 
 credits_bp = Blueprint("credits", __name__)
 
@@ -33,7 +36,7 @@ def _require_enabled_user() -> Tuple[User | None, flask.Response | None]:
             jsonify({"error": "Authentication required."}), 401
         )
 
-    user = User.query.get(current.id)
+    user = db.session.get(User, current.id)
     if user is None:
         return None, flask.make_response(jsonify({"error": "User not found."}), 404)
 
@@ -133,7 +136,7 @@ def api_manual_adjust() -> flask.Response:
             jsonify({"error": "user_id and amount are required"}), 400
         )
 
-    target_user = User.query.get(target_user_id)
+    target_user = db.session.get(User, target_user_id)
     if target_user is None:
         return flask.make_response(jsonify({"error": "Target user not found"}), 404)
 
@@ -148,7 +151,12 @@ def api_manual_adjust() -> flask.Response:
             txn, balance = manual_adjust(
                 user=target_user, amount_signed=amount_signed, note=note
             )
-            db.session.commit()
+            commit_with_profile(
+                db.session,
+                must_succeed=True,
+                context="manual_adjust_credits",
+                logger_obj=logger,
+            )
     except SQLAlchemyError:
         db.session.rollback()
         return flask.make_response(jsonify({"error": "Failed to update credits"}), 500)

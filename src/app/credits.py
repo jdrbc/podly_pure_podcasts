@@ -46,7 +46,7 @@ def credits_enabled() -> bool:
 def resolve_sponsor_user(feed: Feed) -> Optional[User]:
     """Return the sponsor for a feed, falling back to the first admin if missing."""
     if feed.sponsor_user_id:
-        user = cast(Optional[User], User.query.get(feed.sponsor_user_id))
+        user = cast(Optional[User], db.session.get(User, feed.sponsor_user_id))
         if user:
             return user
     return cast(

@@ -6,6 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import case
 
+from app.db_concurrency import (
+    commit_with_profile,
+)
 from app.extensions import db as _db
 from app.extensions import scheduler
 from app.feeds import refresh_feed
@@ -45,7 +48,9 @@ class JobsManager:
                 _db.session, trigger="startup", context={"source": "init"}
             )
             self._set_run_id(run.id)
-            _db.session.commit()
+            commit_with_profile(
+                _db.session, must_succeed=True, context="init_run", logger_obj=logger
+            )
         self._worker_thread = Thread(
             target=self._worker_loop, name="jobs-manager-worker", daemon=True
         )
@@ -105,7 +110,12 @@ class JobsManager:
                 active_run
             )
             recalculate_run_counts(_db.session)
-            _db.session.commit()
+            commit_with_profile(
+                _db.session,
+                must_succeed=True,
+                context="enqueue_pending_jobs",
+                logger_obj=logger,
+            )
             response = {
                 "status": "ok",
                 "created": created_count,
@@ -197,7 +207,7 @@ class JobsManager:
 
     def get_job_status(self, job_id: str) -> Dict[str, Any]:
         with scheduler.app.app_context():
-            job = ProcessingJob.query.get(job_id)
+            job = _db.session.get(ProcessingJob, job_id)
             if not job:
                 return {
                     "status": "error",
@@ -314,7 +324,7 @@ class JobsManager:
 
     def cancel_job(self, job_id: str) -> Dict[str, Any]:
         with scheduler.app.app_context():
-            job = ProcessingJob.query.get(job_id)
+            job = _db.session.get(ProcessingJob, job_id)
             if not job:
                 return {
                     "status": "error",
@@ -365,11 +375,32 @@ class JobsManager:
                 ProcessingJob.created_at < cutoff
             ).all()
             count = len(old_jobs)
+            batch: list[ProcessingJob] = []
             for j in old_jobs:
                 try:
-                    # Best-effort cleanup
-                    _db.session.delete(j)
-                    _db.session.commit()
+                    batch.append(j)
+                    if len(batch) >= 200:
+                        for job in batch:
+                            _db.session.delete(job)
+                        commit_with_profile(
+                            _db.session,
+                            must_succeed=False,
+                            context="cleanup_stale_jobs",
+                            logger_obj=logger,
+                        )
+                        batch = []
+                except Exception:  # pylint: disable=broad-except
+                    batch = []
+            if batch:
+                try:
+                    for job in batch:
+                        _db.session.delete(job)
+                    commit_with_profile(
+                        _db.session,
+                        must_succeed=False,
+                        context="cleanup_stale_jobs",
+                        logger_obj=logger,
+                    )
                 except Exception:  # pylint: disable=broad-except
                     pass
             return count
@@ -416,7 +447,12 @@ class JobsManager:
                 for job in all_jobs:
                     _db.session.delete(job)
 
-                _db.session.commit()
+                commit_with_profile(
+                    _db.session,
+                    must_succeed=True,
+                    context="clear_all_jobs",
+                    logger_obj=logger,
+                )
 
                 logger.info(f"Cleared {job_count} processing jobs on startup")
 
@@ -470,7 +506,12 @@ class JobsManager:
                         f"(ID: {post.id}): {post.processed_audio_path}"
                     )
                     post.processed_audio_path = None
-                    _db.session.commit()
+                    commit_with_profile(
+                        _db.session,
+                        must_succeed=False,
+                        context="cleanup_missing_audio_paths",
+                        logger_obj=logger,
+                    )
                 if post.unprocessed_audio_path and not os.path.exists(
                     post.unprocessed_audio_path
                 ):
@@ -479,7 +520,12 @@ class JobsManager:
                         f"(ID: {post.id}): {post.unprocessed_audio_path}"
                     )
                     post.unprocessed_audio_path = None
-                    _db.session.commit()
+                    commit_with_profile(
+                        _db.session,
+                        must_succeed=False,
+                        context="cleanup_missing_audio_paths",
+                        logger_obj=logger,
+                    )
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error(
                     f"Failed to reset fields for post '{post.title}' (ID: {post.id}): {e}",
@@ -523,6 +569,7 @@ class JobsManager:
     # Removed _get_active_job_for_guid - now using direct database queries
 
     # ------------------------ Internal helpers ------------------------
+
     def _dequeue_next_job(self) -> Optional[Tuple[str, str]]:
         """Return the next pending job id and post guid, or None if idle."""
         with scheduler.app.app_context():
@@ -542,7 +589,12 @@ class JobsManager:
                 recalculate_run_counts(_db.session)
                 updated = True
             if updated:
-                _db.session.commit()
+                commit_with_profile(
+                    _db.session,
+                    must_succeed=True,
+                    context="assign_run_to_pending_job",
+                    logger_obj=logger,
+                )
             return job.id, job.post_guid
 
     def _worker_loop(self) -> None:
@@ -562,6 +614,15 @@ class JobsManager:
         """Execute a single job using the processor."""
         with scheduler.app.app_context():
             try:
+                # Clear any failed transaction state from prior work on this session.
+                try:
+                    _db.session.rollback()
+                except Exception:  # pylint: disable=broad-except
+                    pass
+
+                # Expire all cached objects to ensure fresh reads
+                _db.session.expire_all()
+
                 logger.debug(
                     "Worker starting job_id=%s post_guid=%s", job_id, post_guid
                 )
@@ -570,7 +631,7 @@ class JobsManager:
                     logger.error(
                         "Post with GUID %s not found; failing job %s", post_guid, job_id
                     )
-                    job = ProcessingJob.query.get(job_id)
+                    job = _db.session.get(ProcessingJob, job_id)
                     if job:
                         self._status_manager.update_job_status(
                             job, "failed", job.current_step or 0, "Post not found", 0.0
@@ -578,7 +639,9 @@ class JobsManager:
                     return
 
                 def _cancelled() -> bool:
-                    current_job = ProcessingJob.query.get(job_id)
+                    # Expire the job before re-querying to get fresh state
+                    _db.session.expire_all()
+                    current_job = _db.session.get(ProcessingJob, job_id)
                     return current_job is None or current_job.status == "cancelled"
 
                 get_processor().process(
@@ -591,7 +654,8 @@ class JobsManager:
                     "Unexpected error in job %s: %s", job_id, exc, exc_info=True
                 )
                 try:
-                    failed_job = ProcessingJob.query.get(job_id)
+                    _db.session.expire_all()
+                    failed_job = _db.session.get(ProcessingJob, job_id)
                     if failed_job and failed_job.status not in [
                         "completed",
                         "cancelled",
@@ -610,6 +674,16 @@ class JobsManager:
                         cleanup_error,
                         exc_info=True,
                     )
+            finally:
+                # Always clean up session state after job processing to release any locks
+                try:
+                    _db.session.rollback()
+                except Exception:  # pylint: disable=broad-except
+                    pass
+                try:
+                    _db.session.remove()
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.warning("Failed to remove session after job: %s", exc)
 
 
 # Singleton accessor

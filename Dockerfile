@@ -38,6 +38,8 @@ RUN if [ -f /etc/debian_version ]; then \
     apt-get install -y ca-certificates && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ffmpeg \
+    sqlite3 \
+    libsqlite3-dev \
     build-essential \
     gosu \
     python3 \

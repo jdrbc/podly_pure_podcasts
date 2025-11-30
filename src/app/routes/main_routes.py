@@ -5,9 +5,12 @@ import flask
 from flask import Blueprint, current_app, send_from_directory
 from sqlalchemy.exc import OperationalError
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import Feed, Post
 from app.runtime_config import config
+
+logger = logging.getLogger("global_logger")
 
 logger = logging.getLogger("global_logger")
 
@@ -58,7 +61,12 @@ def whitelist_all(f_id: str, val: str) -> flask.Response:
         Post.query.filter_by(feed_id=feed.id).update(
             {Post.whitelisted: new_status}, synchronize_session=False
         )
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="whitelist_all",
+            logger_obj=logger,
+        )
     except OperationalError:
         db.session.rollback()
         return flask.make_response(
@@ -84,7 +92,12 @@ def set_whitelist(p_guid: str, val: str) -> flask.Response:
 
     post.whitelisted = val.lower() == "true"
     try:
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="set_whitelist",
+            logger_obj=logger,
+        )
     except OperationalError:
         db.session.rollback()
         return flask.make_response(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -8,8 +9,11 @@ from urllib.parse import urlencode
 import httpx
 
 from app.auth.discord_settings import DiscordSettings
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import User
+
+logger = logging.getLogger("global_logger")
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
 DISCORD_OAUTH2_AUTHORIZE = "https://discord.com/oauth2/authorize"
@@ -121,7 +125,12 @@ def find_or_create_user_from_discord(
     if existing_user:
         # Update Discord username (it can change)
         existing_user.discord_username = discord_user.username
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="update_discord_username",
+            logger_obj=logger,
+        )
         return existing_user
 
     # Create new user
@@ -146,5 +155,7 @@ def find_or_create_user_from_discord(
         discord_username=discord_user.username,
     )
     db.session.add(new_user)
-    db.session.commit()
+    commit_with_profile(
+        db.session, must_succeed=True, context="create_discord_user", logger_obj=logger
+    )
     return new_user

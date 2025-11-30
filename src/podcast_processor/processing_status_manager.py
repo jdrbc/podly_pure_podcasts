@@ -5,6 +5,9 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import object_session
 
+from app.db_concurrency import (
+    commit_with_profile,
+)
 from app.jobs_manager_run_service import recalculate_run_counts
 from app.models import ProcessingJob
 
@@ -41,7 +44,12 @@ class ProcessingStatusManager:
         self.db_session.add(job)
         if run_id:
             recalculate_run_counts(self.db_session)
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="create_job",
+            logger_obj=self.logger,
+        )
         return job
 
     def cancel_existing_jobs(self, post_guid: str, current_job_id: str) -> None:
@@ -60,7 +68,12 @@ class ProcessingStatusManager:
 
         self.db_session.flush()
         recalculate_run_counts(self.db_session)
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="cancel_existing_jobs",
+            logger_obj=self.logger,
+        )
 
     def update_job_status(
         self,
@@ -71,11 +84,12 @@ class ProcessingStatusManager:
         progress: Optional[float] = None,
     ) -> None:
         """Update job status in database."""
-        self.logger.debug(
-            ("update_job_status enter: job_id=%s status=%s step=%s bound=%s"),
+        self.logger.info(
+            "[JOB_STATUS_UPDATE] job_id=%s status=%s step=%s step_name=%s bound=%s",
             getattr(job, "id", None),
             status,
             step,
+            step_name,
             object_session(job) is not None,
         )
         job.status = status
@@ -93,29 +107,24 @@ class ProcessingStatusManager:
         elif status in ["completed", "failed", "skipped", "cancelled"]:
             job.completed_at = datetime.utcnow()
 
-        try:
-            if job.jobs_manager_run_id:
-                recalculate_run_counts(self.db_session)
-            self.db_session.commit()
-            if self.logger:
-                self.logger.debug(
-                    (
-                        "update_job_status committed: job_id=%s status=%s step=%s progress=%.2f"
-                    ),
-                    getattr(job, "id", None),
-                    job.status,
-                    job.current_step,
-                    job.progress_percentage,
-                )
-        except Exception as e:
-            if self.logger:
-                self.logger.error(
-                    "update_job_status commit failed for job_id=%s: %s",
-                    getattr(job, "id", None),
-                    e,
-                    exc_info=True,
-                )
-            raise
+        if job.jobs_manager_run_id:
+            recalculate_run_counts(self.db_session)
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="update_job_status",
+            logger_obj=self.logger,
+        )
+        if self.logger:
+            self.logger.debug(
+                (
+                    "update_job_status committed: job_id=%s status=%s step=%s progress=%.2f"
+                ),
+                getattr(job, "id", None),
+                job.status,
+                job.current_step,
+                job.progress_percentage,
+            )
 
     def mark_cancelled(self, job_id: str, error_message: Optional[str] = None) -> None:
         # Use a fresh query to ensure we get the latest state
@@ -128,12 +137,12 @@ class ProcessingStatusManager:
         job.completed_at = datetime.utcnow()
 
         run_id = job.jobs_manager_run_id
-        try:
-            if run_id:
-                recalculate_run_counts(self.db_session)
-            self.db_session.commit()
-            self.logger.info(f"Successfully cancelled job {job_id}")
-        except Exception as e:
-            self.logger.error(f"Failed to cancel job {job_id}: {e}")
-            self.db_session.rollback()
-            raise
+        if run_id:
+            recalculate_run_counts(self.db_session)
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="mark_cancelled",
+            logger_obj=self.logger,
+        )
+        self.logger.info(f"Successfully cancelled job {job_id}")

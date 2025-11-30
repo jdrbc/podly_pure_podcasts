@@ -8,6 +8,7 @@ from flask import Blueprint, current_app, g, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 from sqlalchemy.exc import OperationalError
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
 from app.models import Feed, Identification, ModelCall, Post, TranscriptSegment, User
@@ -41,7 +42,7 @@ def _require_sponsor_or_admin(
             flask.jsonify({"error": "Authentication required."}), 401
         )
 
-    user: User | None = User.query.get(current.id)
+    user: User | None = db.session.get(User, current.id)
     if user is None:
         return None, flask.make_response(
             flask.jsonify({"error": "User not found."}), 404
@@ -67,7 +68,12 @@ def _increment_download_count(post: Post) -> None:
         )
         if updated:
             post.download_count = (post.download_count or 0) + 1
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=False,
+            context="increment_download_count",
+            logger_obj=logger,
+        )
     except Exception as exc:  # pylint: disable=broad-except
         logger.error(
             "Failed to increment download count for post %s: %s", post.guid, exc
@@ -379,7 +385,7 @@ def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
     if post is None:
         return flask.make_response(flask.jsonify({"error": "Post not found"}), 404)
 
-    feed = Feed.query.get(post.feed_id)
+    feed = db.session.get(Feed, post.feed_id)
     if feed is None:
         return flask.make_response(flask.jsonify({"error": "Feed not found"}), 404)
 
@@ -395,7 +401,12 @@ def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
 
     post.whitelisted = bool(data["whitelisted"])
     try:
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="toggle_whitelist",
+            logger_obj=logger,
+        )
     except OperationalError:
         db.session.rollback()
         return (
@@ -445,7 +456,12 @@ def api_toggle_whitelist_all(feed_id: int) -> ResponseReturnValue:
         updated = Post.query.filter_by(feed_id=feed.id).update(
             {Post.whitelisted: new_status}, synchronize_session=False
         )
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="toggle_whitelist_all",
+            logger_obj=logger,
+        )
     except OperationalError:
         db.session.rollback()
         return (
@@ -491,7 +507,7 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             404,
         )
 
-    feed = Feed.query.get(post.feed_id)
+    feed = db.session.get(Feed, post.feed_id)
     if feed is None:
         return (
             flask.jsonify(
@@ -568,7 +584,7 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
             404,
         )
 
-    feed = Feed.query.get(post.feed_id)
+    feed = db.session.get(Feed, post.feed_id)
     if feed is None:
         return (
             flask.jsonify(

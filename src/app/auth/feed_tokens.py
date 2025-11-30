@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -8,8 +9,11 @@ from datetime import datetime
 from typing import Optional
 
 from app.auth.service import AuthenticatedUser
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import Feed, FeedAccessToken, Post, User
+
+logger = logging.getLogger("global_logger")
 
 
 @dataclass(slots=True)
@@ -35,7 +39,12 @@ def create_feed_access_token(user: User, feed: Feed) -> tuple[str, str]:
         existing.token_hash = _hash_token(secret)
         existing.token_secret = secret
         db.session.add(existing)
-        db.session.commit()
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="update_feed_access_token",
+            logger_obj=logger,
+        )
         return existing.token_id, secret
 
     token_id = uuid.uuid4().hex
@@ -48,7 +57,12 @@ def create_feed_access_token(user: User, feed: Feed) -> tuple[str, str]:
         user_id=user.id,
     )
     db.session.add(token)
-    db.session.commit()
+    commit_with_profile(
+        db.session,
+        must_succeed=True,
+        context="create_feed_access_token",
+        logger_obj=logger,
+    )
 
     return token_id, secret
 
@@ -71,7 +85,7 @@ def authenticate_feed_token(
     if feed_id is None or feed_id != token.feed_id:
         return None
 
-    user = User.query.get(token.user_id)
+    user = db.session.get(User, token.user_id)
     if user is None:
         return None
 

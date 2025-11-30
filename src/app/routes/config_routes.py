@@ -9,6 +9,7 @@ from groq import Groq
 from openai import OpenAI
 
 from app.config_store import read_combined, to_pydantic_config, update_combined
+from app.extensions import db
 from app.models import User
 from app.processor import ProcessorSingleton
 from app.runtime_config import config as runtime_config
@@ -32,7 +33,7 @@ def _require_admin() -> tuple[User | None, flask.Response | None]:
             jsonify({"error": "Authentication required."}), 401
         )
 
-    user = User.query.get(current.id)
+    user = db.session.get(User, current.id)
     if user is None or user.role != "admin":
         return None, flask.make_response(
             jsonify({"error": "Admin privileges required."}),

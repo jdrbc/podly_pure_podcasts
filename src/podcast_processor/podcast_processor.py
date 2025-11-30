@@ -14,6 +14,7 @@ from app.credits import (
     credits_enabled,
     debit_for_post,
 )
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import Post, ProcessingJob, TranscriptSegment
 from podcast_processor.ad_classifier import AdClassifier
@@ -126,7 +127,7 @@ class PodcastProcessor:
         Returns:
             Path to the processed audio file
         """
-        job = ProcessingJob.query.get(job_id)
+        job = self.db_session.get(ProcessingJob, job_id)
         if not job:
             raise ProcessorException(f"Job with ID {job_id} not found")
 
@@ -202,7 +203,12 @@ class PodcastProcessor:
                     # Update the database with the processed audio path
                     post.processed_audio_path = processed_audio_path
                     self._remove_unprocessed_audio(post)
-                    self.db_session.commit()
+                    commit_with_profile(
+                        self.db_session,
+                        must_succeed=True,
+                        context="processor_found_processed_audio",
+                        logger_obj=self.logger,
+                    )
                     self.status_manager.update_job_status(
                         job, "completed", 4, "Processing complete", 100.0
                     )
@@ -330,7 +336,12 @@ class PodcastProcessor:
         # Update the database with the processed audio path
         post.processed_audio_path = processed_audio_path
         self._remove_unprocessed_audio(post)
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="processor_completed",
+            logger_obj=self.logger,
+        )
 
         # Mark job complete
         self.status_manager.update_job_status(
@@ -394,7 +405,12 @@ class PodcastProcessor:
                 f"Database path {post.unprocessed_audio_path} doesn't exist or is empty, resetting"
             )
             post.unprocessed_audio_path = None
-            self.db_session.commit()
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="processor_reset_unprocessed_path",
+                logger_obj=self.logger,
+            )
 
         # Compute a unique per-job expected path
         expected_unprocessed_path = get_job_unprocessed_path(
@@ -411,7 +427,12 @@ class PodcastProcessor:
                 f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. "
                 "Updated the database path."
             )
-            self.db_session.commit()
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="processor_found_unprocessed",
+                logger_obj=self.logger,
+            )
             return
 
         # Need to download the file
@@ -425,7 +446,12 @@ class PodcastProcessor:
         if download_path is None:
             raise ProcessorException("Download failed")
         post.unprocessed_audio_path = download_path
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="processor_download_complete",
+            logger_obj=self.logger,
+        )
 
     def make_dirs(self, processing_paths: ProcessingPaths) -> None:
         """Create necessary directories for output files."""
@@ -452,7 +478,7 @@ class PodcastProcessor:
         if post_id is None:
             return
 
-        post = Post.query.get(post_id)
+        post = self.db_session.get(Post, post_id)
         if not post:
             self.logger.warning(
                 f"Could not find Post with ID {post_id} to remove files."
@@ -481,7 +507,12 @@ class PodcastProcessor:
 
         post.unprocessed_audio_path = None
         post.processed_audio_path = None
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="processor_reset_audio_paths",
+            logger_obj=self.logger,
+        )
 
     def _remove_unprocessed_audio(self, post: Post) -> None:
         """
@@ -526,7 +557,12 @@ class PodcastProcessor:
                 f"Database path {post.processed_audio_path} doesn't exist or is empty, resetting"
             )
             post.processed_audio_path = None
-            self.db_session.commit()
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="processor_reset_processed_path",
+                logger_obj=self.logger,
+            )
 
         # Check if file exists on disk at expected location
         safe_feed_title = sanitize_title(post.feed.title)
@@ -545,7 +581,12 @@ class PodcastProcessor:
                 f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. "
                 "Updated the database path."
             )
-            self.db_session.commit()
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="processor_found_processed",
+                logger_obj=self.logger,
+            )
             return True
 
         return False

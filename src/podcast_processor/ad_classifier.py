@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 
+from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
 from podcast_processor.boundary_refiner import BoundaryRefiner
@@ -608,7 +609,12 @@ class AdClassifier:
                 model_call_obj.status = "failed"
                 model_call_obj.error_message = error_msg
                 self.db_session.add(model_call_obj)
-                self.db_session.commit()
+                commit_with_profile(
+                    self.db_session,
+                    must_succeed=True,
+                    context="token_limit_guard",
+                    logger_obj=self.logger,
+                )
                 return None
 
         # Prepare completion arguments
@@ -709,7 +715,12 @@ class AdClassifier:
             )
             try:
                 self.db_session.add(model_call)
-                self.db_session.commit()
+                commit_with_profile(
+                    self.db_session,
+                    must_succeed=True,
+                    context="create_model_call",
+                    logger_obj=self.logger,
+                )
             except IntegrityError:
                 # Someone else created the same unique row concurrently; fetch and reuse
                 self.db_session.rollback()
@@ -731,10 +742,18 @@ class AdClassifier:
                 model_call.retry_attempts = 0
                 model_call.error_message = None
                 model_call.response = None
+            except Exception:
+                self.db_session.rollback()
+                raise
 
         # If we got here without creating, ensure commit for any field updates
         if self.db_session.is_active:
-            self.db_session.commit()
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="finalize_model_call_update",
+                logger_obj=self.logger,
+            )
         return model_call
 
     def _should_call_llm(self, model_call: ModelCall) -> bool:
@@ -765,7 +784,12 @@ class AdClassifier:
         model_call.error_message = None
         model_call.retry_attempts = 1
         self.db_session.add(model_call)
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="test_mode_model_call",
+            logger_obj=self.logger,
+        )
 
     def _process_successful_response(
         self,
@@ -791,7 +815,12 @@ class AdClassifier:
                 self.logger.info(
                     f"Created {created_identification_count} new Identification records for ModelCall {model_call.id}."
                 )
-            self.db_session.commit()
+            commit_with_profile(
+                self.db_session,
+                must_succeed=True,
+                context="process_successful_response",
+                logger_obj=self.logger,
+            )
             return matched_segments
         except (ValidationError, AssertionError) as e:
             self.logger.error(
@@ -1023,7 +1052,12 @@ class AdClassifier:
                 model_call_obj.status = "success"
                 model_call_obj.error_message = None
                 self.db_session.add(model_call_obj)
-                self.db_session.commit()
+                commit_with_profile(
+                    self.db_session,
+                    must_succeed=True,
+                    context="model_call_success",
+                    logger_obj=self.logger,
+                )
                 self.logger.info(
                     f"Model call {model_call_obj.id} successful on attempt {current_attempt_num}."
                 )
@@ -1047,7 +1081,12 @@ class AdClassifier:
                     model_call_obj.status = "failed_permanent"
                     model_call_obj.error_message = str(e)
                     self.db_session.add(model_call_obj)
-                    self.db_session.commit()
+                    commit_with_profile(
+                        self.db_session,
+                        must_succeed=True,
+                        context="model_call_permanent_failure",
+                        logger_obj=self.logger,
+                    )
                     raise  # Re-raise non-retryable exceptions immediately
 
         # If we get here, all retries were exhausted
@@ -1073,7 +1112,12 @@ class AdClassifier:
         )
         model_call_obj.error_message = str(error)
         self.db_session.add(model_call_obj)
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="model_call_retryable_error",
+            logger_obj=self.logger,
+        )
 
         # Use longer backoff for rate limiting errors
         error_str = str(error).lower()
@@ -1111,7 +1155,12 @@ class AdClassifier:
         else:
             model_call_obj.error_message = f"Maximum retries ({max_retries}) exceeded without a specific InternalServerError."
         self.db_session.add(model_call_obj)
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="model_call_retry_exhausted",
+            logger_obj=self.logger,
+        )
 
     def _get_segments_bulk(
         self, post_id: int, sequence_numbers: List[int]
@@ -1148,7 +1197,12 @@ class AdClassifier:
         if not identifications:
             return 0
         self.db_session.bulk_insert_mappings(Identification.__mapper__, identifications)
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="bulk_insert_identifications",
+            logger_obj=self.logger,
+        )
         return len(identifications)
 
     def expand_neighbors_bulk(
@@ -1345,4 +1399,9 @@ class AdClassifier:
                 )
                 self.db_session.add(new_ident)
 
-        self.db_session.commit()
+        commit_with_profile(
+            self.db_session,
+            must_succeed=True,
+            context="apply_refinement_identifications",
+            logger_obj=self.logger,
+        )

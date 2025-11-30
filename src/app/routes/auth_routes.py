@@ -20,6 +20,7 @@ from app.auth.service import (
     update_password,
 )
 from app.auth.state import failure_rate_limiter
+from app.extensions import db
 from app.models import User
 
 logger = logging.getLogger("global_logger")
@@ -287,7 +288,7 @@ def _require_authenticated_user() -> User | None:
     if current is None:
         return None
 
-    return cast(User | None, User.query.get(current.id))
+    return cast(User | None, db.session.get(User, current.id))
 
 
 def _unauthorized_response() -> RouteResult:
