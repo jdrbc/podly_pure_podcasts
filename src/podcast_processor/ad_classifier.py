@@ -177,8 +177,11 @@ class AdClassifier:
                     break
 
             # Expand neighbors using bulk operations
+            # NOTE: Use self.db_session.query() instead of self.identification_query
+            # to ensure all operations use the same session consistently.
             ad_identifications = (
-                self.identification_query.join(TranscriptSegment)
+                self.db_session.query(Identification)
+                .join(TranscriptSegment)
                 .filter(
                     TranscriptSegment.post_id == post.id,
                     Identification.label == "ad",
@@ -678,10 +681,15 @@ class AdClassifier:
         last_seq_num: int,
         user_prompt_str: str,
     ) -> Optional[ModelCall]:
-        """Get an existing ModelCall or create a new one."""
+        """Get an existing ModelCall or create a new one.
+        
+        NOTE: Uses self.db_session.query() instead of self.model_call_query
+        to ensure all operations use the same session consistently.
+        """
         model = self.config.llm_model
         model_call: Optional[ModelCall] = (
-            self.model_call_query.filter_by(
+            self.db_session.query(ModelCall)
+            .filter_by(
                 post_id=post.id,
                 model_name=model,
                 first_segment_sequence_num=first_seq_num,
@@ -725,7 +733,8 @@ class AdClassifier:
                 # Someone else created the same unique row concurrently; fetch and reuse
                 self.db_session.rollback()
                 model_call = (
-                    self.model_call_query.filter_by(
+                    self.db_session.query(ModelCall)
+                    .filter_by(
                         post_id=post.id,
                         model_name=model,
                         first_segment_sequence_num=first_seq_num,
@@ -971,9 +980,13 @@ class AdClassifier:
         return matched_segment
 
     def _segment_has_ad_identification(self, transcript_segment_id: int) -> bool:
-        """Check if a transcript segment already has an ad identification."""
+        """Check if a transcript segment already has an ad identification.
+        
+        NOTE: Uses self.db_session.query() for session consistency.
+        """
         return (
-            self.identification_query.filter_by(
+            self.db_session.query(Identification)
+            .filter_by(
                 transcript_segment_id=transcript_segment_id,
                 label="ad",
             ).first()
@@ -1165,8 +1178,14 @@ class AdClassifier:
     def _get_segments_bulk(
         self, post_id: int, sequence_numbers: List[int]
     ) -> Dict[int, TranscriptSegment]:
-        """Fetch multiple segments in one query"""
-        segments = TranscriptSegment.query.filter(
+        """Fetch multiple segments in one query.
+        
+        NOTE: Must use self.db_session.query() instead of TranscriptSegment.query
+        to ensure we use the same session. Using TranscriptSegment.query
+        (the Flask-SQLAlchemy scoped session) can cause deadlock with SQLite
+        pessimistic locking when another query on self.db_session holds the write lock.
+        """
+        segments = self.db_session.query(TranscriptSegment).filter(
             and_(
                 TranscriptSegment.post_id == post_id,
                 TranscriptSegment.sequence_num.in_(sequence_numbers),
@@ -1177,9 +1196,13 @@ class AdClassifier:
     def _get_existing_ids_bulk(
         self, post_id: int, model_call_id: int
     ) -> Set[Tuple[int, int, str]]:
-        """Fetch all existing identifications as a set for O(1) lookup"""
+        """Fetch all existing identifications as a set for O(1) lookup.
+        
+        NOTE: Uses self.db_session.query() for session consistency.
+        """
         ids = (
-            self.identification_query.join(TranscriptSegment)
+            self.db_session.query(Identification)
+            .join(TranscriptSegment)
             .filter(
                 and_(
                     TranscriptSegment.post_id == post_id,
@@ -1294,13 +1317,17 @@ class AdClassifier:
     def _refine_boundaries(
         self, transcript_segments: List[TranscriptSegment], post: Post
     ) -> None:
-        """Apply boundary refinement to detected ads"""
+        """Apply boundary refinement to detected ads.
+        
+        NOTE: Uses self.db_session.query() for session consistency.
+        """
         if not self.boundary_refiner:
             return
 
         # Get ad identifications
         identifications = (
-            self.identification_query.join(TranscriptSegment)
+            self.db_session.query(Identification)
+            .join(TranscriptSegment)
             .filter(TranscriptSegment.post_id == post.id, Identification.label == "ad")
             .all()
         )

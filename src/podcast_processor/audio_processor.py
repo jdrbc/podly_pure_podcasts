@@ -35,6 +35,9 @@ class AudioProcessor:
         """
         Retrieves ad segments from the database for a given post.
 
+        NOTE: Uses self.db_session.query() instead of self.identification_query
+        to ensure all operations use the same session consistently.
+
         Args:
             post: The Post object to retrieve ad segments for
 
@@ -44,7 +47,8 @@ class AudioProcessor:
         self.logger.info(f"Retrieving ad segments from database for post {post.id}.")
 
         ad_identifications = (
-            self.identification_query.join(
+            self.db_session.query(Identification)
+            .join(
                 TranscriptSegment,
                 Identification.transcript_segment_id == TranscriptSegment.id,
             )

@@ -62,9 +62,14 @@ class TranscriptionManager:
     def _check_existing_transcription(
         self, post: Post
     ) -> Optional[List[TranscriptSegment]]:
-        """Checks for existing successful transcription and returns segments if valid."""
+        """Checks for existing successful transcription and returns segments if valid.
+        
+        NOTE: Uses self.db_session.query() instead of self.model_call_query/segment_query
+        to ensure all operations use the same session consistently.
+        """
         existing_whisper_call = (
-            self.model_call_query.filter_by(
+            self.db_session.query(ModelCall)
+            .filter_by(
                 post_id=post.id,
                 model_name=self.transcriber.model_name,
                 status="success",
@@ -78,7 +83,8 @@ class TranscriptionManager:
                 f"Found existing successful Whisper ModelCall {existing_whisper_call.id} for post {post.id}."
             )
             db_segments: List[TranscriptSegment] = (
-                self.segment_query.filter_by(post_id=post.id)
+                self.db_session.query(TranscriptSegment)
+                .filter_by(post_id=post.id)
                 .order_by(TranscriptSegment.sequence_num)
                 .all()
             )
@@ -105,7 +111,14 @@ class TranscriptionManager:
         return None
 
     def _get_or_create_whisper_model_call(self, post: Post) -> ModelCall:
-        """Create or reuse the placeholder ModelCall row for a Whisper run."""
+        """Create or reuse the placeholder ModelCall row for a Whisper run.
+        
+        NOTE: This method uses self.db_session.query(ModelCall) instead of
+        self.model_call_query to ensure all operations use the same session.
+        Using ModelCall.query (the Flask-SQLAlchemy scoped session) would cause
+        "not persistent within this Session" errors when we try to expire or
+        modify objects fetched from a different session.
+        """
         placeholder_filters = {
             "post_id": post.id,
             "model_name": self.transcriber.model_name,
@@ -122,7 +135,8 @@ class TranscriptionManager:
 
         existing = cast(
             Optional[ModelCall],
-            self.model_call_query.filter_by(**placeholder_filters)
+            self.db_session.query(ModelCall)
+            .filter_by(**placeholder_filters)
             .order_by(ModelCall.timestamp.desc())
             .first(),
         )
@@ -141,7 +155,7 @@ class TranscriptionManager:
                 return existing
 
             # Atomic single update to minimize lock churn
-            self.model_call_query.filter_by(id=existing.id).update(
+            self.db_session.query(ModelCall).filter_by(id=existing.id).update(
                 reset_fields, synchronize_session=False
             )
             commit_with_profile(
@@ -174,7 +188,8 @@ class TranscriptionManager:
             self.db_session.rollback()
             current_whisper_call = cast(
                 Optional[ModelCall],
-                self.model_call_query.filter_by(**placeholder_filters)
+                self.db_session.query(ModelCall)
+                .filter_by(**placeholder_filters)
                 .order_by(ModelCall.timestamp.desc())
                 .first(),
             )
@@ -191,7 +206,7 @@ class TranscriptionManager:
                 for field, value in reset_fields.items()
             )
             if needs_update:
-                self.model_call_query.filter_by(id=current_whisper_call.id).update(
+                self.db_session.query(ModelCall).filter_by(id=current_whisper_call.id).update(
                     reset_fields, synchronize_session=False
                 )
                 commit_with_profile(
