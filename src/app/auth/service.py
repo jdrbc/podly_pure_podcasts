@@ -55,7 +55,10 @@ def authenticate(username: str, password: str) -> AuthenticatedUser | None:
 
 
 def list_users() -> Sequence[User]:
-    return cast(Sequence[User], User.query.order_by(User.username.asc()).all())
+    return cast(
+        Sequence[User],
+        User.query.order_by(User.created_at.desc(), User.id.desc()).all(),
+    )
 
 
 def create_user(username: str, password: str, role: str = "user") -> User:

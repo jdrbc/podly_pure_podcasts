@@ -1,3 +1,9 @@
+export interface FeedSupporter {
+  user_id: number;
+  username: string;
+  credits_balance: string;
+}
+
 export interface Feed {
   id: number;
   rss_url: string;
@@ -11,6 +17,9 @@ export interface Feed {
   sponsor_credits_balance?: string | null;
   sponsor_out_of_credits?: boolean;
   sponsor_note?: string | null;
+  supporters?: FeedSupporter[];
+  is_current_user_supporter?: boolean;
+  supporters_count?: number;
 }
 
 export interface Episode {

@@ -42,6 +42,11 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
         foreign_keys=[sponsor_user_id],
         backref=db.backref("sponsored_feeds", lazy="dynamic"),
     )
+    supporters = db.relationship(
+        "FeedSupporter",
+        back_populates="feed",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Feed {self.title}>"
@@ -148,6 +153,11 @@ class User(db.Model):  # type: ignore[name-defined, misc]
     # Discord SSO fields
     discord_id = db.Column(db.String(32), unique=True, nullable=True, index=True)
     discord_username = db.Column(db.String(100), nullable=True)
+    feed_supports = db.relationship(
+        "FeedSupporter",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     @validates("username")
     def _normalize_username(self, key: str, value: str) -> str:
@@ -318,6 +328,8 @@ class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
     error_message = db.Column(db.Text)
     scheduler_job_id = db.Column(db.String(255))  # APScheduler job ID
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    billing_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
 
     # Relationships
     post = db.relationship(
@@ -327,9 +339,38 @@ class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
         foreign_keys=[post_guid],
     )
     run = db.relationship("JobsManagerRun", back_populates="processing_jobs")
+    requested_by_user = db.relationship(
+        "User",
+        foreign_keys=[requested_by_user_id],
+        backref=db.backref("requested_jobs", lazy="dynamic"),
+    )
+    billing_user = db.relationship(
+        "User",
+        foreign_keys=[billing_user_id],
+        backref=db.backref("billed_jobs", lazy="dynamic"),
+    )
 
     def __repr__(self) -> str:
         return f"<ProcessingJob {self.id} Post:{self.post_guid} Status:{self.status} Step:{self.current_step}/{self.total_steps}>"
+
+
+class FeedSupporter(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "feed_supporter"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("feed_id", "user_id", name="uq_feed_supporter_feed_user"),
+    )
+
+    feed = db.relationship("Feed", back_populates="supporters")
+    user = db.relationship("User", back_populates="feed_supports")
+
+    def __repr__(self) -> str:
+        return f"<FeedSupporter feed={self.feed_id} user={self.user_id}>"
 
 
 # ----- Application Settings (Singleton Tables) -----

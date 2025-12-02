@@ -3,7 +3,7 @@ import re
 from decimal import Decimal
 from pathlib import Path
 from threading import Thread
-from typing import Any, cast
+from typing import Any, Optional, cast
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import requests
@@ -33,6 +33,7 @@ from app.models import (
     CreditTransaction,
     Feed,
     FeedAccessToken,
+    FeedSupporter,
     Identification,
     ModelCall,
     Post,
@@ -207,13 +208,9 @@ def delete_feed(f_id: int) -> ResponseReturnValue:  # pylint: disable=too-many-b
         return error
 
     feed = Feed.query.get_or_404(f_id)
-    is_admin = getattr(user, "role", None) == "admin"
-    is_sponsor = user is not None and feed.sponsor_user_id == user.id
-    if not (is_admin or is_sponsor):
+    if user is not None and user.role != "admin":
         return (
-            jsonify(
-                {"error": "Only the sponsoring user or an admin can delete this feed."}
-            ),
+            jsonify({"error": "Only administrators can delete feeds."}),
             403,
         )
 
@@ -473,15 +470,30 @@ def _assign_feed_sponsor(feed: Feed) -> None:
         sponsor = resolve_sponsor_user(feed)
         sponsor_id = getattr(sponsor, "id", None)
 
+    did_update = False
     if sponsor_id and feed.sponsor_user_id != sponsor_id:
         feed.sponsor_user_id = sponsor_id
         db.session.add(feed)
+        did_update = True
+    if sponsor_id:
+        did_update = _ensure_feed_supporter(feed, sponsor_id) or did_update
+    if did_update:
         commit_with_profile(
             db.session,
             must_succeed=True,
             context="assign_feed_sponsor",
             logger_obj=logger,
         )
+
+
+def _ensure_feed_supporter(feed: Feed, user_id: int | None) -> bool:
+    if not user_id:
+        return False
+    existing = FeedSupporter.query.filter_by(feed_id=feed.id, user_id=user_id).first()
+    if existing:
+        return False
+    db.session.add(FeedSupporter(feed_id=feed.id, user_id=user_id))
+    return True
 
 
 @feed_bp.route("/<path:something_or_rss>", methods=["GET"])
@@ -507,8 +519,57 @@ def get_feed_by_alt_or_url(something_or_rss: str) -> Response:
 @feed_bp.route("/feeds", methods=["GET"])
 def api_feeds() -> Response:
     feeds = Feed.query.all()
-    feeds_data = [_serialize_feed(feed) for feed in feeds]
+    current = getattr(g, "current_user", None)
+    feeds_data = [_serialize_feed(feed, current_user=current) for feed in feeds]
     return jsonify(feeds_data)
+
+
+@feed_bp.route("/api/feeds/<int:feed_id>/join", methods=["POST"])
+def api_join_feed(feed_id: int) -> ResponseReturnValue:
+    user, error = _require_authenticated_user()
+    if error:
+        return error
+    if user is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    feed = Feed.query.get_or_404(feed_id)
+    changed = _ensure_feed_supporter(feed, getattr(user, "id", None))
+    if changed:
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="feed_join",
+            logger_obj=logger,
+        )
+    refreshed = Feed.query.get(feed_id)
+    return (
+        jsonify(_serialize_feed(refreshed or feed, current_user=user)),
+        200,
+    )
+
+
+@feed_bp.route("/api/feeds/<int:feed_id>/exit", methods=["POST"])
+def api_exit_feed(feed_id: int) -> ResponseReturnValue:
+    user, error = _require_authenticated_user()
+    if error:
+        return error
+    if user is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    feed = Feed.query.get_or_404(feed_id)
+    removed = FeedSupporter.query.filter_by(feed_id=feed.id, user_id=user.id).delete()
+    if removed:
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="feed_exit",
+            logger_obj=logger,
+        )
+    refreshed = Feed.query.get(feed_id)
+    return (
+        jsonify(_serialize_feed(refreshed or feed, current_user=user)),
+        200,
+    )
 
 
 @feed_bp.route("/api/feeds/<int:feed_id>/sponsor", methods=["POST"])
@@ -522,7 +583,7 @@ def sponsor_feed(feed_id: int) -> ResponseReturnValue:
 
     feed = Feed.query.get_or_404(feed_id)
     if feed.sponsor_user_id == user.id:
-        return jsonify(_serialize_feed(feed))
+        return jsonify(_serialize_feed(feed, current_user=user))
 
     existing_sponsor = (
         db.session.get(User, feed.sponsor_user_id) if feed.sponsor_user_id else None
@@ -543,6 +604,7 @@ def sponsor_feed(feed_id: int) -> ResponseReturnValue:
         )
 
     feed.sponsor_user_id = user.id
+    _ensure_feed_supporter(feed, user.id)
     db.session.add(feed)
     commit_with_profile(
         db.session,
@@ -551,7 +613,7 @@ def sponsor_feed(feed_id: int) -> ResponseReturnValue:
         logger_obj=logger,
     )
 
-    return jsonify(_serialize_feed(feed))
+    return jsonify(_serialize_feed(feed, current_user=user))
 
 
 def _require_authenticated_user(
@@ -574,12 +636,49 @@ def _require_authenticated_user(
     return user, None
 
 
-def _serialize_feed(feed: Feed) -> dict[str, Any]:
+def _serialize_feed(
+    feed: Feed,
+    *,
+    current_user: Optional[User] = None,
+    include_supporters: Optional[bool] = None,
+) -> dict[str, Any]:
     sponsor_balance = (
         Decimal(feed.sponsor.credits_balance or 0) if feed.sponsor else Decimal("0")
     )
     out_of_credits = feed.sponsor is not None and sponsor_balance <= Decimal(0)
-    return {
+    supporters_payload: list[dict[str, Any]] = []
+    supporter_memberships = list(getattr(feed, "supporters", []) or [])
+    supporter_count = len(supporter_memberships)
+    if include_supporters is None:
+        include_supporters = bool(
+            current_user
+            and (
+                getattr(current_user, "role", None) == "admin"
+                or feed.sponsor_user_id == getattr(current_user, "id", None)
+            )
+        )
+    if include_supporters:
+        for membership in supporter_memberships:
+            supporter_user = membership.user
+            if not supporter_user:
+                continue
+            supporters_payload.append(
+                {
+                    "user_id": membership.user_id,
+                    "username": supporter_user.username,
+                    "credits_balance": str(
+                        Decimal(supporter_user.credits_balance or 0)
+                    ),
+                }
+            )
+    is_supporter = bool(
+        getattr(current_user, "id", None)
+        and any(
+            membership.user_id == getattr(current_user, "id", None)
+            for membership in supporter_memberships
+        )
+    )
+    feed_payload = {
         "id": feed.id,
         "title": feed.title,
         "rss_url": feed.rss_url,
@@ -594,4 +693,9 @@ def _serialize_feed(feed: Feed) -> dict[str, Any]:
             str(sponsor_balance) if feed.sponsor is not None else None
         ),
         "sponsor_out_of_credits": out_of_credits,
+        "supporters_count": supporter_count,
+        "is_current_user_supporter": is_supporter,
     }
+    if include_supporters:
+        feed_payload["supporters"] = supporters_payload
+    return feed_payload

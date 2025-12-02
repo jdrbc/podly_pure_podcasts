@@ -110,7 +110,7 @@ export default function DownloadButton({
           setError('Failed to check processing status');
           setIsProcessing(false);
         }
-      }, 2000); // Poll every 2 seconds
+      }, 3000); // Poll every 3 seconds to reduce database contention
     }
 
     return () => {
@@ -203,7 +203,9 @@ export default function DownloadButton({
     } catch (err: unknown) {
       console.error('Error starting processing:', err);
       const errorMessage = err && typeof err === 'object' && 'response' in err
-        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to start processing'
+        ? (err as { response?: { data?: { error?: string; message?: string } } }).response?.data?.message 
+          || (err as { response?: { data?: { error?: string } } }).response?.data?.error 
+          || 'Failed to start processing'
         : 'Failed to start processing';
       setError(errorMessage);
       setIsProcessing(false);

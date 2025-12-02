@@ -16,6 +16,15 @@ interface FeedDetailProps {
 
 type SortOption = 'newest' | 'oldest' | 'title';
 
+interface ProcessingEstimate {
+  post_guid: string;
+  estimated_minutes: number;
+  estimated_credits: string;
+  user_balance: string;
+  can_process: boolean;
+  reason: string | null;
+}
+
 export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailProps) {
   const { requireAuth, isAuthenticated, user } = useAuth();
   const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -26,6 +35,11 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const feedHeaderRef = useRef<HTMLDivElement>(null);
   const [currentFeed, setCurrentFeed] = useState(feed);
+  const [pendingEpisode, setPendingEpisode] = useState<Episode | null>(null);
+  const [showProcessingModal, setShowProcessingModal] = useState(false);
+  const [processingEstimate, setProcessingEstimate] = useState<ProcessingEstimate | null>(null);
+  const [isEstimating, setIsEstimating] = useState(false);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
 
   const { data: episodes, isLoading, error } = useQuery({
     queryKey: ['episodes', currentFeed.id],
@@ -33,10 +47,14 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   });
 
   const whitelistMutation = useMutation({
-    mutationFn: ({ guid, whitelisted }: { guid: string; whitelisted: boolean }) =>
-      feedsApi.togglePostWhitelist(guid, whitelisted),
+    mutationFn: ({ guid, whitelisted, triggerProcessing }: { guid: string; whitelisted: boolean; triggerProcessing?: boolean }) =>
+      feedsApi.togglePostWhitelist(guid, whitelisted, triggerProcessing),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
+    },
+    onError: (err) => {
+      const message = (err as any)?.response?.data?.message;
+      toast.error(message ?? 'Failed to update whitelist status');
     },
   });
 
@@ -75,20 +93,37 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     },
   });
 
-  const sponsorFeedMutation = useMutation({
-    mutationFn: () => feedsApi.sponsorFeed(currentFeed.id),
+  const joinFeedMutation = useMutation({
+    mutationFn: () => feedsApi.joinFeed(currentFeed.id),
     onSuccess: (updatedFeed) => {
       setCurrentFeed(updatedFeed);
       queryClient.setQueryData<Feed[] | undefined>(['feeds'], (existing) => {
         if (!existing) return existing;
         return existing.map((f) => (f.id === updatedFeed.id ? updatedFeed : f));
       });
-      toast.success('You are now sponsoring this feed');
+      toast.success('Joined feed supporters');
     },
     onError: (err) => {
-      console.error('Failed to sponsor feed', err);
+      console.error('Failed to join feed', err);
       const message = (err as any)?.response?.data?.error;
-      toast.error(message ?? 'Unable to sponsor this feed right now');
+      toast.error(message ?? 'Unable to join this feed');
+    },
+  });
+
+  const exitFeedMutation = useMutation({
+    mutationFn: () => feedsApi.exitFeed(currentFeed.id),
+    onSuccess: (updatedFeed) => {
+      setCurrentFeed(updatedFeed);
+      queryClient.setQueryData<Feed[] | undefined>(['feeds'], (existing) => {
+        if (!existing) return existing;
+        return existing.map((f) => (f.id === updatedFeed.id ? updatedFeed : f));
+      });
+      toast.success('You have left this feed');
+    },
+    onError: (err) => {
+      console.error('Failed to exit feed', err);
+      const message = (err as any)?.response?.data?.error;
+      toast.error(message ?? 'Unable to exit this feed');
     },
   });
 
@@ -128,14 +163,69 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   }, [showMenu]);
 
   const handleWhitelistToggle = (episode: Episode) => {
+    if (!episode.whitelisted) {
+      setPendingEpisode(episode);
+      setShowProcessingModal(true);
+      setProcessingEstimate(null);
+      setEstimateError(null);
+      setIsEstimating(true);
+      feedsApi
+        .getProcessingEstimate(episode.guid)
+        .then((estimate) => {
+          setProcessingEstimate(estimate);
+        })
+        .catch((err) => {
+          console.error('Failed to load processing estimate', err);
+          const message = (err as any)?.response?.data?.error;
+          setEstimateError(message ?? 'Unable to estimate credits');
+        })
+        .finally(() => setIsEstimating(false));
+      return;
+    }
+
     whitelistMutation.mutate({
       guid: episode.guid,
-      whitelisted: !episode.whitelisted,
+      whitelisted: false,
     });
+  };
+
+  const handleConfirmProcessing = () => {
+    if (!pendingEpisode) return;
+    whitelistMutation.mutate(
+      {
+        guid: pendingEpisode.guid,
+        whitelisted: true,
+        triggerProcessing: true,
+      },
+      {
+        onSuccess: () => {
+          setShowProcessingModal(false);
+          setPendingEpisode(null);
+          setProcessingEstimate(null);
+        },
+      }
+    );
+  };
+
+  const handleCancelProcessing = () => {
+    setShowProcessingModal(false);
+    setPendingEpisode(null);
+    setProcessingEstimate(null);
+    setEstimateError(null);
   };
 
   const handleBulkWhitelistToggle = () => {
     bulkWhitelistMutation.mutate();
+  };
+
+  const handleJoinFeed = () => {
+    joinFeedMutation.mutate();
+  };
+
+  const handleExitFeed = () => {
+    if (confirm(`Leave "${currentFeed.title}"? You will stop sharing credits for new episodes.`)) {
+      exitFeedMutation.mutate();
+    }
   };
 
   const handleDeleteFeed = () => {
@@ -182,16 +272,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   };
 
   const isAdmin = user?.role === 'admin';
-  const isSponsor = user?.id === currentFeed.sponsor_user_id;
-  const canDeleteFeed = !requireAuth || Boolean(isAdmin || isSponsor);
-  const canModifyEpisodes = !requireAuth || Boolean(isAdmin || isSponsor);
-  const showSponsorBanner = Boolean(
-    requireAuth &&
-      currentFeed.sponsor_out_of_credits &&
-      currentFeed.sponsor_user_id !== user?.id
-  );
-  const sponsorButtonDisabled =
-    sponsorFeedMutation.isPending || (requireAuth && !user);
+  const isSupporter = Boolean(currentFeed.is_current_user_supporter);
+  const canDeleteFeed = !requireAuth || Boolean(isAdmin);
+  const canModifyEpisodes = !requireAuth || Boolean(isAdmin || isSupporter);
+  const joinButtonDisabled =
+    joinFeedMutation.isPending || exitFeedMutation.isPending;
+  const supporterCount =
+    currentFeed.supporters?.length ??
+    currentFeed.supporters_count ??
+    0;
+  const supporterLabel = supporterCount === 1 ? 'supporter' : 'supporters';
+  const canSubscribe = !requireAuth || Boolean(isAdmin || isSupporter);
 
   const handleCopyRssToClipboard = async () => {
     if (requireAuth && !isAuthenticated) {
@@ -347,21 +438,24 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 )}
                 <div className="mt-2 text-sm text-gray-500">
                   <span>{currentFeed.posts_count} episodes</span>
-                  {currentFeed.sponsor_username && !currentFeed.sponsor_out_of_credits && (
+                  {supporterCount > 0 && (
                     <>
                       <span className="mx-2">•</span>
-                      <span>Sponsored by {currentFeed.sponsor_username}</span>
-                    </>
-                  )}
-                  {currentFeed.sponsor_out_of_credits && (
-                    <>
-                      <span className="mx-2">•</span>
-                      <span className="text-amber-800 font-semibold">Looking for sponsor!</span>
+                      <span>{supporterCount} active {supporterLabel}</span>
                     </>
                   )}
                 </div>
               </div>
             </div>
+
+            {requireAuth && !isSupporter && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex flex-col gap-2">
+                <p className="text-blue-900 font-semibold">Join this feed to subscribe</p>
+                <p className="text-sm text-blue-800">
+                  Supporters share credit costs for new episodes.
+                </p>
+              </div>
+            )}
 
             {/* RSS Button and Menu */}
             <div className="flex items-center gap-3">
@@ -369,7 +463,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
               <button
                 onClick={handleCopyRssToClipboard}
                 title="Copy Podly RSS feed URL"
-                className="flex items-center gap-3 px-5 py-2 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition-colors"
+                className={`flex items-center gap-3 px-5 py-2 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition-colors ${
+                  !canSubscribe ? 'opacity-60 cursor-not-allowed' : ''
+                }`}
+                disabled={!canSubscribe}
               >
                 <img
                   src="/rss-round-color-icon.svg"
@@ -377,27 +474,44 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                   className="w-6 h-6"
                   aria-hidden="true"
                 />
-                <span className="text-white">Subscribe to Podly RSS</span>
+                <span className="text-white">
+                  {canSubscribe ? 'Subscribe to Podly RSS' : 'Join feed to subscribe'}
+                </span>
               </button>
 
-              <button
-                onClick={() => refreshFeedMutation.mutate()}
-                disabled={refreshFeedMutation.isPending}
-                title="Refresh feed from source"
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                  refreshFeedMutation.isPending
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <img
-                  className={`w-4 h-4 ${refreshFeedMutation.isPending ? 'animate-spin' : ''}`}
-                  src="/reload-icon.svg"
-                  alt="Refresh feed"
-                  aria-hidden="true"
-                />
-                <span>Refresh Feed</span>
-              </button>
+              {requireAuth && !isSupporter && (
+                <button
+                  onClick={handleJoinFeed}
+                  disabled={joinButtonDisabled || !user}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    joinButtonDisabled || !user
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  Join feed
+                </button>
+              )}
+              {canModifyEpisodes && (
+                <button
+                  onClick={() => refreshFeedMutation.mutate()}
+                  disabled={refreshFeedMutation.isPending}
+                  title="Refresh feed from source"
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    refreshFeedMutation.isPending
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <img
+                    className={`w-4 h-4 ${refreshFeedMutation.isPending ? 'animate-spin' : ''}`}
+                    src="/reload-icon.svg"
+                    alt="Refresh feed"
+                    aria-hidden="true"
+                  />
+                  <span>Refresh Feed</span>
+                </button>
+              )}
 
               {/* Ellipsis Menu */}
               <div className="relative menu-container">
@@ -412,7 +526,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
                 {/* Dropdown Menu */}
                 {showMenu && (
-                  <div className="absolute top-full left-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                  <div className="absolute top-full right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 max-w-[calc(100vw-2rem)]">
                     {canModifyEpisodes && (
                       <>
                         <button
@@ -467,6 +581,26 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                       Original RSS feed
                     </button>
 
+                    {requireAuth && isSupporter && (
+                      <>
+                        <div className="border-t border-gray-100 my-1"></div>
+
+                        <button
+                          onClick={() => {
+                            handleExitFeed();
+                            setShowMenu(false);
+                          }}
+                          disabled={joinButtonDisabled}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          </svg>
+                          Exit feed
+                        </button>
+                      </>
+                    )}
+
                     {canDeleteFeed && (
                       <>
                         <div className="border-t border-gray-100 my-1"></div>
@@ -490,35 +624,6 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 )}
               </div>
             </div>
-
-            {showSponsorBanner && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
-                <p className="text-amber-900 font-semibold">
-                  This feed is no longer sponsored. Would you like to sponsor this feed?
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={() => sponsorFeedMutation.mutate()}
-                    disabled={sponsorButtonDisabled}
-                    className={`px-4 py-2 rounded-lg font-medium shadow-sm ${
-                      sponsorButtonDisabled
-                        ? 'bg-amber-200 text-amber-700 cursor-not-allowed'
-                        : 'bg-amber-600 text-white hover:bg-amber-700'
-                    }`}
-                  >
-                    {sponsorFeedMutation.isPending ? 'Assigning…' : 'Sponsor this feed'}
-                  </button>
-                  <span className="text-sm text-amber-800">
-                    You’ll become the new sponsor and future processing will use your credits.
-                  </span>
-                </div>
-                {requireAuth && !user && (
-                  <p className="text-xs text-amber-800">
-                    Please sign in to take over sponsorship.
-                  </p>
-                )}
-              </div>
-            )}
 
             {/* Feed Description */}
             {currentFeed.description && (
@@ -742,6 +847,60 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
           )}
         </div>
       </div>
+
+      {showProcessingModal && pendingEpisode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={handleCancelProcessing}>
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-gray-900">Enable episode</h3>
+            <p className="text-sm text-gray-600">{pendingEpisode.title}</p>
+            {isEstimating && (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                Checking credit requirements…
+              </div>
+            )}
+            {!isEstimating && estimateError && (
+              <p className="text-sm text-red-600">{estimateError}</p>
+            )}
+            {!isEstimating && processingEstimate && (
+              <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700 space-y-1">
+                <p><strong>Estimated minutes:</strong> {processingEstimate.estimated_minutes.toFixed(2)}</p>
+                <p><strong>Estimated credits:</strong> {processingEstimate.estimated_credits}</p>
+                <p><strong>Your balance:</strong> {processingEstimate.user_balance}</p>
+                {!processingEstimate.can_process && (
+                  <p className="text-red-600 font-medium">Not enough credits to run this job.</p>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={handleCancelProcessing}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmProcessing}
+                disabled={
+                  whitelistMutation.isPending ||
+                  isEstimating ||
+                  !processingEstimate?.can_process
+                }
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                  whitelistMutation.isPending || isEstimating || !processingEstimate?.can_process
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {whitelistMutation.isPending ? 'Starting…' : 'Confirm & process'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

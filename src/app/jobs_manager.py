@@ -78,7 +78,12 @@ class JobsManager:
 
     # ------------------------ Public API ------------------------
     def start_post_processing(
-        self, post_guid: str, priority: str = "interactive"
+        self,
+        post_guid: str,
+        priority: str = "interactive",
+        *,
+        requested_by_user_id: Optional[int] = None,
+        billing_user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Idempotently start processing for a post. If an active job exists, return it.
@@ -91,7 +96,12 @@ class JobsManager:
             )
             self._set_run_id(run.id if run else None)
             result = SingleJobManager(
-                post_guid, self._status_manager, logger, run.id if run else None
+                post_guid,
+                self._status_manager,
+                logger,
+                run.id if run else None,
+                requested_by_user_id=requested_by_user_id,
+                billing_user_id=billing_user_id,
             ).start_processing(priority)
         if result.get("status") in {"started", "running"}:
             self._wake_worker()
@@ -143,7 +153,10 @@ class JobsManager:
         for post in posts_without_jobs:
             if post.whitelisted:
                 SingleJobManager(
-                    post.guid, self._status_manager, logger, run_id
+                    post.guid,
+                    self._status_manager,
+                    logger,
+                    run_id,
                 ).ensure_job()
                 created += 1
         return created

@@ -23,6 +23,7 @@ export default function HomePage() {
     queryFn: configApi.getConfig,
     enabled: !requireAuth || user?.role === 'admin',
   });
+  const canRefreshAll = !requireAuth || user?.role === 'admin';
   const refreshAllMutation = useMutation({
     mutationFn: () => feedsApi.refreshAllFeeds(),
     onSuccess: (data) => {
@@ -75,22 +76,24 @@ export default function HomePage() {
         <div className="flex justify-between items-center mb-6 gap-3">
           <h2 className="text-2xl font-bold text-gray-900">Podcast Feeds</h2>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => refreshAllMutation.mutate()}
-              disabled={refreshAllMutation.isPending}
-              title="Refresh all feeds"
-              className={`flex items-center justify-center px-3 py-2 rounded-md border transition-colors ${
-                refreshAllMutation.isPending
-                  ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <img
-                src="/reload-icon.svg"
-                alt="Refresh all"
-                className={`w-4 h-4 ${refreshAllMutation.isPending ? 'animate-spin' : ''}`}
-              />
-            </button>
+            {canRefreshAll && (
+              <button
+                onClick={() => refreshAllMutation.mutate()}
+                disabled={refreshAllMutation.isPending}
+                title="Refresh all feeds"
+                className={`flex items-center justify-center px-3 py-2 rounded-md border transition-colors ${
+                  refreshAllMutation.isPending
+                    ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <img
+                  src="/reload-icon.svg"
+                  alt="Refresh all"
+                  className={`w-4 h-4 ${refreshAllMutation.isPending ? 'animate-spin' : ''}`}
+                />
+              </button>
+            )}
             <button
               onClick={() => setShowAddForm((prev) => !prev)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors"

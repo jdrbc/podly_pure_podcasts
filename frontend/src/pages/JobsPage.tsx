@@ -205,9 +205,10 @@ export default function JobsPage() {
       return undefined;
     }
 
+    // Poll every 15 seconds when jobs are active to reduce database contention
     const interval = setInterval(() => {
       void loadStatus();
-    }, 10000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [managerStatus?.run?.queued_jobs, managerStatus?.run?.running_jobs, loadStatus]);

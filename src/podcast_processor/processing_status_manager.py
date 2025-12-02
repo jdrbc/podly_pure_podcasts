@@ -27,7 +27,13 @@ class ProcessingStatusManager:
         return str(uuid.uuid4())
 
     def create_job(
-        self, post_guid: str, job_id: str, run_id: Optional[str] = None
+        self,
+        post_guid: str,
+        job_id: str,
+        run_id: Optional[str] = None,
+        *,
+        requested_by_user_id: Optional[int] = None,
+        billing_user_id: Optional[int] = None,
     ) -> ProcessingJob:
         """Create a new pending job record for the provided post."""
         # Create new job
@@ -40,6 +46,8 @@ class ProcessingStatusManager:
             total_steps=4,
             progress_percentage=0.0,
             created_at=datetime.utcnow(),
+            requested_by_user_id=requested_by_user_id,
+            billing_user_id=billing_user_id,
         )
         self.db_session.add(job)
         if run_id:

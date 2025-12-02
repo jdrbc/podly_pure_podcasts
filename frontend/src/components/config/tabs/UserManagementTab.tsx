@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -136,6 +136,19 @@ function UserManagementSection({ currentUser, refreshUser, logout }: UserManagem
       return response.users;
     },
   });
+
+  const sortedUsers = useMemo(() => {
+    if (!managedUsers) {
+      return [];
+    }
+    return [...managedUsers].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, [managedUsers]);
+  const adminCount = useMemo(
+    () => sortedUsers.filter((u) => u.role === 'admin').length,
+    [sortedUsers]
+  );
 
   const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -280,11 +293,11 @@ function UserManagementSection({ currentUser, refreshUser, logout }: UserManagem
           )}
           {!usersLoading && managedUsers && managedUsers.length > 0 && (
             <div className="space-y-3">
-              {managedUsers.map((managed) => {
-                const adminCount = managedUsers.filter((u) => u.role === 'admin').length;
+              {sortedUsers.map((managed) => {
                 const disableDemotion = managed.role === 'admin' && adminCount <= 1;
                 const disableDelete = disableDemotion;
                 const isActive = activeResetUser === managed.username;
+                const creditBalance = managed.credits_balance ?? '0';
 
                 return (
                   <div
@@ -295,7 +308,7 @@ function UserManagementSection({ currentUser, refreshUser, logout }: UserManagem
                       <div>
                         <div className="text-sm font-semibold text-gray-900">{managed.username}</div>
                         <div className="text-xs text-gray-500">
-                          Added {new Date(managed.created_at).toLocaleString()} • Role {managed.role}
+                          Added {new Date(managed.created_at).toLocaleString()} • Role {managed.role} • Credits {creditBalance}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">

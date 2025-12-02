@@ -16,7 +16,7 @@ from app.credits import (
 )
 from app.db_concurrency import commit_with_profile
 from app.extensions import db
-from app.models import Post, ProcessingJob, TranscriptSegment
+from app.models import Post, ProcessingJob, TranscriptSegment, User
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.podcast_downloader import PodcastDownloader, sanitize_title
@@ -163,18 +163,22 @@ class PodcastProcessor:
 
             if credits_enabled():
                 try:
+                    billing_user = None
+                    if getattr(job, "billing_user_id", None):
+                        billing_user = self.db_session.get(User, job.billing_user_id)
                     debit_result = debit_for_post(
                         feed=post.feed,
                         post=post,
                         job_id=job_id,
                         unprocessed_audio_path=post.unprocessed_audio_path,
+                        billing_user=billing_user,
                     )
                     self.logger.info(
-                        "Debited credits for post %s (minutes=%.2f credits=%s balance=%s)",
+                        "Debited credits for post %s (minutes=%.2f credits=%s splits=%s)",
                         getattr(post, "guid", None),
                         debit_result.estimated_minutes,
                         debit_result.estimated_credits,
-                        debit_result.balance,
+                        len(debit_result.transactions),
                     )
                 except InsufficientCreditsError:
                     self.status_manager.update_job_status(

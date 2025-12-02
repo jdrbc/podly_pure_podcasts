@@ -1,17 +1,27 @@
 import logging
 import os
+from decimal import Decimal
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 import flask
 from flask import Blueprint, current_app, g, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 from sqlalchemy.exc import OperationalError
 
+from app.credits import credits_enabled, estimate_post_cost
 from app.db_concurrency import commit_with_profile
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
-from app.models import Feed, Identification, ModelCall, Post, TranscriptSegment, User
+from app.models import (
+    Feed,
+    FeedSupporter,
+    Identification,
+    ModelCall,
+    Post,
+    TranscriptSegment,
+    User,
+)
 from app.posts import clear_post_processing_data
 
 logger = logging.getLogger("global_logger")
@@ -49,10 +59,14 @@ def _require_sponsor_or_admin(
         )
 
     is_admin = user.role == "admin"
+    is_supporter = (
+        FeedSupporter.query.filter_by(feed_id=feed.id, user_id=user.id).first()
+        is not None
+    )
     is_sponsor = feed.sponsor_user_id == user.id
-    if not (is_admin or is_sponsor):
+    if not (is_admin or is_supporter or is_sponsor):
         return None, flask.make_response(
-            flask.jsonify({"error": f"Only the sponsor or an admin can {action}."}),
+            flask.jsonify({"error": f"Only supporters or an admin can {action}."}),
             403,
         )
 
@@ -106,6 +120,40 @@ def api_feed_posts(feed_id: int) -> flask.Response:
         for post in feed.posts
     ]
     return flask.jsonify(posts)
+
+
+@post_bp.route("/api/posts/<string:p_guid>/processing-estimate", methods=["GET"])
+def api_post_processing_estimate(p_guid: str) -> ResponseReturnValue:
+    post = Post.query.filter_by(guid=p_guid).first()
+    if post is None:
+        return flask.make_response(flask.jsonify({"error": "Post not found"}), 404)
+
+    feed = db.session.get(Feed, post.feed_id)
+    if feed is None:
+        return flask.make_response(flask.jsonify({"error": "Feed not found"}), 404)
+
+    user, error = _require_sponsor_or_admin(feed, "estimate processing costs")
+    if error:
+        return error
+
+    minutes, estimated_credits = estimate_post_cost(post)
+    balance = Decimal(user.credits_balance or 0) if user else Decimal("0")
+    can_process = True
+    reason = None
+    if credits_enabled() and user is not None and balance < estimated_credits:
+        can_process = False
+        reason = "INSUFFICIENT_USER_CREDITS"
+
+    return flask.jsonify(
+        {
+            "post_guid": post.guid,
+            "estimated_minutes": minutes,
+            "estimated_credits": str(estimated_credits),
+            "user_balance": str(balance),
+            "can_process": can_process,
+            "reason": reason,
+        }
+    )
 
 
 @post_bp.route("/post/<string:p_guid>/json", methods=["GET"])
@@ -389,7 +437,7 @@ def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
     if feed is None:
         return flask.make_response(flask.jsonify({"error": "Feed not found"}), 404)
 
-    _, error = _require_sponsor_or_admin(feed, "whitelist this episode")
+    user, error = _require_sponsor_or_admin(feed, "whitelist this episode")
     if error:
         return error
 
@@ -419,13 +467,39 @@ def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
             503,
         )
 
-    return flask.jsonify(
-        {
-            "guid": post.guid,
-            "whitelisted": post.whitelisted,
-            "message": "Whitelist status updated successfully",
-        }
-    )
+    response_body: Dict[str, Any] = {
+        "guid": post.guid,
+        "whitelisted": post.whitelisted,
+        "message": "Whitelist status updated successfully",
+    }
+
+    trigger_processing = bool(data.get("trigger_processing"))
+    if post.whitelisted and trigger_processing:
+        billing_user_id = getattr(user, "id", None)
+        if credits_enabled() and billing_user_id and user is not None:
+            _minutes, estimated_credits = estimate_post_cost(post)
+            balance = Decimal(user.credits_balance or 0)
+            if balance < estimated_credits:
+                return (
+                    flask.jsonify(
+                        {
+                            "error": "INSUFFICIENT_CREDITS",
+                            "message": "Not enough credits to process this episode.",
+                            "estimated_credits": str(estimated_credits),
+                            "balance": str(balance),
+                        }
+                    ),
+                    402,
+                )
+        job_response = get_jobs_manager().start_post_processing(
+            post.guid,
+            priority="interactive",
+            requested_by_user_id=billing_user_id,
+            billing_user_id=billing_user_id,
+        )
+        response_body["processing_job"] = job_response
+
+    return flask.jsonify(response_body)
 
 
 @post_bp.route("/api/feeds/<int:feed_id>/toggle-whitelist-all", methods=["POST"])
@@ -520,7 +594,7 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             404,
         )
 
-    _, error = _require_sponsor_or_admin(feed, "process this episode")
+    user, error = _require_sponsor_or_admin(feed, "process this episode")
     if error:
         return error
 
@@ -545,9 +619,30 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             }
         )
 
+    billing_user_id = getattr(user, "id", None)
+    if credits_enabled() and billing_user_id and user is not None:
+        _minutes, estimated_credits = estimate_post_cost(post)
+        balance = Decimal(user.credits_balance or 0)
+        if balance < estimated_credits:
+            return (
+                flask.jsonify(
+                    {
+                        "status": "error",
+                        "error_code": "INSUFFICIENT_CREDITS",
+                        "message": "Not enough credits to process this episode.",
+                        "estimated_credits": str(estimated_credits),
+                        "balance": str(balance),
+                    }
+                ),
+                402,
+            )
+
     try:
         result = get_jobs_manager().start_post_processing(
-            p_guid, priority="interactive"
+            p_guid,
+            priority="interactive",
+            requested_by_user_id=billing_user_id,
+            billing_user_id=billing_user_id,
         )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
         return flask.jsonify(result), status_code
@@ -597,7 +692,7 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
             404,
         )
 
-    _, error = _require_sponsor_or_admin(feed, "reprocess this episode")
+    user, error = _require_sponsor_or_admin(feed, "reprocess this episode")
     if error:
         return error
 
@@ -613,11 +708,32 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
             400,
         )
 
+    billing_user_id = getattr(user, "id", None)
+    if credits_enabled() and billing_user_id and user is not None:
+        _minutes, estimated_credits = estimate_post_cost(post)
+        balance = Decimal(user.credits_balance or 0)
+        if balance < estimated_credits:
+            return (
+                flask.jsonify(
+                    {
+                        "status": "error",
+                        "error_code": "INSUFFICIENT_CREDITS",
+                        "message": "Not enough credits to process this episode.",
+                        "estimated_credits": str(estimated_credits),
+                        "balance": str(balance),
+                    }
+                ),
+                402,
+            )
+
     try:
         get_jobs_manager().cancel_post_jobs(p_guid)
         clear_post_processing_data(post)
         result = get_jobs_manager().start_post_processing(
-            p_guid, priority="interactive"
+            p_guid,
+            priority="interactive",
+            requested_by_user_id=billing_user_id,
+            billing_user_id=billing_user_id,
         )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
         if result.get("status") == "started":

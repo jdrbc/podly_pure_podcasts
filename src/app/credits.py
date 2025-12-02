@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from decimal import ROUND_DOWN, Decimal
-from typing import Optional, Tuple, cast
+from decimal import ROUND_DOWN, ROUND_UP, Decimal
+from typing import List, Optional, Tuple, cast
 
 from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.models import CreditTransaction, Feed, Post, User
+from app.models import CreditTransaction, Feed, FeedSupporter, Post, User
 from app.runtime_config import config
 from podcast_processor.audio import get_audio_duration_ms
 from shared import defaults as DEFAULTS
@@ -31,7 +31,7 @@ class InsufficientCreditsError(CreditsError):
 
 @dataclass(frozen=True, slots=True)
 class DebitResult:
-    transaction: CreditTransaction
+    transactions: List[CreditTransaction]
     balance: Decimal
     estimated_minutes: float
     estimated_credits: Decimal
@@ -55,6 +55,65 @@ def resolve_sponsor_user(feed: Feed) -> Optional[User]:
     )
 
 
+def _load_supporter_users(feed: Feed) -> List[User]:
+    return cast(
+        List[User],
+        User.query.join(FeedSupporter, FeedSupporter.user_id == User.id)
+        .filter(FeedSupporter.feed_id == feed.id)
+        .order_by(User.username.asc())
+        .all(),
+    )
+
+
+def _eligible_supporters(feed: Feed) -> List[User]:
+    supporters = _load_supporter_users(feed)
+    eligible: List[User] = []
+    for supporter in supporters:
+        balance = Decimal(supporter.credits_balance or 0)
+        if balance > Decimal(0):
+            eligible.append(supporter)
+    return eligible
+
+
+def _split_credits(
+    total: Decimal, supporters: List[User]
+) -> List[Tuple[User, Decimal]]:
+    if total <= Decimal(0):
+        return []
+    remaining = total
+    splits: List[Tuple[User, Decimal]] = []
+    ordered = sorted(
+        supporters,
+        key=lambda supporter: Decimal(supporter.credits_balance or 0),
+        reverse=True,
+    )
+    for supporter in ordered:
+        if remaining <= Decimal(0):
+            break
+        balance = Decimal(supporter.credits_balance or 0)
+        if balance <= Decimal(0):
+            continue
+        contribution = balance if balance <= remaining else remaining
+        if contribution <= Decimal(0):
+            continue
+        splits.append((supporter, contribution))
+        remaining -= contribution
+    if remaining > Decimal(0):
+        raise InsufficientCreditsError("Insufficient credits across supporters")
+    return splits
+
+
+def can_cover_shared_cost(feed: Feed, total: Decimal) -> bool:
+    supporters = _eligible_supporters(feed)
+    if not supporters:
+        return False
+    try:
+        _split_credits(total, supporters)
+        return True
+    except InsufficientCreditsError:
+        return False
+
+
 def estimate_minutes_from_unprocessed(path: Optional[str]) -> float:
     """Estimate duration in minutes using the unprocessed/original audio file."""
     if path:
@@ -63,6 +122,18 @@ def estimate_minutes_from_unprocessed(path: Optional[str]) -> float:
             return max(1.0, duration_ms / 1000.0 / 60.0)
     # Fallback to 60 minutes if we cannot determine duration.
     return 60.0
+
+
+def estimate_minutes_for_post(post: Post) -> float:
+    """Prefer stored duration metadata before inspecting unprocessed audio."""
+    if post.duration and post.duration > 0:
+        return max(1.0, float(post.duration) / 60.0)
+    return estimate_minutes_from_unprocessed(post.unprocessed_audio_path)
+
+
+def estimate_post_cost(post: Post) -> Tuple[float, Decimal]:
+    minutes = estimate_minutes_for_post(post)
+    return minutes, _credits_from_minutes(minutes)
 
 
 def _credits_from_minutes(minutes: float) -> Decimal:
@@ -169,31 +240,62 @@ def debit_for_post(
     post: Post,
     job_id: str,
     unprocessed_audio_path: Optional[str],
+    billing_user: Optional[User] = None,
 ) -> DebitResult:
     """Debit credits for a post based on its unprocessed audio duration."""
     if not credits_enabled():
         raise CreditsDisabledError("Credits are disabled")
 
-    sponsor = resolve_sponsor_user(feed)
-    if sponsor is None:
-        raise CreditsError("No sponsor or admin available for this feed")
-
     minutes = estimate_minutes_from_unprocessed(unprocessed_audio_path)
     credits_needed = _credits_from_minutes(minutes)
 
-    txn, balance = apply_transaction(
-        user=sponsor,
-        feed=feed,
-        post=post,
-        amount_signed=-credits_needed,
-        type="debit",
-        idempotency_key=f"debit:{post.guid}:{job_id}",
-        note="Episode processing debit",
-    )
+    transactions: List[CreditTransaction] = []
+    final_balance = Decimal("0")
+
+    if billing_user is not None:
+        txn, final_balance = apply_transaction(
+            user=billing_user,
+            feed=feed,
+            post=post,
+            amount_signed=-credits_needed,
+            type="debit_single",
+            idempotency_key=f"debit:{post.guid}:{job_id}:{billing_user.id}",
+            note="Direct processing debit",
+        )
+        transactions.append(txn)
+    else:
+        supporters = _eligible_supporters(feed)
+        if not supporters:
+            fallback_user = resolve_sponsor_user(feed)
+            if fallback_user is None:
+                raise CreditsError("No supporters or admins available for this feed")
+            txn, final_balance = apply_transaction(
+                user=fallback_user,
+                feed=feed,
+                post=post,
+                amount_signed=-credits_needed,
+                type="debit",
+                idempotency_key=f"debit:{post.guid}:{job_id}:{fallback_user.id}",
+                note="Episode processing debit",
+            )
+            transactions.append(txn)
+        else:
+            split = _split_credits(credits_needed, supporters)
+            for supporter, share in split:
+                txn, final_balance = apply_transaction(
+                    user=supporter,
+                    feed=feed,
+                    post=post,
+                    amount_signed=-share,
+                    type="debit_split",
+                    idempotency_key=f"debit:{post.guid}:{job_id}:{supporter.id}",
+                    note="Shared processing debit",
+                )
+                transactions.append(txn)
 
     return DebitResult(
-        transaction=txn,
-        balance=balance,
+        transactions=transactions,
+        balance=final_balance,
         estimated_minutes=minutes,
         estimated_credits=credits_needed,
     )

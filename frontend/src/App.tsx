@@ -50,7 +50,9 @@ function AppShell() {
     return <LoginPage />;
   }
 
-  const showConfigLink = !requireAuth || user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
+  const showConfigLink = !requireAuth || isAdmin;
+  const showJobsLink = !requireAuth || isAdmin;
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
@@ -73,9 +75,11 @@ function AppShell() {
               <Link to="/" className="text-sm font-medium text-gray-700 hover:text-gray-900">
                 Home
               </Link>
-              <Link to="/jobs" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                Jobs
-              </Link>
+              {showJobsLink && (
+                <Link to="/jobs" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+                  Jobs
+                </Link>
+              )}
               {showConfigLink && (
                 <Link to="/config" className="text-sm font-medium text-gray-700 hover:text-gray-900">
                   Config
@@ -122,7 +126,7 @@ function AppShell() {
       <main className="flex-1 px-2 sm:px-4 lg:px-6 py-4 overflow-auto">
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/jobs" element={<JobsPage />} />
+          {showJobsLink && <Route path="/jobs" element={<JobsPage />} />}
           {showConfigLink && <Route path="/config" element={<ConfigPage />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

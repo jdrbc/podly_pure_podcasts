@@ -245,17 +245,26 @@ fi
 # Execute appropriate Docker Compose command
 if [ "$BUILD_ONLY" = true ]; then
     echo -e "${YELLOW}Building containers only...${NC}"
-    docker compose $COMPOSE_FILES build
+    if ! docker compose $COMPOSE_FILES build; then
+        echo -e "${RED}Build failed! Please fix the errors above and try again.${NC}"
+        exit 1
+    fi
     echo -e "${GREEN}Build completed successfully.${NC}"
 elif [ "$TEST_BUILD" = true ]; then
     echo -e "${YELLOW}Testing build with no cache...${NC}"
-    docker compose $COMPOSE_FILES build --no-cache
+    if ! docker compose $COMPOSE_FILES build --no-cache; then
+        echo -e "${RED}Build failed! Please fix the errors above and try again.${NC}"
+        exit 1
+    fi
     echo -e "${GREEN}Test build completed successfully.${NC}"
 else
     # Handle development rebuild
     if [ "$REBUILD" = true ]; then
         echo -e "${YELLOW}Rebuilding containers...${NC}"
-        docker compose $COMPOSE_FILES build
+        if ! docker compose $COMPOSE_FILES build; then
+            echo -e "${RED}Build failed! Please fix the errors above and try again.${NC}"
+            exit 1
+        fi
     fi
 
     if [ "$DETACHED" = true ]; then

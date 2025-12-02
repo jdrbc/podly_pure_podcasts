@@ -71,8 +71,16 @@ export const feedsApi = {
     return response.data;
   },
 
-  togglePostWhitelist: async (guid: string, whitelisted: boolean): Promise<void> => {
-    await api.post(`/api/posts/${guid}/whitelist`, { whitelisted });
+  togglePostWhitelist: async (
+    guid: string,
+    whitelisted: boolean,
+    triggerProcessing = false
+  ): Promise<{ processing_job?: { status: string; job_id?: string; message?: string } }> => {
+    const response = await api.post(`/api/posts/${guid}/whitelist`, {
+      whitelisted,
+      trigger_processing: triggerProcessing,
+    });
+    return response.data;
   },
 
   toggleAllPostsWhitelist: async (feedId: number): Promise<{ message: string; whitelisted_count: number; total_count: number; all_whitelisted: boolean }> => {
@@ -82,6 +90,28 @@ export const feedsApi = {
 
   sponsorFeed: async (feedId: number): Promise<Feed> => {
     const response = await api.post(`/api/feeds/${feedId}/sponsor`);
+    return response.data;
+  },
+
+  joinFeed: async (feedId: number): Promise<Feed> => {
+    const response = await api.post(`/api/feeds/${feedId}/join`);
+    return response.data;
+  },
+
+  exitFeed: async (feedId: number): Promise<Feed> => {
+    const response = await api.post(`/api/feeds/${feedId}/exit`);
+    return response.data;
+  },
+
+  getProcessingEstimate: async (guid: string): Promise<{
+    post_guid: string;
+    estimated_minutes: number;
+    estimated_credits: string;
+    user_balance: string;
+    can_process: boolean;
+    reason: string | null;
+  }> => {
+    const response = await api.get(`/api/posts/${guid}/processing-estimate`);
     return response.data;
   },
 
@@ -246,7 +276,7 @@ export const feedsApi = {
     return feedsApi.getFeedPosts(feedId);
   },
 
-  toggleEpisodeWhitelist: async (guid: string, whitelisted: boolean): Promise<void> => {
+  toggleEpisodeWhitelist: async (guid: string, whitelisted: boolean): Promise<{ processing_job?: { status: string; job_id?: string; message?: string } }> => {
     return feedsApi.togglePostWhitelist(guid, whitelisted);
   },
 
