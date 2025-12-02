@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Query
 
 from app.db_concurrency import commit_with_profile
+from app.db_guard import db_guard, reset_session
 from app.extensions import db, scheduler
 from app.jobs_manager_run_service import recalculate_run_counts
 from app.models import Identification, ModelCall, Post, ProcessingJob, TranscriptSegment
@@ -71,60 +72,61 @@ def cleanup_processed_posts(retention_days: Optional[int]) -> int:
     posts that were cleaned. Callers must ensure an application context is
     active.
     """
-    posts_query, cutoff = _build_cleanup_query(retention_days)
-    if posts_query is None or cutoff is None:
-        return 0
+    with db_guard("cleanup_processed_posts", db.session, logger):
+        posts_query, cutoff = _build_cleanup_query(retention_days)
+        if posts_query is None or cutoff is None:
+            return 0
 
-    posts: Sequence[Post] = posts_query.all()
-    latest_completed = _load_latest_completed_map([post.guid for post in posts])
+        posts: Sequence[Post] = posts_query.all()
+        latest_completed = _load_latest_completed_map([post.guid for post in posts])
 
-    if not posts:
-        return 0
+        if not posts:
+            return 0
 
-    affected_run_ids: Set[str] = set()
-    removed_posts = 0
+        affected_run_ids: Set[str] = set()
+        removed_posts = 0
 
-    for post in posts:
-        if not _processed_timestamp_before_cutoff(post, cutoff, latest_completed):
-            continue
+        for post in posts:
+            if not _processed_timestamp_before_cutoff(post, cutoff, latest_completed):
+                continue
 
-        removed_posts += 1
+            removed_posts += 1
+            logger.info(
+                "Cleanup removing post '%s' (guid=%s) completed before %s",
+                post.title,
+                post.guid,
+                cutoff.isoformat(),
+            )
+            # Keep the post record but ensure it cannot be reprocessed.
+            post.whitelisted = False
+            affected_run_ids.update(
+                run_id
+                for (run_id,) in db.session.query(ProcessingJob.jobs_manager_run_id)
+                .filter(ProcessingJob.post_guid == post.guid)
+                .filter(ProcessingJob.jobs_manager_run_id.isnot(None))
+                .distinct()
+                .all()
+                if run_id
+            )
+            _remove_associated_files(post)
+            _clear_post_paths(post)
+            _delete_post_related_rows(post)
+
+        db.session.flush()
+        recalculate_run_counts(db.session)
+        commit_with_profile(
+            db.session,
+            must_succeed=True,
+            context="cleanup_processed_posts",
+            logger_obj=logger,
+        )
+
         logger.info(
-            "Cleanup removing post '%s' (guid=%s) completed before %s",
-            post.title,
-            post.guid,
-            cutoff.isoformat(),
+            "Cleanup job removed %s posts%s",
+            removed_posts,
+            f" (runs updated: {len(affected_run_ids)})" if affected_run_ids else "",
         )
-        # Keep the post record but ensure it cannot be reprocessed.
-        post.whitelisted = False
-        affected_run_ids.update(
-            run_id
-            for (run_id,) in db.session.query(ProcessingJob.jobs_manager_run_id)
-            .filter(ProcessingJob.post_guid == post.guid)
-            .filter(ProcessingJob.jobs_manager_run_id.isnot(None))
-            .distinct()
-            .all()
-            if run_id
-        )
-        _remove_associated_files(post)
-        _clear_post_paths(post)
-        _delete_post_related_rows(post)
-
-    db.session.flush()
-    recalculate_run_counts(db.session)
-    commit_with_profile(
-        db.session,
-        must_succeed=True,
-        context="cleanup_processed_posts",
-        logger_obj=logger,
-    )
-
-    logger.info(
-        "Cleanup job removed %s posts%s",
-        removed_posts,
-        f" (runs updated: {len(affected_run_ids)})" if affected_run_ids else "",
-    )
-    return removed_posts
+        return removed_posts
 
 
 def scheduled_cleanup_processed_posts() -> None:
@@ -143,6 +145,7 @@ def scheduled_cleanup_processed_posts() -> None:
             cleanup_processed_posts(retention)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Scheduled cleanup failed: %s", exc, exc_info=True)
+        reset_session(db.session, logger, "scheduled_cleanup_processed_posts", exc)
 
 
 def _remove_associated_files(post: Post) -> None:
