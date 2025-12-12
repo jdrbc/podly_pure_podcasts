@@ -114,6 +114,7 @@ class PodcastProcessor:
         post: Post,
         job_id: str,
         cancel_callback: Optional[Callable[[], bool]] = None,
+        start_from_step: int = 1,
     ) -> str:
         """
         Process a podcast by downloading, transcribing, identifying ads, and removing ad segments.
@@ -135,11 +136,12 @@ class PodcastProcessor:
         cached_lock_key = getattr(post, "guid", None)
 
         try:
-            self.logger.debug(
-                "processor.process enter: job_id=%s post_guid=%s job_bound=%s",
+            self.logger.info(
+                "processor.process enter: job_id=%s post_guid=%s job_bound=%s start_from_step=%s",
                 job_id,
                 getattr(post, "guid", None),
                 object_session(job) is not None,
+                start_from_step,
             )
             # Update job to running status
             self.status_manager.update_job_status(
@@ -157,11 +159,16 @@ class PodcastProcessor:
                 )
                 return str(post.processed_audio_path)
 
-            # Step 1: Download (if needed)
-            self._handle_download_step(post, job)
-            self._raise_if_cancelled(job, cancel_callback)
+            # Step 1: Download (if needed and if starting from step 1)
+            if start_from_step <= 1:
+                self.logger.info("Executing Step 1: Download (start_from_step=%s)", start_from_step)
+                self._handle_download_step(post, job)
+                self._raise_if_cancelled(job, cancel_callback)
+            else:
+                self.logger.info("Skipping Step 1: Download (start_from_step=%s)", start_from_step)
 
-            if credits_enabled():
+            # Only debit credits for steps that include transcription (steps 1-2)
+            if credits_enabled() and start_from_step <= 2:
                 try:
                     billing_user = None
                     if getattr(job, "billing_user_id", None):
@@ -202,7 +209,8 @@ class PodcastProcessor:
             processed_audio_path = self._acquire_processing_lock(post, job)
 
             try:
-                if os.path.exists(processed_audio_path):
+                # Skip existing file check if resuming from a later step
+                if start_from_step <= 1 and os.path.exists(processed_audio_path):
                     self.logger.info(f"Audio already processed: {post}")
                     # Update the database with the processed audio path
                     post.processed_audio_path = processed_audio_path
@@ -218,9 +226,9 @@ class PodcastProcessor:
                     )
                     return processed_audio_path
 
-                # Perform the main processing steps
+                # Perform the main processing steps from start_from_step onwards
                 self._perform_processing_steps(
-                    post, job, processed_audio_path, cancel_callback
+                    post, job, processed_audio_path, cancel_callback, start_from_step
                 )
 
                 self.logger.info(f"Processing podcast: {post} complete")
@@ -311,6 +319,7 @@ class PodcastProcessor:
         job: ProcessingJob,
         processed_audio_path: str,
         cancel_callback: Optional[Callable[[], bool]] = None,
+        start_from_step: int = 1,
     ) -> None:
         """
         Perform the main processing steps: transcription, ad classification, and audio processing.
@@ -319,19 +328,32 @@ class PodcastProcessor:
             post: The Post object to process
             job: The ProcessingJob for tracking
             processed_audio_path: Path where the processed audio will be saved
+            cancel_callback: Optional callback to check for cancellation
+            start_from_step: Step to start from (1-4)
         """
-        # Step 2: Transcribe audio
-        self.status_manager.update_job_status(
-            job, "running", 2, "Transcribing audio", 50.0
-        )
-        transcript_segments = self.transcription_manager.transcribe(post)
-        self._raise_if_cancelled(job, cancel_callback)
+        # Step 2: Transcribe audio (if starting from step 1 or 2)
+        if start_from_step <= 2:
+            self.logger.info("Executing Step 2: Transcription (start_from_step=%s)", start_from_step)
+            self.status_manager.update_job_status(
+                job, "running", 2, "Transcribing audio", 50.0
+            )
+            transcript_segments = self.transcription_manager.transcribe(post)
+            self._raise_if_cancelled(job, cancel_callback)
+        else:
+            # Load existing transcript segments from DB
+            self.logger.info("Skipping Step 2: Transcription, loading existing segments (start_from_step=%s)", start_from_step)
+            transcript_segments = list(post.segments.all())
 
-        # Step 3: Classify ad segments
-        self._classify_ad_segments(post, job, transcript_segments)
-        self._raise_if_cancelled(job, cancel_callback)
+        # Step 3: Classify ad segments (if starting from step 1-3)
+        if start_from_step <= 3:
+            self.logger.info("Executing Step 3: Ad Classification (start_from_step=%s)", start_from_step)
+            self._classify_ad_segments(post, job, transcript_segments)
+            self._raise_if_cancelled(job, cancel_callback)
+        else:
+            self.logger.info("Skipping Step 3: Ad Classification (start_from_step=%s)", start_from_step)
 
-        # Step 4: Process audio (remove ad segments)
+        # Step 4: Process audio (always run when we get here)
+        self.logger.info("Executing Step 4: Audio Processing (start_from_step=%s)", start_from_step)
         self.status_manager.update_job_status(
             job, "running", 4, "Processing audio", 90.0
         )

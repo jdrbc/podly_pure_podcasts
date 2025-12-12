@@ -330,6 +330,7 @@ class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     requested_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     billing_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    start_from_step = db.Column(db.Integer, default=1)
 
     # Relationships
     post = db.relationship(

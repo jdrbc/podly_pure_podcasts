@@ -662,9 +662,14 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
 
 @post_bp.route("/api/posts/<string:p_guid>/reprocess", methods=["POST"])
 def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
-    """Clear all processing data for a post and start processing from scratch.
+    """Clear processing data from a specified step and reprocess from that point.
 
     Only the feed sponsor or an admin can use this endpoint.
+
+    Request body (optional):
+    {
+        "from_step": 1-4  # Starting step (default: 1 for full reprocess)
+    }
     """
     post = Post.query.filter_by(guid=p_guid).first()
     if not post:
@@ -708,8 +713,34 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
             400,
         )
 
+    # Parse from_step parameter
+    requested_step = 1  # Default to full reprocess
+    if flask.request.is_json and flask.request.json:
+        requested_step = flask.request.json.get("from_step", 1)
+
+    logger.info(f"[REPROCESS API] Post {p_guid}: requested_step={requested_step}, is_json={flask.request.is_json}, json_data={flask.request.json}")
+
+    # Validate from_step is in range
+    if not isinstance(requested_step, int) or requested_step < 1 or requested_step > 4:
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "INVALID_STEP",
+                    "message": "from_step must be an integer between 1 and 4",
+                }
+            ),
+            400,
+        )
+
+    # Validate dependencies and auto-adjust step if needed
+    from app.posts import get_step_name, validate_step_dependencies
+    is_valid, fallback_step, fallback_msg = validate_step_dependencies(post, requested_step)
+    actual_step = fallback_step if not is_valid else requested_step
+
     billing_user_id = getattr(user, "id", None)
-    if credits_enabled() and billing_user_id and user is not None:
+    # Only check credits for steps that include transcription (steps 1-2)
+    if credits_enabled() and billing_user_id and user is not None and actual_step <= 2:
         _minutes, estimated_credits = estimate_post_cost(post)
         balance = Decimal(user.credits_balance or 0)
         if balance < estimated_credits:
@@ -728,16 +759,34 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
 
     try:
         get_jobs_manager().cancel_post_jobs(p_guid)
-        clear_post_processing_data(post)
+
+        # Use selective cleanup
+        from app.posts import selective_clear_post_processing_data
+        cleanup_summary = selective_clear_post_processing_data(post, actual_step)
+
+        logger.info(f"[REPROCESS API] Post {p_guid}: actual_step={actual_step}, calling start_post_processing with start_from_step={actual_step}")
+
+        # Start processing with the actual step
         result = get_jobs_manager().start_post_processing(
             p_guid,
             priority="interactive",
             requested_by_user_id=billing_user_id,
             billing_user_id=billing_user_id,
+            start_from_step=actual_step,
         )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
+
         if result.get("status") == "started":
-            result["message"] = "Post cleared and reprocessing started"
+            # Build message with auto-adjustment info if applicable
+            step_name = get_step_name(actual_step)
+            base_message = f"Post cleared from step {actual_step} ({step_name}) and reprocessing started"
+            if fallback_msg:
+                base_message = f"{fallback_msg}. {base_message}"
+
+            result["message"] = base_message
+            result["from_step"] = actual_step
+            result["from_step_name"] = step_name
+
         return flask.jsonify(result), status_code
     except Exception as e:
         logger.error(f"Failed to reprocess post {p_guid}: {e}", exc_info=True)

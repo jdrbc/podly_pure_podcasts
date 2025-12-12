@@ -84,6 +84,7 @@ class JobsManager:
         *,
         requested_by_user_id: Optional[int] = None,
         billing_user_id: Optional[int] = None,
+        start_from_step: int = 1,
     ) -> Dict[str, Any]:
         """
         Idempotently start processing for a post. If an active job exists, return it.
@@ -102,6 +103,7 @@ class JobsManager:
                 run.id if run else None,
                 requested_by_user_id=requested_by_user_id,
                 billing_user_id=billing_user_id,
+                start_from_step=start_from_step,
             ).start_processing(priority)
         if result.get("status") in {"started", "running"}:
             self._wake_worker()
@@ -733,8 +735,12 @@ class JobsManager:
                                 current_job is None or current_job.status == "cancelled"
                             )
 
+                        # Read start_from_step from job
+                        worker_job = _db.session.get(ProcessingJob, job_id)
+                        start_from_step = getattr(worker_job, 'start_from_step', 1) if worker_job else 1
+
                         get_processor().process(
-                            worker_post, job_id=job_id, cancel_callback=_cancelled
+                            worker_post, job_id=job_id, cancel_callback=_cancelled, start_from_step=start_from_step
                         )
                     except ProcessorException as exc:
                         logger.info(

@@ -21,6 +21,7 @@ class JobManager:
         *,
         requested_by_user_id: Optional[int] = None,
         billing_user_id: Optional[int] = None,
+        start_from_step: int = 1,
     ) -> None:
         self.post_guid = post_guid
         self._status_manager = status_manager
@@ -28,6 +29,7 @@ class JobManager:
         self._run_id = run_id
         self._requested_by_user_id = requested_by_user_id
         self._billing_user_id = billing_user_id
+        self._start_from_step = start_from_step
         self.job: Optional[ProcessingJob] = None
 
     @property
@@ -63,6 +65,9 @@ class JobManager:
             ):
                 job.billing_user_id = self._billing_user_id
                 changed = True
+            if self._start_from_step != 1 and job.start_from_step != self._start_from_step:
+                job.start_from_step = self._start_from_step
+                changed = True
             if changed:
                 self._status_manager.db_session.flush()
             return job
@@ -74,6 +79,9 @@ class JobManager:
             requested_by_user_id=self._requested_by_user_id,
             billing_user_id=self._billing_user_id,
         )
+        # Set start_from_step after creation
+        job.start_from_step = self._start_from_step
+        self._status_manager.db_session.flush()
         self.job = job
         return job
 
