@@ -33,6 +33,11 @@ def remove_associated_files(post: Post) -> None:
             else None
         )
 
+        # If we couldn't derive the processed path from unprocessed path,
+        # try using the stored processed_audio_path directly
+        if processed_abs_path is None and post.processed_audio_path:
+            processed_abs_path = Path(post.processed_audio_path).resolve()
+
         # Remove unprocessed audio file
         if unprocessed_abs_path and unprocessed_abs_path.exists():
             try:
