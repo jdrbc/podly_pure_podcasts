@@ -191,6 +191,13 @@ export USE_GPU_NVIDIA
 export USE_GPU_AMD
 export LITE_BUILD
 
+# Export DEV_BUILD when not in production mode
+if [ "$PRODUCTION_MODE" = false ]; then
+    export DEV_BUILD=true
+else
+    export DEV_BUILD=false
+fi
+
 # Surface authentication/session configuration warnings
 REQUIRE_AUTH_LOWER=$(printf '%s' "${REQUIRE_AUTH:-false}" | tr '[:upper:]' '[:lower:]')
 if [ "$REQUIRE_AUTH_LOWER" = "true" ]; then

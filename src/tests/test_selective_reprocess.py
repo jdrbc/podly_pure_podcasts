@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.extensions import db
-from app.models import Feed, Post, ProcessingJob, TranscriptSegment, Identification
+from app.models import Feed, Post, ProcessingJob, TranscriptSegment, Identification, ModelCall
 from app.routes.post_routes import post_bp
 
 
@@ -42,21 +42,37 @@ def test_post_with_processing_data(app, tmp_path):
         # Add transcript segments
         for i in range(5):
             segment = TranscriptSegment(
-                post_guid=post.guid,
+                post_id=post.id,
+                sequence_num=i,
                 start_time=i * 10.0,
                 end_time=(i + 1) * 10.0,
                 text=f"Segment {i} text",
-                avg_logprob=-0.5,
             )
             db.session.add(segment)
+        db.session.commit()
 
-        # Add identifications
+        # Create a model call for identifications
+        model_call = ModelCall(
+            post_id=post.id,
+            first_segment_sequence_num=0,
+            last_segment_sequence_num=4,
+            model_name="test-model",
+            prompt="Test prompt",
+            response="Test response",
+            status="completed",
+        )
+        db.session.add(model_call)
+        db.session.commit()
+
+        # Add identifications (get the first segment)
+        first_segment = TranscriptSegment.query.filter_by(
+            post_id=post.id, sequence_num=0
+        ).first()
         identification = Identification(
-            post_guid=post.guid,
-            segment_index=0,
-            is_advertisement=True,
+            transcript_segment_id=first_segment.id,
+            model_call_id=model_call.id,
+            label="ad",
             confidence=0.9,
-            explanation="Test ad",
         )
         db.session.add(identification)
         db.session.commit()
@@ -210,8 +226,11 @@ def test_selective_clear_step_2(app, test_post_with_processing_data):
         original_audio_path = post.unprocessed_audio_path
 
         # Verify we have transcripts and identifications
-        assert TranscriptSegment.query.filter_by(post_guid=post.guid).count() > 0
-        assert Identification.query.filter_by(post_guid=post.guid).count() > 0
+        assert TranscriptSegment.query.filter_by(post_id=post.id).count() > 0
+        identification_count = db.session.query(Identification).join(
+            TranscriptSegment, Identification.transcript_segment_id == TranscriptSegment.id
+        ).filter(TranscriptSegment.post_id == post.id).count()
+        assert identification_count > 0
 
         # Clear from step 2
         result = selective_clear_post_processing_data(post, 2)
@@ -222,8 +241,11 @@ def test_selective_clear_step_2(app, test_post_with_processing_data):
         assert os.path.exists(original_audio_path)
 
         # Transcripts and identifications should be deleted
-        assert TranscriptSegment.query.filter_by(post_guid=post.guid).count() == 0
-        assert Identification.query.filter_by(post_guid=post.guid).count() == 0
+        assert TranscriptSegment.query.filter_by(post_id=post.id).count() == 0
+        identification_count = db.session.query(Identification).join(
+            TranscriptSegment, Identification.transcript_segment_id == TranscriptSegment.id
+        ).filter(TranscriptSegment.post_id == post.id).count()
+        assert identification_count == 0
 
         # Processed audio should be cleared
         assert post.processed_audio_path is None
@@ -236,10 +258,13 @@ def test_selective_clear_step_3(app, test_post_with_processing_data):
     with app.app_context():
         post = test_post_with_processing_data
         original_audio_path = post.unprocessed_audio_path
-        transcript_count = TranscriptSegment.query.filter_by(post_guid=post.guid).count()
+        transcript_count = TranscriptSegment.query.filter_by(post_id=post.id).count()
 
         # Verify we have identifications
-        assert Identification.query.filter_by(post_guid=post.guid).count() > 0
+        identification_count = db.session.query(Identification).join(
+            TranscriptSegment, Identification.transcript_segment_id == TranscriptSegment.id
+        ).filter(TranscriptSegment.post_id == post.id).count()
+        assert identification_count > 0
 
         # Clear from step 3
         result = selective_clear_post_processing_data(post, 3)
@@ -248,10 +273,13 @@ def test_selective_clear_step_3(app, test_post_with_processing_data):
         # Audio and transcripts should still exist
         assert post.unprocessed_audio_path == original_audio_path
         assert os.path.exists(original_audio_path)
-        assert TranscriptSegment.query.filter_by(post_guid=post.guid).count() == transcript_count
+        assert TranscriptSegment.query.filter_by(post_id=post.id).count() == transcript_count
 
         # Identifications should be deleted
-        assert Identification.query.filter_by(post_guid=post.guid).count() == 0
+        identification_count = db.session.query(Identification).join(
+            TranscriptSegment, Identification.transcript_segment_id == TranscriptSegment.id
+        ).filter(TranscriptSegment.post_id == post.id).count()
+        assert identification_count == 0
 
         # Processed audio should be cleared
         assert post.processed_audio_path is None
@@ -264,8 +292,10 @@ def test_selective_clear_step_4(app, test_post_with_processing_data):
     with app.app_context():
         post = test_post_with_processing_data
         original_audio_path = post.unprocessed_audio_path
-        transcript_count = TranscriptSegment.query.filter_by(post_guid=post.guid).count()
-        identification_count = Identification.query.filter_by(post_guid=post.guid).count()
+        transcript_count = TranscriptSegment.query.filter_by(post_id=post.id).count()
+        identification_count = db.session.query(Identification).join(
+            TranscriptSegment, Identification.transcript_segment_id == TranscriptSegment.id
+        ).filter(TranscriptSegment.post_id == post.id).count()
 
         # Clear from step 4
         result = selective_clear_post_processing_data(post, 4)
@@ -274,8 +304,11 @@ def test_selective_clear_step_4(app, test_post_with_processing_data):
         # Everything should still exist except processed audio
         assert post.unprocessed_audio_path == original_audio_path
         assert os.path.exists(original_audio_path)
-        assert TranscriptSegment.query.filter_by(post_guid=post.guid).count() == transcript_count
-        assert Identification.query.filter_by(post_guid=post.guid).count() == identification_count
+        assert TranscriptSegment.query.filter_by(post_id=post.id).count() == transcript_count
+        identification_count_after = db.session.query(Identification).join(
+            TranscriptSegment, Identification.transcript_segment_id == TranscriptSegment.id
+        ).filter(TranscriptSegment.post_id == post.id).count()
+        assert identification_count_after == identification_count
 
         # Processed audio should be cleared
         assert post.processed_audio_path is None
