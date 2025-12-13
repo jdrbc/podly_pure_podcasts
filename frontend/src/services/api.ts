@@ -133,8 +133,17 @@ export const feedsApi = {
     return response.data;
   },
 
-  reprocessPost: async (guid: string): Promise<{ status: string; job_id?: string; message: string; download_url?: string }> => {
-    const response = await api.post(`/api/posts/${guid}/reprocess`);
+  reprocessPost: async (guid: string, fromStep: number = 1): Promise<{
+    status: string;
+    job_id?: string;
+    message: string;
+    download_url?: string;
+    from_step?: number;
+    from_step_name?: string;
+  }> => {
+    const response = await api.post(`/api/posts/${guid}/reprocess`, {
+      from_step: fromStep,
+    });
     return response.data;
   },
 

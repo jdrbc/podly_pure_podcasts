@@ -29,6 +29,7 @@ ARG USE_GPU=false
 ARG USE_GPU_NVIDIA=${USE_GPU}
 ARG USE_GPU_AMD=false
 ARG LITE_BUILD=false
+ARG DEV_BUILD=false
 
 WORKDIR /app
 
@@ -97,16 +98,26 @@ ENV PIP_NO_CACHE_DIR=1
 ENV PIPENV_VENV_IN_PROJECT=1
 ENV PIPENV_TIMEOUT=1200
 
-# Install dependencies conditionally based on LITE_BUILD
+# Install dependencies conditionally based on LITE_BUILD and DEV_BUILD
 RUN set -e && \
     if [ "${LITE_BUILD}" = "true" ]; then \
     echo "Installing lite dependencies (without Whisper)"; \
     echo "Using lite Pipfile:" && \
-    PIPENV_PIPFILE=Pipfile.lite pipenv install --deploy --system; \
+    if [ "${DEV_BUILD}" = "true" ]; then \
+        echo "Installing with dev dependencies"; \
+        PIPENV_PIPFILE=Pipfile.lite pipenv install --deploy --system --dev; \
+    else \
+        PIPENV_PIPFILE=Pipfile.lite pipenv install --deploy --system; \
+    fi; \
     else \
     echo "Installing full dependencies (including Whisper)"; \
     echo "Using full Pipfile:" && \
-    PIPENV_PIPFILE=Pipfile pipenv install --deploy --system; \
+    if [ "${DEV_BUILD}" = "true" ]; then \
+        echo "Installing with dev dependencies"; \
+        PIPENV_PIPFILE=Pipfile pipenv install --deploy --system --dev; \
+    else \
+        PIPENV_PIPFILE=Pipfile pipenv install --deploy --system; \
+    fi; \
     fi
 
 # Install PyTorch with CUDA support if using NVIDIA image (skip if LITE_BUILD)

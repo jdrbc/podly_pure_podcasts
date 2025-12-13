@@ -11,6 +11,13 @@ interface ReprocessButtonProps {
   onReprocessStart?: () => void;
 }
 
+const STEP_OPTIONS = [
+  { value: 1, label: '1. Download', description: 'Start from scratch (clears everything)' },
+  { value: 2, label: '2. Transcription', description: 'Keep downloaded audio' },
+  { value: 3, label: '3. Ad Identification', description: 'Keep audio + transcripts' },
+  { value: 4, label: '4. Audio Processing', description: 'Keep everything, regenerate output' },
+];
+
 export default function ReprocessButton({
   episodeGuid,
   isWhitelisted,
@@ -22,6 +29,7 @@ export default function ReprocessButton({
   const [isReprocessing, setIsReprocessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [selectedStep, setSelectedStep] = useState<number>(1);
   const queryClient = useQueryClient();
 
   const handleReprocessClick = async () => {
@@ -39,9 +47,14 @@ export default function ReprocessButton({
     setError(null);
 
     try {
-      const response = await feedsApi.reprocessPost(episodeGuid);
+      const response = await feedsApi.reprocessPost(episodeGuid, selectedStep);
 
       if (response.status === 'started') {
+        // Log if step was auto-adjusted
+        if (response.from_step && response.from_step !== selectedStep) {
+          console.info(`Auto-adjusted to step ${response.from_step}: ${response.message}`);
+        }
+
         // Notify parent component that reprocessing started
         onReprocessStart?.();
 
@@ -116,9 +129,33 @@ export default function ReprocessButton({
 
             {/* Content */}
             <div className="p-6">
-              <p className="text-gray-700 mb-6">
-                Are you sure you want to reprocess this episode? This will delete the existing processed data and start fresh processing.
+              <p className="text-gray-700 mb-4">
+                Select the processing step to start from. Dependencies will be automatically validated.
               </p>
+
+              {/* Step Selector */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Start from step:
+                </label>
+                <select
+                  value={selectedStep}
+                  onChange={(e) => setSelectedStep(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  {STEP_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} - {option.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+                <p className="text-sm text-yellow-800">
+                  <strong>Note:</strong> If dependencies are missing, processing will automatically start from an earlier step.
+                </p>
+              </div>
 
               {/* Action Buttons */}
               <div className="flex gap-3 justify-end">
