@@ -256,12 +256,12 @@ class TestGlobalRateLimiter:
         import podcast_processor.token_rate_limiter as trl_module
 
         # Test gpt-4o-mini first (higher limit)
-        trl_module._rate_limiter = None
+        trl_module._RATE_LIMITER = None
         limiter = configure_rate_limiter_for_model("gpt-4o-mini")
         assert limiter.tokens_per_minute == 200000
 
         # Test gpt-4o (lower limit)
-        trl_module._rate_limiter = None
+        trl_module._RATE_LIMITER = None
         limiter = configure_rate_limiter_for_model("gpt-4o")
         assert limiter.tokens_per_minute == 150000
 

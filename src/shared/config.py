@@ -139,6 +139,7 @@ class Config(BaseModel):
         DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED
     )
     enable_public_landing_page: bool = DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE
+    user_limit_total: int | None = DEFAULTS.APP_USER_LIMIT_TOTAL
 
     def redacted(self) -> Config:
         return self.model_copy(

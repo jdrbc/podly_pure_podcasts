@@ -154,7 +154,7 @@ class TestGlobalConcurrencyLimiter:
         # Clear any existing limiter
         import podcast_processor.llm_concurrency_limiter as limiter_module
 
-        limiter_module._concurrency_limiter = None
+        limiter_module._CONCURRENCY_LIMITER = None
 
         limiter1 = get_concurrency_limiter(max_concurrent_calls=3)
         limiter2 = get_concurrency_limiter(max_concurrent_calls=3)
@@ -167,7 +167,7 @@ class TestGlobalConcurrencyLimiter:
         # Clear any existing limiter
         import podcast_processor.llm_concurrency_limiter as limiter_module
 
-        limiter_module._concurrency_limiter = None
+        limiter_module._CONCURRENCY_LIMITER = None
 
         limiter1 = get_concurrency_limiter(max_concurrent_calls=3)
         limiter2 = get_concurrency_limiter(max_concurrent_calls=5)

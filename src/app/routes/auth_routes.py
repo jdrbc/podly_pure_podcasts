@@ -11,6 +11,7 @@ from app.auth.service import (
     InvalidCredentialsError,
     LastAdminRemovalError,
     PasswordValidationError,
+    UserLimitExceededError,
     authenticate,
     change_password,
     create_user,
@@ -226,7 +227,12 @@ def create_user_route() -> RouteResult:
 
     try:
         new_user = create_user(username, password, role)
-    except (PasswordValidationError, DuplicateUserError, AuthServiceError) as exc:
+    except (
+        PasswordValidationError,
+        DuplicateUserError,
+        UserLimitExceededError,
+        AuthServiceError,
+    ) as exc:
         status = 409 if isinstance(exc, DuplicateUserError) else 400
         return jsonify({"error": str(exc)}), status
 

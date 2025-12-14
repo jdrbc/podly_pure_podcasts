@@ -76,18 +76,18 @@ class LLMConcurrencyLimiter:
 
 
 # Global concurrency limiter instance
-_concurrency_limiter: Optional[LLMConcurrencyLimiter] = None
+_CONCURRENCY_LIMITER: Optional[LLMConcurrencyLimiter] = None
 
 
 def get_concurrency_limiter(max_concurrent_calls: int = 3) -> LLMConcurrencyLimiter:
     """Get or create the global concurrency limiter instance."""
-    global _concurrency_limiter  # pylint: disable=global-statement
+    global _CONCURRENCY_LIMITER  # pylint: disable=global-statement
     if (
-        _concurrency_limiter is None
-        or _concurrency_limiter.max_concurrent_calls != max_concurrent_calls
+        _CONCURRENCY_LIMITER is None
+        or _CONCURRENCY_LIMITER.max_concurrent_calls != max_concurrent_calls
     ):
-        _concurrency_limiter = LLMConcurrencyLimiter(max_concurrent_calls)
-    return _concurrency_limiter
+        _CONCURRENCY_LIMITER = LLMConcurrencyLimiter(max_concurrent_calls)
+    return _CONCURRENCY_LIMITER
 
 
 class ConcurrencyContext:
