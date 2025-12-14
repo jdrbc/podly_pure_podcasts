@@ -380,6 +380,11 @@ export const feedsApi = {
   getEpisodeOriginalDownloadUrl: (guid: string): string => {
     return feedsApi.getPostOriginalDownloadUrl(guid);
   },
+
+  getAggregateFeedLink: async (): Promise<{ url: string }> => {
+    const response = await api.post('/api/user/aggregate-link');
+    return response.data;
+  },
 };
 
 export const authApi = {
@@ -407,7 +412,7 @@ export const authApi = {
     return response.data;
   },
 
-  listUsers: async (): Promise<{ users: Array<{ id: number; username: string; role: string; created_at: string; updated_at: string; feed_allowance?: number; feed_subscription_status?: string }> }> => {
+  listUsers: async (): Promise<{ users: Array<{ id: number; username: string; role: string; created_at: string; updated_at: string; feed_allowance?: number; feed_subscription_status?: string; manual_feed_allowance?: number | null }> }> => {
     const response = await api.get('/api/auth/users');
     return response.data;
   },
@@ -417,7 +422,7 @@ export const authApi = {
     return response.data;
   },
 
-  updateUser: async (username: string, payload: { password?: string; role?: string }): Promise<{ status: string }> => {
+  updateUser: async (username: string, payload: { password?: string; role?: string; manual_feed_allowance?: number | null }): Promise<{ status: string }> => {
     const response = await api.patch(`/api/auth/users/${username}`, payload);
     return response.data;
   },

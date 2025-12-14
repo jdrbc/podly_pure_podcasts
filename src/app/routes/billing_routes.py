@@ -33,7 +33,9 @@ def _price_id() -> Optional[str]:
 
 def _user_feed_usage(user: User) -> dict[str, int]:
     feeds_in_use = UserFeed.query.filter_by(user_id=user.id).count()
-    allowance = getattr(user, "feed_allowance", 0) or 0
+    allowance = getattr(user, "manual_feed_allowance", None)
+    if allowance is None:
+        allowance = getattr(user, "feed_allowance", 0) or 0
     remaining = max(0, allowance - feeds_in_use)
     return {
         "feed_allowance": allowance,

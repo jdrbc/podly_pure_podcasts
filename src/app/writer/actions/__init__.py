@@ -52,6 +52,7 @@ from .system import update_combined_config_action as update_combined_config_acti
 from .system import update_discord_settings_action as update_discord_settings_action
 from .users import create_user_action as create_user_action
 from .users import delete_user_action as delete_user_action
+from .users import set_manual_feed_allowance_action as set_manual_feed_allowance_action
 from .users import (
     set_user_billing_by_customer_id_action as set_user_billing_by_customer_id_action,
 )

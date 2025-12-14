@@ -136,6 +136,17 @@ def set_role(user: User, role: str) -> None:
     db.session.expire(user)
 
 
+def set_manual_feed_allowance(user: User, allowance: int | None) -> None:
+    result = writer_client.action(
+        "set_manual_feed_allowance",
+        {"user_id": user.id, "allowance": allowance},
+        wait=True,
+    )
+    if not result or not result.success:
+        raise AuthServiceError(getattr(result, "error", "Failed to set allowance"))
+    db.session.expire(user)
+
+
 def _count_admins() -> int:
     return cast(int, User.query.filter_by(role="admin").count())
 

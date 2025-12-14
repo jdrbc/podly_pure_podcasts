@@ -51,7 +51,7 @@ class FeedAccessToken(db.Model):  # type: ignore[name-defined, misc]
     token_id = db.Column(db.String(32), unique=True, nullable=False, index=True)
     token_hash = db.Column(db.String(64), nullable=False)
     token_secret = db.Column(db.String(128), nullable=True)
-    feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=False)
+    feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     last_used_at = db.Column(db.DateTime, nullable=True)

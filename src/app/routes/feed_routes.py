@@ -1,5 +1,6 @@
 import logging
 import re
+import secrets
 from pathlib import Path
 from threading import Thread
 from typing import Any, Optional, cast
@@ -27,6 +28,7 @@ from flask.typing import ResponseReturnValue
 from app.extensions import db
 from app.feeds import (
     add_or_refresh_feed,
+    generate_aggregate_feed_xml,
     generate_feed_xml,
     is_feed_active_for_user,
     refresh_feed,
@@ -679,6 +681,147 @@ def api_leave_feed(feed_id: int) -> ResponseReturnValue:
         wait=True,
     )
     return jsonify({"status": "ok", "feed_id": feed.id})
+
+
+@feed_bp.route("/feed/user/<int:user_id>", methods=["GET"])
+def get_user_aggregate_feed(user_id: int) -> Response:
+    """Serve the aggregate RSS feed for a specific user."""
+    # Auth check is handled by middleware via feed_token
+    # If auth is disabled, this is public.
+    # If auth is enabled, middleware ensures we have a valid token for this user_id.
+
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if settings and settings.require_auth:
+        current = getattr(g, "current_user", None)
+        if current is None:
+            return make_response(("Authentication required", 401))
+        if current.role != "admin" and current.id != user_id:
+            return make_response(("Forbidden", 403))
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return make_response(("User not found", 404))
+
+    xml_content = generate_aggregate_feed_xml(user)
+    response = make_response(xml_content)
+    response.headers["Content-Type"] = "application/rss+xml"
+    return response
+
+
+@feed_bp.route("/feed/aggregate", methods=["GET"])
+def get_aggregate_feed_redirect() -> ResponseReturnValue:
+    """Convenience endpoint to redirect to the user's aggregate feed."""
+    settings = current_app.config.get("AUTH_SETTINGS")
+
+    # Case 1: Auth Disabled -> Redirect to Admin User (Single User Mode)
+    if not settings or not settings.require_auth:
+        admin = User.query.filter_by(role="admin").first()
+        if not admin:
+            return make_response(("No admin user found to serve aggregate feed", 404))
+        return redirect(url_for("feed.get_user_aggregate_feed", user_id=admin.id))
+
+    # Case 2: Auth Enabled -> Require explicit user link
+    # We cannot easily determine "current user" for a podcast player without a token.
+    # If accessed via browser with session, we could redirect, but for consistency
+    # we should probably just tell them to get their link.
+
+    current = getattr(g, "current_user", None)
+    if current:
+        return redirect(url_for("feed.get_user_aggregate_feed", user_id=current.id))
+
+    return (
+        jsonify(
+            {
+                "error": "Authentication required",
+                "message": "Please use your unique aggregate feed URL from the dashboard.",
+            }
+        ),
+        401,
+    )
+
+
+@feed_bp.route("/api/user/aggregate-link", methods=["POST"])
+def create_aggregate_feed_link() -> ResponseReturnValue:
+    """Generate a unique RSS link for the current user's aggregate feed."""
+    settings = current_app.config.get("AUTH_SETTINGS")
+
+    user = None
+    if not settings or not settings.require_auth:
+        # Auth disabled: Use admin user or first available user
+        user = User.query.filter_by(role="admin").first()
+        if not user:
+            user = User.query.first()
+
+        if not user:
+            # Create a default admin user if none exists
+            default_username = "admin"
+            default_password = secrets.token_urlsafe(16)
+
+            result = writer_client.action(
+                "create_user",
+                {
+                    "username": default_username,
+                    "password": default_password,
+                    "role": "admin",
+                },
+                wait=True,
+            )
+            if result and result.success and isinstance(result.data, dict):
+                user_id = result.data.get("user_id")
+                if user_id:
+                    user = db.session.get(User, user_id)
+
+            if not user:
+                return (
+                    jsonify({"error": "No user found and failed to create one."}),
+                    500,
+                )
+    else:
+        user, error = _require_user_or_error()
+        if error:
+            return error
+
+    if user is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    # Create a token with feed_id=None (Aggregate Token)
+    result = writer_client.action(
+        "create_feed_access_token",
+        {"user_id": user.id, "feed_id": None},
+        wait=True,
+    )
+    if not result or not result.success or not isinstance(result.data, dict):
+        return jsonify({"error": "Failed to create aggregate feed token"}), 500
+
+    token_id = str(result.data["token_id"])
+    secret = str(result.data["secret"])
+
+    parsed = urlparse(request.host_url)
+    netloc = parsed.netloc
+    scheme = parsed.scheme
+    path = f"/feed/user/{user.id}"
+
+    # If auth is disabled, we don't strictly need the token params,
+    # but including them doesn't hurt and ensures the link works if auth is enabled later.
+    # However, to keep it clean for single-user mode:
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if settings and settings.require_auth:
+        query = urlencode({"feed_token": token_id, "feed_secret": secret})
+    else:
+        query = ""
+
+    full_url = urlunparse((scheme, netloc, path, "", query, ""))
+
+    return (
+        jsonify(
+            {
+                "url": full_url,
+                "feed_token": token_id,
+                "feed_secret": secret,
+            }
+        ),
+        201,
+    )
 
 
 def _require_user_or_error(

@@ -176,6 +176,7 @@ export interface AuthUser {
   role: 'admin' | 'user' | string;
   feed_allowance?: number;
   feed_subscription_status?: string;
+  manual_feed_allowance?: number | null;
 }
 
 export interface ManagedUser extends AuthUser {

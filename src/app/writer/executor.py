@@ -103,6 +103,9 @@ class CommandExecutor:
         self.register_action("delete_user", writer_actions.delete_user_action)
         self.register_action("set_user_role", writer_actions.set_user_role_action)
         self.register_action(
+            "set_manual_feed_allowance", writer_actions.set_manual_feed_allowance_action
+        )
+        self.register_action(
             "upsert_discord_user", writer_actions.upsert_discord_user_action
         )
 
@@ -137,8 +140,8 @@ class CommandExecutor:
         self.actions[name] = func
 
     def process_command(self, cmd: WriteCommand) -> WriteResult:
-        try:
-            with self.app.app_context():
+        with self.app.app_context():
+            try:
                 logger.info(
                     "[WRITER] Processing command: id=%s type=%s model=%s",
                     cmd.id,
@@ -177,12 +180,15 @@ class CommandExecutor:
                     db.session.rollback()
                 return result
 
-        except Exception as e:
-            logger.error(
-                "[WRITER] Error processing command id=%s: %s", cmd.id, e, exc_info=True
-            )
-            db.session.rollback()
-            return WriteResult(cmd.id, False, error=str(e))
+            except Exception as e:
+                logger.error(
+                    "[WRITER] Error processing command id=%s: %s",
+                    cmd.id,
+                    e,
+                    exc_info=True,
+                )
+                db.session.rollback()
+                return WriteResult(cmd.id, False, error=str(e))
 
     def _execute_single_command(self, cmd: WriteCommand) -> WriteResult:
         if cmd.type == WriteCommandType.ACTION:
