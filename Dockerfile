@@ -35,14 +35,27 @@ WORKDIR /app
 # Install dependencies based on base image
 RUN if [ -f /etc/debian_version ]; then \
     apt-get update && \
-    apt-get install -y ca-certificates && \
+    apt-get install -y ca-certificates software-properties-common && \
+    # Check if Python 3.11 is available, if not install from deadsnakes PPA \
+    if ! apt-cache show python3.11 > /dev/null 2>&1; then \
+        add-apt-repository ppa:deadsnakes/ppa -y && \
+        apt-get update; \
+    fi && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ffmpeg \
+    sqlite3 \
+    libsqlite3-dev \
     build-essential \
     gosu \
-    python3 \
+    python3.11 \
+    python3.11-distutils \
+    python3.11-dev \
     python3-pip \
-    && apt-get clean && \
+    && \
+    # Set python3.11 as the default python3 \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --set python3 /usr/bin/python3.11 && \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ; \
     fi
 
@@ -59,6 +72,11 @@ RUN if [ -f /etc/debian_version ]; then \
 
 # Copy all Pipfiles/lock files
 COPY Pipfile Pipfile.lock Pipfile.lite Pipfile.lite.lock ./
+
+# Remove problematic distutils-installed packages that may conflict
+RUN if [ -f /etc/debian_version ]; then \
+    apt-get remove -y python3-blinker 2>/dev/null || true; \
+    fi
 
 # Install pipenv and dependencies
 RUN if command -v pip >/dev/null 2>&1; then \
@@ -124,6 +142,7 @@ RUN if [ "${LITE_BUILD}" = "true" ]; then \
 COPY src/ ./src/
 RUN rm -rf ./src/instance
 COPY scripts/ ./scripts/
+RUN chmod +x scripts/start_services.sh
 
 # Copy built frontend assets to Flask static folder
 COPY --from=frontend-build /app/dist ./src/app/static
@@ -146,4 +165,4 @@ EXPOSE 5001
 
 # Run the application through the entrypoint script
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["python3", "-u", "src/main.py"]
+CMD ["./scripts/start_services.sh"]

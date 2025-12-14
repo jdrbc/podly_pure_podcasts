@@ -6,11 +6,9 @@ from flask.typing import ResponseReturnValue
 
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
-from app.jobs_manager_run_service import (
-    get_active_run,
-    recalculate_run_counts,
-    serialize_run,
-)
+from app.jobs_manager_run_service import build_run_status_snapshot
+from app.post_cleanup import cleanup_processed_posts, count_cleanup_candidates
+from app.runtime_config import config as runtime_config
 
 logger = logging.getLogger("global_logger")
 
@@ -40,14 +38,8 @@ def api_list_all_jobs() -> ResponseReturnValue:
 
 @jobs_bp.route("/api/job-manager/status", methods=["GET"])
 def api_job_manager_status() -> ResponseReturnValue:
-    run = get_active_run(db.session)
-    if run:
-        recalculate_run_counts(db.session)
-
-    # Persist any aggregate updates performed above
-    db.session.commit()
-
-    return flask.jsonify({"run": serialize_run(run) if run else None})
+    run_snapshot = build_run_status_snapshot(db.session)
+    return flask.jsonify({"run": run_snapshot})
 
 
 @jobs_bp.route("/api/jobs/<string:job_id>/cancel", methods=["POST"])
@@ -75,3 +67,53 @@ def api_cancel_job(job_id: str) -> ResponseReturnValue:
             ),
             500,
         )
+
+
+@jobs_bp.route("/api/jobs/cleanup/preview", methods=["GET"])
+def api_cleanup_preview() -> ResponseReturnValue:
+    retention = getattr(runtime_config, "post_cleanup_retention_days", None)
+    count, cutoff = count_cleanup_candidates(retention)
+    return flask.jsonify(
+        {
+            "count": count,
+            "retention_days": retention,
+            "cutoff_utc": cutoff.isoformat() if cutoff else None,
+        }
+    )
+
+
+@jobs_bp.route("/api/jobs/cleanup/run", methods=["POST"])
+def api_run_cleanup() -> ResponseReturnValue:
+    retention = getattr(runtime_config, "post_cleanup_retention_days", None)
+    if retention is None or retention <= 0:
+        return flask.jsonify(
+            {
+                "status": "disabled",
+                "message": "Cleanup is disabled because retention_days <= 0.",
+            }
+        )
+
+    try:
+        removed = cleanup_processed_posts(retention)
+        remaining, cutoff = count_cleanup_candidates(retention)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Manual cleanup failed: %s", exc, exc_info=True)
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "message": "Cleanup job failed. Check server logs for details.",
+                }
+            ),
+            500,
+        )
+
+    return flask.jsonify(
+        {
+            "status": "ok",
+            "removed_posts": removed,
+            "remaining_candidates": remaining,
+            "retention_days": retention,
+            "cutoff_utc": cutoff.isoformat() if cutoff else None,
+        }
+    )

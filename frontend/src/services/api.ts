@@ -4,11 +4,14 @@ import type {
   Episode,
   Job,
   JobManagerStatus,
+  CleanupPreview,
+  CleanupRunResult,
   CombinedConfig,
   LLMConfig,
   WhisperConfig,
   PodcastSearchResult,
   ConfigResponse,
+  BillingSummary,
 } from '../types';
 
 const API_BASE_URL = '';
@@ -67,12 +70,45 @@ export const feedsApi = {
     return response.data;
   },
 
-  togglePostWhitelist: async (guid: string, whitelisted: boolean): Promise<void> => {
-    await api.post(`/api/posts/${guid}/whitelist`, { whitelisted });
+  togglePostWhitelist: async (
+    guid: string,
+    whitelisted: boolean,
+    triggerProcessing = false
+  ): Promise<{ processing_job?: { status: string; job_id?: string; message?: string } }> => {
+    const response = await api.post(`/api/posts/${guid}/whitelist`, {
+      whitelisted,
+      trigger_processing: triggerProcessing,
+    });
+    return response.data;
   },
 
   toggleAllPostsWhitelist: async (feedId: number): Promise<{ message: string; whitelisted_count: number; total_count: number; all_whitelisted: boolean }> => {
     const response = await api.post(`/api/feeds/${feedId}/toggle-whitelist-all`);
+    return response.data;
+  },
+
+  joinFeed: async (feedId: number): Promise<Feed> => {
+    const response = await api.post(`/api/feeds/${feedId}/join`);
+    return response.data;
+  },
+
+  exitFeed: async (feedId: number): Promise<Feed> => {
+    const response = await api.post(`/api/feeds/${feedId}/exit`);
+    return response.data;
+  },
+
+  leaveFeed: async (feedId: number): Promise<{ status: string; feed_id: number }> => {
+    const response = await api.post(`/api/feeds/${feedId}/leave`);
+    return response.data;
+  },
+
+  getProcessingEstimate: async (guid: string): Promise<{
+    post_guid: string;
+    estimated_minutes: number;
+    can_process: boolean;
+    reason: string | null;
+  }> => {
+    const response = await api.get(`/api/posts/${guid}/processing-estimate`);
     return response.data;
   },
 
@@ -237,7 +273,7 @@ export const feedsApi = {
     return feedsApi.getFeedPosts(feedId);
   },
 
-  toggleEpisodeWhitelist: async (guid: string, whitelisted: boolean): Promise<void> => {
+  toggleEpisodeWhitelist: async (guid: string, whitelisted: boolean): Promise<{ processing_job?: { status: string; job_id?: string; message?: string } }> => {
     return feedsApi.togglePostWhitelist(guid, whitelisted);
   },
 
@@ -346,7 +382,7 @@ export const feedsApi = {
 };
 
 export const authApi = {
-  getStatus: async (): Promise<{ require_auth: boolean }> => {
+  getStatus: async (): Promise<{ require_auth: boolean; landing_page_enabled?: boolean }> => {
     const response = await api.get('/api/auth/status');
     return response.data;
   },
@@ -370,7 +406,7 @@ export const authApi = {
     return response.data;
   },
 
-  listUsers: async (): Promise<{ users: Array<{ id: number; username: string; role: string; created_at: string; updated_at: string }> }> => {
+  listUsers: async (): Promise<{ users: Array<{ id: number; username: string; role: string; created_at: string; updated_at: string; feed_allowance?: number; feed_subscription_status?: string }> }> => {
     const response = await api.get('/api/auth/users');
     return response.data;
   },
@@ -387,6 +423,54 @@ export const authApi = {
 
   deleteUser: async (username: string): Promise<{ status: string }> => {
     const response = await api.delete(`/api/auth/users/${username}`);
+    return response.data;
+  },
+};
+
+export const discordApi = {
+  getStatus: async (): Promise<{ enabled: boolean }> => {
+    const response = await api.get('/api/auth/discord/status');
+    return response.data;
+  },
+
+  getLoginUrl: async (): Promise<{ authorization_url: string }> => {
+    const response = await api.get('/api/auth/discord/login');
+    return response.data;
+  },
+
+  getConfig: async (): Promise<{
+    config: {
+      enabled: boolean;
+      client_id: string | null;
+      client_secret_preview: string | null;
+      redirect_uri: string | null;
+      guild_ids: string;
+      allow_registration: boolean;
+    };
+    env_overrides: Record<string, { env_var: string; value?: string; is_secret?: boolean }>;
+  }> => {
+    const response = await api.get('/api/auth/discord/config');
+    return response.data;
+  },
+
+  updateConfig: async (payload: {
+    client_id?: string;
+    client_secret?: string;
+    redirect_uri?: string;
+    guild_ids?: string;
+    allow_registration?: boolean;
+  }): Promise<{
+    status: string;
+    config: {
+      enabled: boolean;
+      client_id: string | null;
+      client_secret_preview: string | null;
+      redirect_uri: string | null;
+      guild_ids: string;
+      allow_registration: boolean;
+    };
+  }> => {
+    const response = await api.put('/api/auth/discord/config', payload);
     return response.data;
   },
 };
@@ -423,6 +507,33 @@ export const configApi = {
   },
 };
 
+export const billingApi = {
+  getSummary: async (): Promise<BillingSummary> => {
+    const response = await api.get('/api/billing/summary');
+    return response.data;
+  },
+  setQuantity: async (
+    quantity: number,
+    options?: { subscriptionId?: string | null }
+  ): Promise<
+    BillingSummary & {
+      message?: string;
+      checkout_url?: string;
+      requires_stripe_checkout?: boolean;
+    }
+  > => {
+    const response = await api.post('/api/billing/quantity', {
+      quantity,
+      subscription_id: options?.subscriptionId,
+    });
+    return response.data;
+  },
+  createPortalSession: async (): Promise<{ url: string }> => {
+    const response = await api.post('/api/billing/portal-session');
+    return response.data;
+  },
+};
+
 export const jobsApi = {
   getActiveJobs: async (limit: number = 100): Promise<Job[]> => {
     const response = await api.get('/api/jobs/active', { params: { limit } });
@@ -438,6 +549,14 @@ export const jobsApi = {
   },
   getJobManagerStatus: async (): Promise<JobManagerStatus> => {
     const response = await api.get('/api/job-manager/status');
+    return response.data;
+  },
+  getCleanupPreview: async (): Promise<CleanupPreview> => {
+    const response = await api.get('/api/jobs/cleanup/preview');
+    return response.data;
+  },
+  runCleanupJob: async (): Promise<CleanupRunResult> => {
+    const response = await api.post('/api/jobs/cleanup/run');
     return response.data;
   }
 };

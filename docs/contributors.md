@@ -37,7 +37,7 @@ Podly supports multiple options for audio transcription:
 1. **Local Whisper (Default)**
    - Slower but self-contained
 2. **OpenAI Hosted Whisper**
-   - Fast and accurate; requires API credits
+   - Fast and accurate; billed per-feed via Stripe
 3. **Groq Hosted Whisper**
    - Fast and cost-effective
 

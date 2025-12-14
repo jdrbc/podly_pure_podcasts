@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
-import uuid
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Optional
 
 from app.auth.service import AuthenticatedUser
 from app.extensions import db
-from app.models import Feed, FeedAccessToken, Post, User
+from app.models import Feed, FeedAccessToken, Post, User, UserFeed
+from app.writer.client import writer_client
+
+logger = logging.getLogger("global_logger")
+
+
+def _hash_token(secret_value: str) -> str:
+    return hashlib.sha256(secret_value.encode("utf-8")).hexdigest()
 
 
 @dataclass(slots=True)
@@ -19,38 +25,15 @@ class FeedTokenAuthResult:
     token: FeedAccessToken
 
 
-def _hash_token(secret: str) -> str:
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
-
-
 def create_feed_access_token(user: User, feed: Feed) -> tuple[str, str]:
-    existing = FeedAccessToken.query.filter_by(
-        user_id=user.id, feed_id=feed.id, revoked=False
-    ).first()
-    if existing is not None:
-        if existing.token_secret:
-            return existing.token_id, existing.token_secret
-
-        secret = secrets.token_urlsafe(18)
-        existing.token_hash = _hash_token(secret)
-        existing.token_secret = secret
-        db.session.add(existing)
-        db.session.commit()
-        return existing.token_id, secret
-
-    token_id = uuid.uuid4().hex
-    secret = secrets.token_urlsafe(18)
-    token = FeedAccessToken(
-        token_id=token_id,
-        token_hash=_hash_token(secret),
-        token_secret=secret,
-        feed_id=feed.id,
-        user_id=user.id,
+    result = writer_client.action(
+        "create_feed_access_token",
+        {"user_id": user.id, "feed_id": feed.id},
+        wait=True,
     )
-    db.session.add(token)
-    db.session.commit()
-
-    return token_id, secret
+    if not result or not result.success or not isinstance(result.data, dict):
+        raise RuntimeError(getattr(result, "error", "Failed to create feed token"))
+    return str(result.data["token_id"]), str(result.data["secret"])
 
 
 def authenticate_feed_token(
@@ -71,15 +54,35 @@ def authenticate_feed_token(
     if feed_id is None or feed_id != token.feed_id:
         return None
 
-    user = User.query.get(token.user_id)
+    user = db.session.get(User, token.user_id)
     if user is None:
         return None
 
-    token.last_used_at = datetime.utcnow()
-    if token.token_secret is None:
-        token.token_secret = secret
-    db.session.add(token)
-    # Defer commit to request teardown
+    # Verify active subscription
+    if user.role != "admin":
+        # Hack: Always allow Feed 1
+        if token.feed_id == 1:
+            pass
+        else:
+            membership = UserFeed.query.filter_by(
+                user_id=user.id, feed_id=token.feed_id
+            ).first()
+            if not membership:
+                logger.warning(
+                    "Access denied: User %s has valid token but no active subscription for feed %s",
+                    user.id,
+                    token.feed_id,
+                )
+                return None
+
+    try:
+        writer_client.action(
+            "touch_feed_access_token",
+            {"token_id": token_id, "secret": secret},
+            wait=False,
+        )
+    except Exception:  # pylint: disable=broad-except
+        pass
 
     return FeedTokenAuthResult(
         user=AuthenticatedUser(id=user.id, username=user.username, role=user.role),

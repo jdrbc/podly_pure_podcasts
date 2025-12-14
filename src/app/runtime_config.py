@@ -3,6 +3,7 @@ Runtime configuration module - isolated to prevent circular imports.
 Initializes the global config object that is used throughout the application.
 """
 
+import os
 import sys
 
 from shared import defaults as DEFAULTS
@@ -44,4 +45,6 @@ else:
         automatically_whitelist_new_episodes=DEFAULTS.APP_AUTOMATICALLY_WHITELIST_NEW_EPISODES,
         number_of_episodes_to_whitelist_from_archive_of_new_feed=DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
         whisper=LocalWhisperConfig(model=DEFAULTS.WHISPER_LOCAL_MODEL),
+        enable_public_landing_page=DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
+        developer_mode=os.environ.get("DEVELOPER_MODE", "false").lower() == "true",
     )

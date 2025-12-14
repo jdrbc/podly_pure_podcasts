@@ -1,9 +1,11 @@
 import logging
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from openai.types.audio.transcription_segment import TranscriptionSegment
-from pytest_mock import MockerFixture
+
+# from pytest_mock import MockerFixture
 
 
 @pytest.mark.skip
@@ -38,7 +40,7 @@ def test_local_transcribe() -> None:
 
 
 @pytest.mark.skip
-def test_groq_transcribe(mocker: MockerFixture) -> None:
+def test_groq_transcribe(mocker: Any) -> None:
     # import here instead of the toplevel because dependencies aren't installed properly in CI.
     from podcast_processor.transcribe import (  # pylint: disable=import-outside-toplevel
         GroqWhisperTranscriber,

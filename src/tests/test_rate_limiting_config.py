@@ -2,15 +2,17 @@
 Tests for new rate limiting configuration options.
 """
 
+from typing import Any
+
 from shared.config import Config
 
 
 class TestRateLimitingConfig:
     """Test cases for rate limiting configuration."""
 
-    def test_default_rate_limiting_config(self):
+    def test_default_rate_limiting_config(self) -> None:
         """Test that rate limiting defaults are properly set."""
-        config_data = {
+        config_data: dict[str, Any] = {
             "llm_api_key": "test-key",
             "output": {
                 "fade_ms": 3000,
@@ -32,9 +34,9 @@ class TestRateLimitingConfig:
         assert config.llm_enable_token_rate_limiting is False
         assert config.llm_max_input_tokens_per_minute is None
 
-    def test_custom_rate_limiting_config(self):
+    def test_custom_rate_limiting_config(self) -> None:
         """Test that custom rate limiting values are properly set."""
-        config_data = {
+        config_data: dict[str, Any] = {
             "llm_api_key": "test-key",
             "llm_max_concurrent_calls": 5,
             "llm_max_retry_attempts": 10,
@@ -61,9 +63,9 @@ class TestRateLimitingConfig:
         assert config.llm_enable_token_rate_limiting is False
         assert config.llm_max_input_tokens_per_minute == 100000
 
-    def test_partial_rate_limiting_config(self):
+    def test_partial_rate_limiting_config(self) -> None:
         """Test that partial rate limiting config uses defaults for missing values."""
-        config_data = {
+        config_data: dict[str, Any] = {
             "llm_api_key": "test-key",
             "llm_max_retry_attempts": 7,  # Only override this one
             "output": {
@@ -88,25 +90,22 @@ class TestRateLimitingConfig:
         assert config.llm_enable_token_rate_limiting is False
         assert config.llm_max_input_tokens_per_minute is None
 
-    def test_config_field_descriptions(self):
+    def test_config_field_descriptions(self) -> None:
         """Test that config fields have proper descriptions."""
         # Test that the field definitions include helpful descriptions
         config_fields = Config.model_fields
 
         assert "llm_max_concurrent_calls" in config_fields
-        assert (
-            "Maximum concurrent LLM calls"
-            in config_fields["llm_max_concurrent_calls"].description
+        assert "Maximum concurrent LLM calls" in str(
+            config_fields["llm_max_concurrent_calls"].description
         )
 
         assert "llm_max_retry_attempts" in config_fields
-        assert (
-            "Maximum retry attempts"
-            in config_fields["llm_max_retry_attempts"].description
+        assert "Maximum retry attempts" in str(
+            config_fields["llm_max_retry_attempts"].description
         )
 
         assert "llm_enable_token_rate_limiting" in config_fields
-        assert (
-            "client-side token-based rate limiting"
-            in config_fields["llm_enable_token_rate_limiting"].description
+        assert "client-side token-based rate limiting" in str(
+            config_fields["llm_enable_token_rate_limiting"].description
         )

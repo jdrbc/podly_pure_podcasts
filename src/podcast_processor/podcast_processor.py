@@ -9,6 +9,7 @@ from sqlalchemy.orm import object_session
 
 from app.extensions import db
 from app.models import Post, ProcessingJob, TranscriptSegment
+from app.writer.client import writer_client
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.podcast_downloader import PodcastDownloader, sanitize_title
@@ -45,6 +46,25 @@ def get_post_processed_audio_path(post: Post) -> Optional[ProcessingPaths]:
         return None
 
     return paths_from_unprocessed_path(unprocessed_path, title)
+
+
+def get_post_processed_audio_path_cached(
+    post: Post, feed_title: str
+) -> Optional[ProcessingPaths]:
+    """
+    Generate the processed audio path using cached feed title to avoid ORM access.
+    Returns None if unprocessed_audio_path is not set.
+    """
+    unprocessed_path = post.unprocessed_audio_path
+    if not unprocessed_path or not isinstance(unprocessed_path, str):
+        logger.warning(f"Post {post.id} has no unprocessed_audio_path.")
+        return None
+
+    if not feed_title or not isinstance(feed_title, str):
+        logger.warning(f"Post {post.id} has no feed title.")
+        return None
+
+    return paths_from_unprocessed_path(unprocessed_path, feed_title)
 
 
 class PodcastProcessor:
@@ -100,6 +120,7 @@ class PodcastProcessor:
         else:
             self.audio_processor = audio_processor
 
+    # pylint: disable=too-many-branches, too-many-statements
     def process(
         self,
         post: Post,
@@ -118,12 +139,17 @@ class PodcastProcessor:
         Returns:
             Path to the processed audio file
         """
-        job = ProcessingJob.query.get(job_id)
+        job = self.db_session.get(ProcessingJob, job_id)
         if not job:
             raise ProcessorException(f"Job with ID {job_id} not found")
 
-        # Cache GUID early to avoid ORM access during error cleanup if the session rolls back
-        cached_lock_key = getattr(post, "guid", None)
+        # Cache job and post attributes early to avoid ORM access after expire_all()
+        # This includes relationship access like post.feed.title
+        cached_post_guid = post.guid
+        cached_post_title = post.title
+        cached_feed_title = post.feed.title
+        cached_job_id = job.id
+        cached_current_step = job.current_step
 
         try:
             self.logger.debug(
@@ -139,7 +165,9 @@ class PodcastProcessor:
 
             # Validate post
             if not post.whitelisted:
-                raise ProcessorException(f"Post with GUID {post.guid} not whitelisted")
+                raise ProcessorException(
+                    f"Post with GUID {cached_post_guid} not whitelisted"
+                )
 
             # Check if processed audio already exists (database or disk)
             if self._check_existing_processed_audio(post):
@@ -149,18 +177,34 @@ class PodcastProcessor:
                 return str(post.processed_audio_path)
 
             # Step 1: Download (if needed)
-            self._handle_download_step(post, job)
-            self._raise_if_cancelled(job, cancel_callback)
+            self._handle_download_step(
+                post, job, cached_post_guid, cached_post_title, cached_job_id
+            )
+            self._raise_if_cancelled(job, 1, cancel_callback)
 
             # Get processing paths and acquire lock
-            processed_audio_path = self._acquire_processing_lock(post, job)
+            processed_audio_path = self._acquire_processing_lock(
+                post, job, cached_post_guid, cached_job_id, cached_feed_title
+            )
 
             try:
                 if os.path.exists(processed_audio_path):
                     self.logger.info(f"Audio already processed: {post}")
                     # Update the database with the processed audio path
-                    post.processed_audio_path = processed_audio_path
-                    self.db_session.commit()
+                    self._remove_unprocessed_audio(post)
+                    result = writer_client.update(
+                        "Post",
+                        post.id,
+                        {
+                            "processed_audio_path": processed_audio_path,
+                            "unprocessed_audio_path": None,
+                        },
+                        wait=True,
+                    )
+                    if not result or not result.success:
+                        raise RuntimeError(
+                            getattr(result, "error", "Failed to update post")
+                        )
                     self.status_manager.update_job_status(
                         job, "completed", 4, "Processing complete", 100.0
                     )
@@ -176,8 +220,8 @@ class PodcastProcessor:
             finally:
                 # Release lock using cached GUID without touching ORM state after potential rollback
                 try:
-                    if cached_lock_key is not None:
-                        lock = PodcastProcessor.locks.get(cached_lock_key)
+                    if cached_post_guid is not None:
+                        lock = PodcastProcessor.locks.get(cached_post_guid)
                         if lock is not None and lock.locked():
                             lock.release()
                 except Exception:
@@ -190,12 +234,12 @@ class PodcastProcessor:
                 self.status_manager.update_job_status(
                     job,
                     "failed",
-                    job.current_step,
+                    cached_current_step,
                     "Another processing job is already running for this episode",
                 )
             else:
                 self.status_manager.update_job_status(
-                    job, "failed", job.current_step, error_msg
+                    job, "failed", cached_current_step, error_msg
                 )
             raise
 
@@ -207,11 +251,18 @@ class PodcastProcessor:
                 exc_info=True,
             )
             self.status_manager.update_job_status(
-                job, "failed", job.current_step, f"Unexpected error: {str(e)}"
+                job, "failed", cached_current_step, f"Unexpected error: {str(e)}"
             )
             raise
 
-    def _acquire_processing_lock(self, post: Post, job: ProcessingJob) -> str:
+    def _acquire_processing_lock(
+        self,
+        post: Post,
+        job: ProcessingJob,
+        post_guid: str,
+        job_id: str,
+        feed_title: str,
+    ) -> str:
         """
         Acquire processing lock for the post and return the processed audio path.
         Lock is now based on post GUID for better granularity and reliability.
@@ -219,6 +270,9 @@ class PodcastProcessor:
         Args:
             post: The Post object to process
             job: The ProcessingJob for tracking
+            post_guid: Cached post GUID to avoid ORM access
+            job_id: Cached job ID to avoid ORM access
+            feed_title: Cached feed title to avoid ORM access
 
         Returns:
             Path to the processed audio file
@@ -227,14 +281,14 @@ class PodcastProcessor:
             ProcessorException: If lock cannot be acquired or paths are invalid
         """
         # Get processing paths
-        working_paths = get_post_processed_audio_path(post)
+        working_paths = get_post_processed_audio_path_cached(post, feed_title)
         if working_paths is None:
             raise ProcessorException("Processed audio path not found")
 
         processed_audio_path = str(working_paths.post_processed_audio_path)
 
         # Use post GUID as lock key instead of file path for better granularity
-        lock_key = post.guid
+        lock_key = post_guid
 
         # Acquire lock (this is where we cancel existing jobs if we can get the lock)
         locked = False
@@ -248,7 +302,7 @@ class PodcastProcessor:
             raise ProcessorException("Processing job in progress")
 
         # Cancel existing jobs since we got the lock
-        self.status_manager.cancel_existing_jobs(post.guid, job.id)
+        self.status_manager.cancel_existing_jobs(post_guid, job_id)
 
         self.make_dirs(working_paths)
         return processed_audio_path
@@ -273,11 +327,11 @@ class PodcastProcessor:
             job, "running", 2, "Transcribing audio", 50.0
         )
         transcript_segments = self.transcription_manager.transcribe(post)
-        self._raise_if_cancelled(job, cancel_callback)
+        self._raise_if_cancelled(job, 2, cancel_callback)
 
         # Step 3: Classify ad segments
         self._classify_ad_segments(post, job, transcript_segments)
-        self._raise_if_cancelled(job, cancel_callback)
+        self._raise_if_cancelled(job, 3, cancel_callback)
 
         # Step 4: Process audio (remove ad segments)
         self.status_manager.update_job_status(
@@ -286,8 +340,18 @@ class PodcastProcessor:
         self.audio_processor.process_audio(post, processed_audio_path)
 
         # Update the database with the processed audio path
-        post.processed_audio_path = processed_audio_path
-        self.db_session.commit()
+        self._remove_unprocessed_audio(post)
+        result = writer_client.update(
+            "Post",
+            post.id,
+            {
+                "processed_audio_path": processed_audio_path,
+                "unprocessed_audio_path": None,
+            },
+            wait=True,
+        )
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Failed to update post"))
 
         # Mark job complete
         self.status_manager.update_job_status(
@@ -295,12 +359,15 @@ class PodcastProcessor:
         )
 
     def _raise_if_cancelled(
-        self, job: ProcessingJob, cancel_callback: Optional[Callable[[], bool]]
+        self,
+        job: ProcessingJob,
+        current_step: int,
+        cancel_callback: Optional[Callable[[], bool]],
     ) -> None:
         """Helper to centralize cancellation checking and update job state."""
         if cancel_callback and cancel_callback():
             self.status_manager.update_job_status(
-                job, "cancelled", job.current_step, "Cancellation requested"
+                job, "cancelled", current_step, "Cancellation requested"
             )
             raise ProcessorException("Cancelled")
 
@@ -332,10 +399,24 @@ class PodcastProcessor:
             post=post,
         )
 
-    def _handle_download_step(self, post: Post, job: ProcessingJob) -> None:
+    def _handle_download_step(
+        self,
+        post: Post,
+        job: ProcessingJob,
+        post_guid: str,
+        post_title: str,
+        job_id: str,
+    ) -> None:
         """
         Handle the download step with progress tracking and robust file checking.
         This method checks for existing files on disk before downloading.
+
+        Args:
+            post: The Post object being processed
+            job: The ProcessingJob for tracking
+            post_guid: Cached post GUID to avoid ORM access
+            post_title: Cached post title to avoid ORM access
+            job_id: Cached job ID to avoid ORM access
         """
         # If we have a path in the database, check if the file actually exists
         if post.unprocessed_audio_path is not None:
@@ -350,12 +431,15 @@ class PodcastProcessor:
             self.logger.info(
                 f"Database path {post.unprocessed_audio_path} doesn't exist or is empty, resetting"
             )
-            post.unprocessed_audio_path = None
-            self.db_session.commit()
+            result = writer_client.update(
+                "Post", post.id, {"unprocessed_audio_path": None}, wait=True
+            )
+            if not result or not result.success:
+                raise RuntimeError(getattr(result, "error", "Failed to update post"))
 
         # Compute a unique per-job expected path
         expected_unprocessed_path = get_job_unprocessed_path(
-            post.guid, job.id, post.title
+            post_guid, job_id, post_title
         )
 
         if (
@@ -363,26 +447,36 @@ class PodcastProcessor:
             and expected_unprocessed_path.stat().st_size > 0
         ):
             # Found a local unprocessed file
-            post.unprocessed_audio_path = str(expected_unprocessed_path.resolve())
+            unprocessed_path_str = str(expected_unprocessed_path.resolve())
             self.logger.info(
-                f"Found existing unprocessed audio for post '{post.title}' at '{post.unprocessed_audio_path}'. "
+                f"Found existing unprocessed audio for post '{post_title}' at '{unprocessed_path_str}'. "
                 "Updated the database path."
             )
-            self.db_session.commit()
+            result = writer_client.update(
+                "Post",
+                post.id,
+                {"unprocessed_audio_path": unprocessed_path_str},
+                wait=True,
+            )
+            if not result or not result.success:
+                raise RuntimeError(getattr(result, "error", "Failed to update post"))
             return
 
         # Need to download the file
         self.status_manager.update_job_status(
             job, "running", 1, "Downloading episode", 25.0
         )
-        self.logger.info(f"Downloading post: {post.title}")
+        self.logger.info(f"Downloading post: {post_title}")
         download_path = self.downloader.download_episode(
             post, dest_path=str(expected_unprocessed_path)
         )
         if download_path is None:
             raise ProcessorException("Download failed")
-        post.unprocessed_audio_path = download_path
-        self.db_session.commit()
+        result = writer_client.update(
+            "Post", post.id, {"unprocessed_audio_path": download_path}, wait=True
+        )
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Failed to update post"))
 
     def make_dirs(self, processing_paths: ProcessingPaths) -> None:
         """Create necessary directories for output files."""
@@ -409,7 +503,7 @@ class PodcastProcessor:
         if post_id is None:
             return
 
-        post = Post.query.get(post_id)
+        post = self.db_session.get(Post, post_id)
         if not post:
             self.logger.warning(
                 f"Could not find Post with ID {post_id} to remove files."
@@ -436,9 +530,35 @@ class PodcastProcessor:
                     f"Failed to remove processed file '{post.processed_audio_path}': {e}"
                 )
 
+        result = writer_client.update(
+            "Post",
+            post.id,
+            {"unprocessed_audio_path": None, "processed_audio_path": None},
+            wait=True,
+        )
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Failed to update post"))
+
+    def _remove_unprocessed_audio(self, post: Post) -> None:
+        """
+        Delete the downloaded source audio and clear its DB reference.
+
+        Used after we have a finalized processed file so stale downloads do not
+        accumulate on disk.
+        """
+        path = post.unprocessed_audio_path
+        if not path:
+            return
+
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+                self.logger.info("Removed unprocessed file after processing: %s", path)
+            except OSError as exc:  # best-effort cleanup
+                self.logger.warning(
+                    "Failed to remove unprocessed file '%s': %s", path, exc
+                )
         post.unprocessed_audio_path = None
-        post.processed_audio_path = None
-        self.db_session.commit()
 
     def _check_existing_processed_audio(self, post: Post) -> bool:
         """
@@ -461,8 +581,11 @@ class PodcastProcessor:
             self.logger.info(
                 f"Database path {post.processed_audio_path} doesn't exist or is empty, resetting"
             )
-            post.processed_audio_path = None
-            self.db_session.commit()
+            result = writer_client.update(
+                "Post", post.id, {"processed_audio_path": None}, wait=True
+            )
+            if not result or not result.success:
+                raise RuntimeError(getattr(result, "error", "Failed to update post"))
 
         # Check if file exists on disk at expected location
         safe_feed_title = sanitize_title(post.feed.title)
@@ -476,12 +599,19 @@ class PodcastProcessor:
             and expected_processed_path.stat().st_size > 0
         ):
             # Found a local processed file
-            post.processed_audio_path = str(expected_processed_path.resolve())
+            processed_path_str = str(expected_processed_path.resolve())
             self.logger.info(
-                f"Found existing processed audio for post '{post.title}' at '{post.processed_audio_path}'. "
+                f"Found existing processed audio for post '{post.title}' at '{processed_path_str}'. "
                 "Updated the database path."
             )
-            self.db_session.commit()
+            result = writer_client.update(
+                "Post",
+                post.id,
+                {"processed_audio_path": processed_path_str},
+                wait=True,
+            )
+            if not result or not result.success:
+                raise RuntimeError(getattr(result, "error", "Failed to update post"))
             return True
 
         return False

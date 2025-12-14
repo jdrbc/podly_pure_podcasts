@@ -6,6 +6,9 @@ export interface Feed {
   author?: string;
   image_url?: string;
   posts_count: number;
+  member_count?: number;
+  is_member?: boolean;
+  is_active_subscription?: boolean;
 }
 
 export interface Episode {
@@ -60,6 +63,21 @@ export interface JobManagerRun {
 
 export interface JobManagerStatus {
   run: JobManagerRun | null;
+}
+
+export interface CleanupPreview {
+  count: number;
+  retention_days: number | null;
+  cutoff_utc: string | null;
+}
+
+export interface CleanupRunResult {
+  status: 'ok' | 'disabled' | 'error' | string;
+  removed_posts?: number;
+  remaining_candidates?: number;
+  retention_days?: number | null;
+  cutoff_utc?: string | null;
+  message?: string;
 }
 
 // ----- Configuration Types -----
@@ -117,6 +135,7 @@ export interface AppConfigUI {
   automatically_whitelist_new_episodes: boolean;
   post_cleanup_retention_days: number | null;
   number_of_episodes_to_whitelist_from_archive_of_new_feed: number;
+  enable_public_landing_page: boolean;
 }
 
 export interface CombinedConfig {
@@ -154,9 +173,27 @@ export interface AuthUser {
   id: number;
   username: string;
   role: 'admin' | 'user' | string;
+  feed_allowance?: number;
+  feed_subscription_status?: string;
 }
 
 export interface ManagedUser extends AuthUser {
   created_at: string;
   updated_at: string;
+}
+
+export interface DiscordStatus {
+  enabled: boolean;
+}
+
+export interface BillingSummary {
+  feed_allowance: number;
+  feeds_in_use: number;
+  remaining: number;
+  price_per_feed: number;
+  subscription_status: string;
+  stripe_subscription_id?: string | null;
+  stripe_customer_id?: string | null;
+  price_id?: string | null;
+  message?: string;
 }

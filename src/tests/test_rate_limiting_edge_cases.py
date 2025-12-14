@@ -3,6 +3,7 @@ Additional edge case tests for rate limiting functionality.
 """
 
 import time
+from typing import Any
 from unittest.mock import patch
 
 from podcast_processor.ad_classifier import AdClassifier
@@ -14,12 +15,12 @@ from .test_helpers import create_test_config
 class TestRateLimitingEdgeCases:
     """Test edge cases and boundary conditions for rate limiting."""
 
-    def test_token_counting_edge_cases(self):
+    def test_token_counting_edge_cases(self) -> None:
         """Test token counting with edge cases."""
         limiter = TokenRateLimiter()
 
         # Test empty content
-        messages = [{"role": "user", "content": ""}]
+        messages: list[dict[str, str]] = [{"role": "user", "content": ""}]
         tokens = limiter.count_tokens(messages, "gpt-4")
         assert tokens == 0
 
@@ -34,7 +35,7 @@ class TestRateLimitingEdgeCases:
         tokens = limiter.count_tokens(messages, "gpt-4")
         assert tokens > 10000  # Should estimate significant tokens
 
-    def test_rate_limiter_boundary_conditions(self):
+    def test_rate_limiter_boundary_conditions(self) -> None:
         """Test rate limiter at exact boundary conditions."""
         limiter = TokenRateLimiter(tokens_per_minute=100, window_minutes=1)
 
@@ -44,7 +45,7 @@ class TestRateLimitingEdgeCases:
         limiter.token_usage.append((current_time - 30, 100))
 
         # Try to add exactly 0 more tokens
-        messages = []
+        messages: list[dict[str, str]] = []
         can_proceed, wait_seconds = limiter.check_rate_limit(messages, "gpt-4")
         assert can_proceed is True
         assert wait_seconds == 0.0
@@ -54,7 +55,7 @@ class TestRateLimitingEdgeCases:
         can_proceed, wait_seconds = limiter.check_rate_limit(messages, "gpt-4")
         # This might pass or fail depending on exact token counting, but should be consistent
 
-    def test_rate_limiter_time_window_edge(self):
+    def test_rate_limiter_time_window_edge(self) -> None:
         """Test rate limiter behavior at time window boundaries."""
         limiter = TokenRateLimiter(tokens_per_minute=100, window_minutes=1)
 
@@ -68,7 +69,7 @@ class TestRateLimitingEdgeCases:
         usage = limiter._get_current_usage(current_time)
         assert usage == 40  # Only the second entry should count
 
-    def test_config_validation_boundary_values(self):
+    def test_config_validation_boundary_values(self) -> None:
         """Test configuration with boundary values."""
         # Test minimum values
         config = create_test_config(
@@ -82,7 +83,7 @@ class TestRateLimitingEdgeCases:
         assert config.llm_max_input_tokens_per_call == 1
         assert config.llm_max_input_tokens_per_minute == 1
 
-    def test_error_classification_comprehensive(self):
+    def test_error_classification_comprehensive(self) -> None:
         """Test comprehensive error classification scenarios."""
         config = create_test_config()
 
@@ -130,7 +131,7 @@ class TestRateLimitingEdgeCases:
                 assert classifier._is_retryable_error(error) is False
 
     @patch("time.sleep")
-    def test_backoff_progression(self, mock_sleep):
+    def test_backoff_progression(self, mock_sleep: Any) -> None:
         """Test the complete backoff progression for different error types."""
         config = create_test_config()
 
@@ -202,7 +203,7 @@ class TestRateLimitingEdgeCases:
             actual_calls = [call[0][0] for call in mock_sleep.call_args_list]
             assert actual_calls == expected_calls
 
-    def test_rate_limiter_with_very_short_window(self):
+    def test_rate_limiter_with_very_short_window(self) -> None:
         """Test rate limiter with very short time windows."""
         # Use 1 minute window but test with 10-second spacing
         limiter = TokenRateLimiter(tokens_per_minute=60, window_minutes=1)
@@ -216,7 +217,7 @@ class TestRateLimitingEdgeCases:
         usage = limiter._get_current_usage(current_time)
         assert usage == 20  # Only the recent usage should count
 
-    def test_model_configuration_case_sensitivity(self):
+    def test_model_configuration_case_sensitivity(self) -> None:
         """Test that model configuration handles different cases and formats."""
         from podcast_processor.token_rate_limiter import (
             configure_rate_limiter_for_model,
@@ -248,19 +249,19 @@ class TestRateLimitingEdgeCases:
 
             assert limiter.tokens_per_minute == expected_limit
 
-    def test_thread_safety_stress(self):
+    def test_thread_safety_stress(self) -> None:
         """More intensive thread safety test."""
         import threading
 
         limiter = TokenRateLimiter(
             tokens_per_minute=50000
         )  # Higher limit for stress test
-        messages = [{"role": "user", "content": "test " * 100}]
+        messages: list[dict[str, str]] = [{"role": "user", "content": "test " * 100}]
 
-        results = []
-        errors = []
+        results: list[tuple[int, int, float]] = []
+        errors: list[tuple[int, Exception]] = []
 
-        def worker(worker_id):
+        def worker(worker_id: int) -> None:
             try:
                 for i in range(20):
                     start_time = time.time()

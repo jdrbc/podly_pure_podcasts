@@ -3,34 +3,33 @@ from unittest.mock import patch
 
 from app.models import Post
 from app.posts import remove_associated_files
-from podcast_processor.podcast_processor import ProcessingPaths
 
 
 class TestPostsFunctions:
     """Test class for functions in the app.posts module."""
 
-    @patch("app.posts.Path.exists")
-    @patch("app.posts.Path.unlink")
+    @patch("app.posts._remove_file_if_exists")
+    @patch("app.posts._dedupe_and_find_existing")
+    @patch("app.posts._collect_processed_paths")
     @patch("app.posts.get_and_make_download_path")
-    @patch("app.posts.get_post_processed_audio_path")
     @patch("app.posts.logger")
     def test_remove_associated_files_files_dont_exist(
         self,
         mock_logger,
-        mock_get_processed_path,
         mock_get_download_path,
-        mock_unlink,
-        mock_exists,
+        mock_collect_paths,
+        mock_dedupe,
+        mock_remove_file,
         app,
     ):
         """Test remove_associated_files when files don't exist."""
         with app.app_context():
             # Set up mocks
-            mock_exists.return_value = False  # Make all paths not exist
-            mock_processed_paths = ProcessingPaths(
-                post_processed_audio_path=Path("/path/to/processed.mp3")
+            mock_collect_paths.return_value = [Path("/path/to/processed.mp3")]
+            mock_dedupe.return_value = (
+                [Path("/path/to/processed.mp3")],
+                None,  # No existing file found
             )
-            mock_get_processed_path.return_value = mock_processed_paths
             mock_get_download_path.return_value = "/path/to/unprocessed.mp3"
 
             # Create test post
@@ -39,10 +38,8 @@ class TestPostsFunctions:
             # Call the function
             remove_associated_files(post)
 
-            # Verify no files were deleted
-            mock_unlink.assert_not_called()
+            # Verify _remove_file_if_exists was called for unprocessed path
+            assert mock_remove_file.call_count >= 1
 
-            # Verify debug logging for skipped files
-            assert (
-                mock_logger.debug.call_count >= 2
-            ), f"Debug was called {mock_logger.debug.call_count} times"
+            # Verify debug logging for no processed file
+            mock_logger.debug.assert_called()

@@ -1,6 +1,7 @@
 import datetime
 import logging
 import uuid
+from types import SimpleNamespace
 from unittest import mock
 
 import feedparser
@@ -9,6 +10,7 @@ import pytest
 
 from app.feeds import (
     _get_base_url,
+    _should_auto_whitelist_new_posts,
     add_feed,
     db,
     feed_item,
@@ -17,6 +19,7 @@ from app.feeds import (
     get_duration,
     get_guid,
     make_post,
+    refresh_feed,
 )
 
 logger = logging.getLogger("global_logger")
@@ -34,6 +37,9 @@ class MockPost:
         description="Test description",
         release_date=datetime.datetime(2023, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
         feed_id=1,
+        duration=None,
+        image_url=None,
+        whitelisted=False,
     ):
         self.id = id
         self.title = title
@@ -42,7 +48,11 @@ class MockPost:
         self.description = description
         self.release_date = release_date
         self.feed_id = feed_id
+        self.duration = duration
+        self.image_url = image_url
+        self.whitelisted = whitelisted
         self._audio_len_bytes = 1024
+        self.whitelisted = False
 
     def audio_len_bytes(self):
         return self._audio_len_bytes
@@ -67,6 +77,7 @@ class MockFeed:
         self.rss_url = rss_url
         self.image_url = image_url
         self.posts = []
+        self.user_feeds = []
 
 
 @pytest.fixture
@@ -80,6 +91,10 @@ def mock_feed_data():
     feed_data.feed.image = mock.MagicMock()
     feed_data.feed.image.href = "https://example.com/image.jpg"
     feed_data.href = "https://example.com/feed.xml"
+    feed_data.feed.get = mock.MagicMock()
+    feed_data.feed.get.side_effect = lambda key, default=None: (
+        {"href": feed_data.feed.image.href} if key == "image" else default
+    )
 
     entry1 = mock.MagicMock()
     entry1.title = "Episode 1"
@@ -162,6 +177,97 @@ def test_refresh_feed(mock_db_session):
     mock_db_session.commit.assert_called_once()
 
 
+def test_should_auto_whitelist_new_posts_requires_members(monkeypatch, mock_feed):
+    monkeypatch.setattr(
+        "app.feeds.config",
+        SimpleNamespace(automatically_whitelist_new_episodes=True),
+    )
+    assert _should_auto_whitelist_new_posts(mock_feed) is False
+
+
+def test_should_auto_whitelist_new_posts_true_with_members(monkeypatch, mock_feed):
+    mock_feed.user_feeds = [mock.MagicMock()]
+    monkeypatch.setattr(
+        "app.feeds.config",
+        SimpleNamespace(automatically_whitelist_new_episodes=True),
+    )
+    monkeypatch.setattr("app.feeds.is_feed_active_for_user", lambda *args: True)
+    assert _should_auto_whitelist_new_posts(mock_feed) is True
+
+
+def test_should_auto_whitelist_requires_members(monkeypatch, mock_feed, mock_post):
+    monkeypatch.setattr(
+        "app.feeds.config",
+        SimpleNamespace(automatically_whitelist_new_episodes=True),
+    )
+    mock_feed.user_feeds = []
+    assert _should_auto_whitelist_new_posts(mock_feed, mock_post) is False
+
+
+def test_should_auto_whitelist_with_members(monkeypatch, mock_feed, mock_post):
+    monkeypatch.setattr(
+        "app.feeds.config",
+        SimpleNamespace(automatically_whitelist_new_episodes=True),
+    )
+    monkeypatch.setattr("app.feeds.is_feed_active_for_user", lambda *args: True)
+    mock_feed.user_feeds = [mock.MagicMock()]
+    assert _should_auto_whitelist_new_posts(mock_feed, mock_post) is True
+
+
+@mock.patch("app.feeds.writer_client")
+@mock.patch("app.feeds._should_auto_whitelist_new_posts")
+@mock.patch("app.feeds.make_post")
+@mock.patch("app.feeds.fetch_feed")
+def test_refresh_feed_unwhitelists_without_members(
+    mock_fetch_feed,
+    mock_make_post,
+    mock_should_auto_whitelist,
+    mock_writer_client,
+    mock_feed,
+    mock_feed_data,
+    mock_db_session,
+):
+    mock_fetch_feed.return_value = mock_feed_data
+    mock_should_auto_whitelist.return_value = False
+    post_one = MockPost(guid=str(uuid.uuid4()))
+    mock_make_post.return_value = post_one
+
+    refresh_feed(mock_feed)
+
+    assert post_one.whitelisted is False
+    assert mock_make_post.call_count == len(mock_feed_data.entries)
+    assert mock_should_auto_whitelist.call_count == len(mock_feed_data.entries)
+    mock_should_auto_whitelist.assert_any_call(mock_feed, mock.ANY)
+    mock_writer_client.action.assert_called_once()
+
+
+@mock.patch("app.feeds.writer_client")
+@mock.patch("app.feeds._should_auto_whitelist_new_posts")
+@mock.patch("app.feeds.make_post")
+@mock.patch("app.feeds.fetch_feed")
+def test_refresh_feed_whitelists_when_member_exists(
+    mock_fetch_feed,
+    mock_make_post,
+    mock_should_auto_whitelist,
+    mock_writer_client,
+    mock_feed,
+    mock_feed_data,
+    mock_db_session,
+):
+    mock_fetch_feed.return_value = mock_feed_data
+    mock_should_auto_whitelist.return_value = True
+    post_one = MockPost(guid=str(uuid.uuid4()))
+    mock_make_post.return_value = post_one
+
+    refresh_feed(mock_feed)
+
+    assert post_one.whitelisted is True
+    assert mock_make_post.call_count == len(mock_feed_data.entries)
+    assert mock_should_auto_whitelist.call_count == len(mock_feed_data.entries)
+    mock_should_auto_whitelist.assert_any_call(mock_feed, mock.ANY)
+    mock_writer_client.action.assert_called_once()
+
+
 @mock.patch("app.feeds.fetch_feed")
 @mock.patch("app.feeds.refresh_feed")
 def test_add_or_refresh_feed_existing(
@@ -205,12 +311,19 @@ def test_add_or_refresh_feed_new(
     assert result == mock_feed
 
 
+@mock.patch("app.feeds.writer_client")
 @mock.patch("app.feeds.Post")
-def test_add_feed(mock_post_class, mock_feed_data, mock_db_session):
+def test_add_feed(mock_post_class, mock_writer_client, mock_feed_data, mock_db_session):
+    # Mock writer_client return value
+    mock_writer_client.action.return_value = SimpleNamespace(data={"feed_id": 1})
+
     # Create a Feed mock
     with mock.patch("app.feeds.Feed") as mock_feed_class:
         mock_feed = MockFeed()
         mock_feed_class.return_value = mock_feed
+
+        # Mock db.session.get to return our mock feed
+        mock_db_session.get.return_value = mock_feed
 
         # Mock the get method in feed_data
         mock_feed_data.feed.get = mock.MagicMock()
@@ -231,11 +344,11 @@ def test_add_feed(mock_post_class, mock_feed_data, mock_db_session):
 
                 result = add_feed(mock_feed_data)
 
-        # Check that make_post was called for each entry
-        assert mock_make_post.call_count == 2
+            # Check that make_post was called only for the latest entry
+            assert mock_make_post.call_count == len(mock_feed_data.entries)
 
-        # Check that the session was committed
-        mock_db_session.commit.assert_called()
+        # Check that writer_client.action was called
+        mock_writer_client.action.assert_called()
 
         assert result == mock_feed
 

@@ -2,12 +2,12 @@ import os
 
 from waitress import serve
 
-from app import create_app
+from app import create_web_app
 
 
 def main() -> None:
     """Main entry point for the application."""
-    app = create_app()
+    app = create_web_app()
 
     # Start the application server
     threads_env = os.environ.get("SERVER_THREADS")

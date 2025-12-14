@@ -5,7 +5,7 @@ Simple integration test for the llm_max_input_tokens_per_call feature.
 from shared.test_utils import create_standard_test_config
 
 
-def test_config_validation():
+def test_config_validation() -> None:
     """Test that the config validation works with the new setting."""
     # Test with token limit
     config_with_limit = create_standard_test_config(llm_max_input_tokens_per_call=50000)

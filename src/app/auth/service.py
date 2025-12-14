@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Sequence, cast
 
 from app.extensions import db
 from app.models import User
+from app.writer.client import writer_client
+
+logger = logging.getLogger("global_logger")
 
 
 class AuthServiceError(Exception):
@@ -51,7 +55,10 @@ def authenticate(username: str, password: str) -> AuthenticatedUser | None:
 
 
 def list_users() -> Sequence[User]:
-    return cast(Sequence[User], User.query.order_by(User.username.asc()).all())
+    return cast(
+        Sequence[User],
+        User.query.order_by(User.created_at.desc(), User.id.desc()).all(),
+    )
 
 
 def create_user(username: str, password: str, role: str = "user") -> User:
@@ -65,11 +72,18 @@ def create_user(username: str, password: str, role: str = "user") -> User:
     if User.query.filter_by(username=normalized_username).first():
         raise DuplicateUserError("A user with that username already exists.")
 
-    user = User(username=normalized_username, role=role)
-    user.set_password(password)
+    result = writer_client.action(
+        "create_user",
+        {"username": normalized_username, "password": password, "role": role},
+        wait=True,
+    )
+    if not result or not result.success or not isinstance(result.data, dict):
+        raise AuthServiceError(getattr(result, "error", "Failed to create user"))
 
-    db.session.add(user)
-    db.session.commit()
+    user_id = int(result.data["user_id"])
+    user = db.session.get(User, user_id)
+    if user is None:
+        raise AuthServiceError("User created but not found")
     return user
 
 
@@ -81,17 +95,23 @@ def change_password(user: User, current_password: str, new_password: str) -> Non
 
 
 def update_password(user: User, new_password: str) -> None:
-    user.set_password(new_password)
-    db.session.add(user)
-    db.session.commit()
+    result = writer_client.action(
+        "update_user_password",
+        {"user_id": user.id, "new_password": new_password},
+        wait=True,
+    )
+    if not result or not result.success:
+        raise AuthServiceError(getattr(result, "error", "Failed to update password"))
+    db.session.expire(user)
 
 
 def delete_user(user: User) -> None:
     if user.role == "admin" and _count_admins() <= 1:
         raise LastAdminRemovalError("Cannot remove the last admin user.")
 
-    db.session.delete(user)
-    db.session.commit()
+    result = writer_client.action("delete_user", {"user_id": user.id}, wait=True)
+    if not result or not result.success:
+        raise AuthServiceError(getattr(result, "error", "Failed to delete user"))
 
 
 def set_role(user: User, role: str) -> None:
@@ -101,9 +121,12 @@ def set_role(user: User, role: str) -> None:
     if user.role == "admin" and role != "admin" and _count_admins() <= 1:
         raise LastAdminRemovalError("Cannot demote the last admin user.")
 
-    user.role = role
-    db.session.add(user)
-    db.session.commit()
+    result = writer_client.action(
+        "set_user_role", {"user_id": user.id, "role": role}, wait=True
+    )
+    if not result or not result.success:
+        raise AuthServiceError(getattr(result, "error", "Failed to set role"))
+    db.session.expire(user)
 
 
 def _count_admins() -> int:

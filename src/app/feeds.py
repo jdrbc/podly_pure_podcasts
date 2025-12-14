@@ -10,12 +10,60 @@ import PyRSS2Gen  # type: ignore[import-untyped]
 from flask import current_app, g, request
 
 from app.extensions import db
-from app.models import Feed, Post, ProcessingJob
+from app.models import Feed, Post, User
 from app.runtime_config import config
+from app.writer.client import writer_client
 from podcast_processor.podcast_downloader import find_audio_link
-from podcast_processor.processing_status_manager import ProcessingStatusManager
 
 logger = logging.getLogger("global_logger")
+
+
+def is_feed_active_for_user(feed_id: int, user: User) -> bool:
+    """Check if the feed is within the user's allowance based on subscription date."""
+    if user.role == "admin":
+        return True
+
+    # Hack: Always treat Feed 1 as active
+    if feed_id == 1:
+        return True
+
+    # Use manual allowance if set, otherwise fall back to plan allowance
+    manual_allowance = user.manual_feed_allowance
+    if manual_allowance is not None:
+        allowance = int(manual_allowance)
+    else:
+        allowance = int(getattr(user, "feed_allowance", 0))
+
+    # Sort user's feeds by creation date to determine priority
+    user_feeds = sorted(user.user_feeds, key=lambda uf: uf.created_at)
+
+    for i, uf in enumerate(user_feeds):
+        if uf.feed_id == feed_id:
+            return i < allowance
+
+    return False
+
+
+def _should_auto_whitelist_new_posts(feed: Feed, post: Optional[Post] = None) -> bool:
+    """Return True when new posts should default to whitelisted for this feed."""
+
+    if not getattr(config, "automatically_whitelist_new_episodes", False):
+        return False
+
+    memberships = getattr(feed, "user_feeds", None) or []
+    if not memberships:
+        return False
+
+    # Check if at least one member has this feed in their "active" list (within allowance)
+    for membership in memberships:
+        user = membership.user
+        if not user:
+            continue
+
+        if is_feed_active_for_user(feed.id, user):
+            return True
+
+    return False
 
 
 def _get_base_url() -> str:
@@ -68,14 +116,13 @@ def fetch_feed(url: str) -> feedparser.FeedParserDict:
 def refresh_feed(feed: Feed) -> None:
     logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
-    status_manager = ProcessingStatusManager(db_session=db.session, logger=logger)
 
+    updates = {}
     image_info = feed_data.feed.get("image")
     if image_info and "href" in image_info:
         new_image_url = image_info["href"]
         if feed.image_url != new_image_url:
-            feed.image_url = new_image_url
-            db.session.add(feed)
+            updates["image_url"] = new_image_url
 
     existing_posts = {post.guid for post in feed.posts}  # type: ignore[attr-defined]
     oldest_post = min(
@@ -83,9 +130,11 @@ def refresh_feed(feed: Feed) -> None:
         key=lambda p: p.release_date,
         default=None,
     )
+
+    new_posts = []
     for entry in feed_data.entries:
         if entry.id not in existing_posts:
-            logger.debug(f"found new podcast: {entry.title}")
+            logger.debug("found new podcast: %s", entry.title)
             p = make_post(feed, entry)
             # do not allow automatic download of any backcatalog added to the feed
             if (
@@ -100,13 +149,28 @@ def refresh_feed(feed: Feed) -> None:
 number_of_episodes_to_whitelist_from_archive_of_new_feed setting: {entry.title}"
                 )
             else:
-                p.whitelisted = config.automatically_whitelist_new_episodes
-            _ensure_job_for_post_guid(p.guid, status_manager)
-            db.session.add(p)
-    db.session.commit()
+                p.whitelisted = _should_auto_whitelist_new_posts(feed, p)
 
-    for post in feed.posts:  # type: ignore[attr-defined]
-        _ensure_job_for_post_guid(post.guid, status_manager)
+            post_data = {
+                "guid": p.guid,
+                "title": p.title,
+                "description": p.description,
+                "download_url": p.download_url,
+                "release_date": p.release_date.isoformat() if p.release_date else None,
+                "duration": p.duration,
+                "image_url": p.image_url,
+                "whitelisted": p.whitelisted,
+                "feed_id": feed.id,
+            }
+            new_posts.append(post_data)
+
+    if updates or new_posts:
+        writer_client.action(
+            "refresh_feed",
+            {"feed_id": feed.id, "updates": updates, "new_posts": new_posts},
+            wait=True,
+        )
+
     logger.info(f"Feed with ID: {feed.id} refreshed")
 
 
@@ -127,41 +191,63 @@ def add_or_refresh_feed(url: str) -> Feed:
 def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
     logger.info(f"Storing feed: {feed_data.feed.title}")
     try:
-        feed = Feed(
-            title=feed_data.feed.title,
-            description=feed_data.feed.get("description", ""),
-            author=feed_data.feed.get("author", ""),
-            rss_url=feed_data.href,
-            image_url=feed_data.feed.image.href,
-        )
-        db.session.add(feed)
-        db.session.commit()
+        feed_dict = {
+            "title": feed_data.feed.title,
+            "description": feed_data.feed.get("description", ""),
+            "author": feed_data.feed.get("author", ""),
+            "rss_url": feed_data.href,
+            "image_url": feed_data.feed.image.href,
+        }
 
-        status_manager = ProcessingStatusManager(db_session=db.session, logger=logger)
+        # Create a temporary feed object to use make_post helper
+        temp_feed = Feed(**feed_dict)
+        temp_feed.id = 0  # Dummy ID
+
+        posts_data = []
         num_posts_added = 0
         for entry in feed_data.entries:
-            p = make_post(feed, entry)
+            p = make_post(temp_feed, entry)
             if (
                 config.number_of_episodes_to_whitelist_from_archive_of_new_feed
                 is not None
                 and num_posts_added
                 >= config.number_of_episodes_to_whitelist_from_archive_of_new_feed
             ):
-                logger.info(
-                    f"Number of episodes to load from archive reached: {num_posts_added}"
-                )
                 p.whitelisted = False
             else:
                 num_posts_added += 1
                 p.whitelisted = config.automatically_whitelist_new_episodes
-            db.session.add(p)
-            _ensure_job_for_post_guid(p.guid, status_manager)
-        db.session.commit()
-        logger.info(f"Feed stored with ID: {feed.id}")
+
+            post_data = {
+                "guid": p.guid,
+                "title": p.title,
+                "description": p.description,
+                "download_url": p.download_url,
+                "release_date": p.release_date.isoformat() if p.release_date else None,
+                "duration": p.duration,
+                "image_url": p.image_url,
+                "whitelisted": p.whitelisted,
+            }
+            posts_data.append(post_data)
+
+        result = writer_client.action(
+            "add_feed", {"feed": feed_dict, "posts": posts_data}, wait=True
+        )
+
+        if result is None or result.data is None:
+            raise RuntimeError("Failed to get result from writer action")
+
+        feed_id = result.data["feed_id"]
+        logger.info(f"Feed stored with ID: {feed_id}")
+
+        # Return the feed object
+        feed = db.session.get(Feed, feed_id)
+        if feed is None:
+            raise RuntimeError(f"Feed {feed_id} not found after creation")
         return feed
+
     except Exception as e:
         logger.error(f"Failed to store feed: {e}")
-        db.session.rollback()
         raise e
 
 
@@ -366,22 +452,5 @@ def get_duration(entry: feedparser.FeedParserDict) -> Optional[int]:
         return int(entry["itunes_duration"])
     except Exception:  # pylint: disable=broad-except
         logger.error("Failed to get duration")
+        logger.error("Failed to get duration")
         return None
-
-
-def _ensure_job_for_post_guid(
-    post_guid: str, status_manager: ProcessingStatusManager
-) -> None:
-    """Ensure there's a ProcessingJob record for the provided post GUID."""
-    post = Post.query.filter_by(guid=post_guid).first()
-    if not post or not post.whitelisted:
-        return
-    existing_job = (
-        ProcessingJob.query.filter_by(post_guid=post_guid)
-        .order_by(ProcessingJob.created_at.desc())
-        .first()
-    )
-    if existing_job:
-        return
-    job_id = status_manager.generate_job_id()
-    status_manager.create_job(post_guid, job_id)

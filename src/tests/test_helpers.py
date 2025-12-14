@@ -2,12 +2,14 @@
 Shared test utilities for rate limiting tests.
 """
 
+from typing import Any
+
 from shared.config import Config
 
 
-def create_test_config(**overrides):
+def create_test_config(**overrides: Any) -> Config:
     """Create a test configuration with rate limiting enabled."""
-    config_data = {
+    config_data: dict[str, Any] = {
         "llm_model": "anthropic/claude-3-5-sonnet-20240620",
         "llm_api_key": "test-key",
         "llm_enable_token_rate_limiting": True,

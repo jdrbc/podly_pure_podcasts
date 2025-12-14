@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from app.models import Identification, Post, TranscriptSegment
+from app.extensions import db
+from app.models import Feed, Identification, Post, TranscriptSegment
 from podcast_processor.audio_processor import AudioProcessor
 from shared.config import Config
 from shared.test_utils import create_standard_test_config
@@ -144,21 +145,36 @@ def test_merge_ad_segments_end_extension(
     assert merged[0] == (28000, 30000)  # Extended to end
 
 
-def test_process_audio(app: Flask, test_processor_with_mocks: AudioProcessor) -> None:
+def test_process_audio(
+    app: Flask,
+    test_config: Config,
+    test_logger: logging.Logger,
+) -> None:
     """Test the process_audio method"""
     with app.app_context():
-        # Create actual Post instance
+        processor = AudioProcessor(
+            config=test_config, logger=test_logger, db_session=db.session
+        )
+
+        feed = Feed(title="Test Feed", rss_url="http://example.com/rss.xml")
+        db.session.add(feed)
+        db.session.commit()
+
         post = Post(
-            id=1,
+            feed_id=feed.id,
             title="Test Post",
             guid="test-audio-guid",
+            download_url="http://example.com/audio.mp3",
             unprocessed_audio_path="path/to/audio.mp3",
         )
+        db.session.add(post)
+        db.session.commit()
+
         output_path = "path/to/output.mp3"
 
         # Set up mocks for get_ad_segments and get_audio_duration_ms
         with patch.object(
-            test_processor_with_mocks, "get_ad_segments", return_value=[(5.0, 10.0)]
+            processor, "get_ad_segments", return_value=[(5.0, 10.0)]
         ), patch(
             "podcast_processor.audio_processor.get_audio_duration_ms",
             return_value=30000,
@@ -166,10 +182,10 @@ def test_process_audio(app: Flask, test_processor_with_mocks: AudioProcessor) ->
             "podcast_processor.audio_processor.clip_segments_with_fade"
         ) as mock_clip:
             # Call the method
-            test_processor_with_mocks.process_audio(post, output_path)
+            processor.process_audio(post, output_path)
 
-            # Assertions
-            assert post.duration == 30.0  # 30000ms / 1000 = 30s
-            assert post.processed_audio_path == output_path
-            assert test_processor_with_mocks.db_session.commit.called
+            refreshed = db.session.get(Post, post.id)
+            assert refreshed is not None
+            assert refreshed.duration == 30.0  # 30000ms / 1000 = 30s
+            assert refreshed.processed_audio_path == output_path
             mock_clip.assert_called_once()

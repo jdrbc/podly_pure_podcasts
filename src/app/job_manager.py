@@ -18,11 +18,16 @@ class JobManager:
         status_manager: ProcessingStatusManager,
         logger_obj: logging.Logger,
         run_id: Optional[str],
+        *,
+        requested_by_user_id: Optional[int] = None,
+        billing_user_id: Optional[int] = None,
     ) -> None:
         self.post_guid = post_guid
         self._status_manager = status_manager
         self._logger = logger_obj
         self._run_id = run_id
+        self._requested_by_user_id = requested_by_user_id
+        self._billing_user_id = billing_user_id
         self.job: Optional[ProcessingJob] = None
 
     @property
@@ -46,12 +51,29 @@ class JobManager:
     def ensure_job(self) -> ProcessingJob:
         job = self.get_active_job()
         if job:
+            changed = False
             if self._run_id and job.jobs_manager_run_id != self._run_id:
                 job.jobs_manager_run_id = self._run_id
+                changed = True
+            if self._requested_by_user_id and job.requested_by_user_id is None:
+                job.requested_by_user_id = self._requested_by_user_id
+                changed = True
+            if self._billing_user_id is not None and (
+                job.billing_user_id != self._billing_user_id
+            ):
+                job.billing_user_id = self._billing_user_id
+                changed = True
+            if changed:
                 self._status_manager.db_session.flush()
             return job
         job_id = self._status_manager.generate_job_id()
-        job = self._status_manager.create_job(self.post_guid, job_id, self._run_id)
+        job = self._status_manager.create_job(
+            self.post_guid,
+            job_id,
+            self._run_id,
+            requested_by_user_id=self._requested_by_user_id,
+            billing_user_id=self._billing_user_id,
+        )
         self.job = job
         return job
 

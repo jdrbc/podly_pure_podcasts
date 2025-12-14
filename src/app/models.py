@@ -34,6 +34,11 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     posts = db.relationship(
         "Post", backref="feed", lazy=True, order_by="Post.release_date.desc()"
     )
+    user_feeds = db.relationship(
+        "UserFeed",
+        back_populates="feed",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Feed {self.title}>"
@@ -130,9 +135,27 @@ class User(db.Model):  # type: ignore[name-defined, misc]
     username = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(50), nullable=False, default="user")
+    feed_allowance = db.Column(db.Integer, nullable=False, default=0)
+    feed_subscription_status = db.Column(
+        db.String(32), nullable=False, default="inactive"
+    )
+    stripe_customer_id = db.Column(db.String(64), nullable=True)
+    stripe_subscription_id = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    # Discord SSO fields
+    discord_id = db.Column(db.String(32), unique=True, nullable=True, index=True)
+    discord_username = db.Column(db.String(100), nullable=True)
+
+    # Admin override for feed allowance (if set, overrides plan-based allowance)
+    manual_feed_allowance = db.Column(db.Integer, nullable=True)
+
+    user_feeds = db.relationship(
+        "UserFeed",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     @validates("username")
@@ -268,6 +291,8 @@ class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
     error_message = db.Column(db.Text)
     scheduler_job_id = db.Column(db.String(255))  # APScheduler job ID
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    billing_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
 
     # Relationships
     post = db.relationship(
@@ -277,9 +302,38 @@ class ProcessingJob(db.Model):  # type: ignore[name-defined, misc]
         foreign_keys=[post_guid],
     )
     run = db.relationship("JobsManagerRun", back_populates="processing_jobs")
+    requested_by_user = db.relationship(
+        "User",
+        foreign_keys=[requested_by_user_id],
+        backref=db.backref("requested_jobs", lazy="dynamic"),
+    )
+    billing_user = db.relationship(
+        "User",
+        foreign_keys=[billing_user_id],
+        backref=db.backref("billed_jobs", lazy="dynamic"),
+    )
 
     def __repr__(self) -> str:
         return f"<ProcessingJob {self.id} Post:{self.post_guid} Status:{self.status} Step:{self.current_step}/{self.total_steps}>"
+
+
+class UserFeed(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "feed_supporter"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    feed_id = db.Column(db.Integer, db.ForeignKey("feed.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("feed_id", "user_id", name="uq_feed_supporter_feed_user"),
+    )
+
+    feed = db.relationship("Feed", back_populates="user_feeds")
+    user = db.relationship("User", back_populates="user_feeds")
+
+    def __repr__(self) -> str:
+        return f"<UserFeed feed={self.feed_id} user={self.user_id}>"
 
 
 # ----- Application Settings (Singleton Tables) -----
@@ -425,6 +479,25 @@ class AppSettings(db.Model):  # type: ignore[name-defined, misc]
         nullable=False,
         default=DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
     )
+    enable_public_landing_page = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
+    )
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class DiscordSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "discord_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    client_id = db.Column(db.Text, nullable=True)
+    client_secret = db.Column(db.Text, nullable=True)
+    redirect_uri = db.Column(db.Text, nullable=True)
+    guild_ids = db.Column(db.Text, nullable=True)  # Comma-separated list
+    allow_registration = db.Column(db.Boolean, nullable=False, default=True)
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

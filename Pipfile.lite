@@ -34,6 +34,7 @@ async_timeout = "*"
 pytest-cov = "*"
 flask-cors = "*"
 bcrypt = "*"
+stripe = "*"
 
 [dev-packages]
 black = "*"

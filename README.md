@@ -24,12 +24,12 @@ You have a few options to get started:
 - [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/podly?referralCode=NMdeg5&utm_medium=integration&utm_source=template&utm_campaign=generic)
    - quick and easy setup in the cloud, follow our [Railway deployment guide](docs/how_to_run_railway.md). 
    - Use this if you want to share your Podly server with others.
-- or **[Join The Preview Server](https://podly.up.railway.app/)**
-- or **Run Locally**: 
+- **Run Locally**: 
    - For local development and customization, 
    - see our [beginner's guide for running locally](docs/how_to_run_beginners.md). 
    - Use this for the most cost-optimal & private setup.
-  </a>
+- **[Join The Preview Server](https://podly.up.railway.app/)**: 
+   - 3 hours of ad removal / dollar
 
 
 ## How it works:
@@ -51,8 +51,8 @@ You have a few options to get started:
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
 | **$10** | public (railway)  | remote        | remote |
-| **$5.99** | https://zeroads.ai/  | production fork of podly | |
-| ? | do you run an ad removal service? | get listed here | sponsor or contribute to project 😀 |
+| **$1/mo/feed** | [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
+| **$5.99/mo** | https://zeroads.ai/ | production fork of podly | |
 
 
 ## Contributing

@@ -3,6 +3,8 @@ from typing import Any, List, Optional, Tuple
 
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
+from app.writer.client import writer_client
+from podcast_processor.ad_merger import AdMerger
 from podcast_processor.audio import clip_segments_with_fade, get_audio_duration_ms
 from shared.config import Config
 
@@ -21,16 +23,21 @@ class AudioProcessor:
     ):
         self.logger = logger or logging.getLogger("global_logger")
         self.config = config
+        self._identification_query_provided = identification_query is not None
         self.identification_query = identification_query or Identification.query
         self.transcript_segment_query = (
             transcript_segment_query or TranscriptSegment.query
         )
         self.model_call_query = model_call_query or ModelCall.query
         self.db_session = db_session or db.session
+        self.ad_merger = AdMerger()
 
     def get_ad_segments(self, post: Post) -> List[Tuple[float, float]]:
         """
         Retrieves ad segments from the database for a given post.
+
+        NOTE: Uses self.db_session.query() instead of self.identification_query
+        to ensure all operations use the same session consistently.
 
         Args:
             post: The Post object to retrieve ad segments for
@@ -40,8 +47,14 @@ class AudioProcessor:
         """
         self.logger.info(f"Retrieving ad segments from database for post {post.id}.")
 
+        query = (
+            self.identification_query
+            if self._identification_query_provided
+            else self.db_session.query(Identification)
+        )
+
         ad_identifications = (
-            self.identification_query.join(
+            query.join(
                 TranscriptSegment,
                 Identification.transcript_segment_id == TranscriptSegment.id,
             )
@@ -62,21 +75,41 @@ class AudioProcessor:
             )
             return []
 
-        ad_segments_times: List[Tuple[float, float]] = []
+        # Get full segment objects with text for content analysis
+        # Filter out any identifications with missing segments (DB integrity check)
+        ad_segments_with_text = []
+        valid_identifications = []
         for ident in ad_identifications:
-            segment = ident.transcript_segment  # Accessing via backref
+            segment = ident.transcript_segment
             if segment:
-                ad_segments_times.append((segment.start_time, segment.end_time))
+                ad_segments_with_text.append(segment)
+                valid_identifications.append(ident)
             else:
                 # This should ideally not happen if DB integrity is maintained
                 self.logger.warning(
                     f"Identification {ident.id} for post {post.id} refers to a missing TranscriptSegment {ident.transcript_segment_id}. Skipping."
                 )
 
-        self.logger.info(
-            f"Found {len(ad_segments_times)} ad segments for post {post.id} from database."
+        if not ad_segments_with_text:
+            self.logger.info(
+                f"No valid ad segments with transcript data for post {post.id}."
+            )
+            return []
+
+        # Content-aware merge
+        ad_groups = self.ad_merger.merge(
+            ad_segments=ad_segments_with_text,
+            identifications=valid_identifications,
+            max_gap=float(self.config.output.min_ad_segment_separation_seconds),
+            min_content_gap=12.0,
         )
-        # Sort by start time, as processing might expect this order
+
+        self.logger.info(
+            f"Merged {len(ad_segments_with_text)} segments into {len(ad_groups)} groups for post {post.id}"
+        )
+
+        # Convert to time tuples for merge_ad_segments()
+        ad_segments_times = [(g.start_time, g.end_time) for g in ad_groups]
         ad_segments_times.sort(key=lambda x: x[0])
         return ad_segments_times
 
@@ -204,7 +237,18 @@ class AudioProcessor:
         )
 
         post.processed_audio_path = output_path
-        self.db_session.commit()
+        result = writer_client.update(
+            "Post",
+            post.id,
+            {"processed_audio_path": output_path, "duration": post.duration},
+            wait=True,
+        )
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Failed to update post"))
+        try:
+            self.db_session.expire(post)
+        except Exception:  # pylint: disable=broad-except
+            pass
 
         self.logger.info(
             f"Audio processing complete for post {post.id}, saved to {output_path}"

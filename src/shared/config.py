@@ -29,6 +29,15 @@ class OutputConfig(BaseModel):
     min_ad_segment_length_seconds: int
     min_confidence: float
 
+    @property
+    def min_ad_segment_separation_seconds(self) -> int:
+        """Backwards-compatible alias for the misspelled config field."""
+        return self.min_ad_segement_separation_seconds
+
+    @min_ad_segment_separation_seconds.setter
+    def min_ad_segment_separation_seconds(self, value: int) -> None:
+        self.min_ad_segement_separation_seconds = value
+
 
 WhisperConfigTypes = Literal["remote", "local", "test", "groq"]
 
@@ -88,6 +97,10 @@ class Config(BaseModel):
         default=DEFAULTS.LLM_MAX_INPUT_TOKENS_PER_MINUTE,
         description="Override default tokens per minute limit for the model",
     )
+    developer_mode: bool = Field(
+        default=False,
+        description="Enable developer mode features like test feeds",
+    )
     output: OutputConfig
     processing: ProcessingConfig
     server: Optional[str] = Field(
@@ -125,6 +138,7 @@ class Config(BaseModel):
     number_of_episodes_to_whitelist_from_archive_of_new_feed: int = (
         DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED
     )
+    enable_public_landing_page: bool = DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE
 
     def redacted(self) -> Config:
         return self.model_copy(

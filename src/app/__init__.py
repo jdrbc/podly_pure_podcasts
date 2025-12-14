@@ -1,3 +1,4 @@
+import importlib
 import json
 import logging
 import os
@@ -6,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from flask import Flask
+from flask import Flask, current_app, g, has_app_context, request
 from flask_cors import CORS
 from flask_migrate import upgrade
 from sqlalchemy import event
@@ -14,6 +15,7 @@ from sqlalchemy.engine import Engine
 
 from app.auth import AuthSettings, load_auth_settings
 from app.auth.bootstrap import bootstrap_admin_user
+from app.auth.discord_settings import load_discord_settings
 from app.auth.middleware import init_auth_middleware
 from app.background import add_background_job, schedule_cleanup_job
 from app.extensions import db, migrate, scheduler
@@ -25,18 +27,41 @@ setup_logger("global_logger", "src/instance/logs/app.log")
 logger = logging.getLogger("global_logger")
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_sqlite_busy_timeout_ms() -> int:
+    # Longer timeout to allow large batch deletes/updates to finish before giving up
+    return 90000
+
+
 def setup_dirs() -> None:
+    """Create data directories. Logs a warning and continues if paths are not writable."""
     in_root = get_in_root()
     srv_root = get_srv_root()
-    os.makedirs(in_root, exist_ok=True)
-    os.makedirs(srv_root, exist_ok=True)
+    try:
+        os.makedirs(in_root, exist_ok=True)
+        os.makedirs(srv_root, exist_ok=True)
+    except OSError as exc:
+        # During CLI commands like migrations, the /app path may not exist
+        logger.warning(
+            "Could not create data directories (%s, %s): %s. "
+            "This is expected during migrations on local dev.",
+            in_root,
+            srv_root,
+            exc,
+        )
 
 
 class SchedulerConfig:
     SCHEDULER_JOBSTORES = {
         "default": {
             "type": "sqlalchemy",
-            "url": "sqlite:///src/instance/jobs.sqlite",
+            "url": "sqlite:////tmp/jobs.sqlite",
         }
     }
     SCHEDULER_EXECUTORS = {"default": {"type": "threadpool", "max_workers": 1}}
@@ -50,11 +75,13 @@ def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:
         return
 
     cursor = dbapi_connection.cursor()
+    busy_timeout_ms = _get_sqlite_busy_timeout_ms()
     try:
         cursor.execute("PRAGMA journal_mode=WAL;")
         cursor.execute("PRAGMA synchronous=NORMAL;")
-        # Keep busy timeout low so our explicit retry logic can respond quickly.
-        cursor.execute("PRAGMA busy_timeout=2000;")
+        cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms};")
+        # Limit WAL file size to prevent checkpoint starvation
+        cursor.execute("PRAGMA wal_autocheckpoint=1000;")
     finally:
         cursor.close()
 
@@ -67,9 +94,54 @@ def setup_scheduler(app: Flask) -> None:
 
 
 def create_app() -> Flask:
-    app = _create_flask_app()
-    auth_settings = _load_auth_settings()
+    disable_scheduler = _env_bool("PODLY_DISABLE_SCHEDULER", default=False)
+    run_startup = _env_bool("PODLY_RUN_STARTUP", default=True)
+    return _create_configured_app(
+        app_role="web",
+        run_startup=run_startup,
+        start_scheduler=not disable_scheduler,
+    )
 
+
+def create_web_app() -> Flask:
+    """Create the web (read-mostly) Flask app.
+
+    This app should not run startup migrations/bootstrapping; DB writes are
+    delegated to the writer service. Scheduler runs here so background processing
+    happens in the web process.
+    """
+    return _create_configured_app(
+        app_role="web",
+        run_startup=False,
+        start_scheduler=True,
+    )
+
+
+def create_writer_app() -> Flask:
+    """Create the writer Flask app.
+
+    This app owns startup migrations/bootstrapping.
+    """
+    return _create_configured_app(
+        app_role="writer",
+        run_startup=True,
+        start_scheduler=False,
+    )
+
+
+def _create_configured_app(
+    *,
+    app_role: str,
+    run_startup: bool,
+    start_scheduler: bool,
+) -> Flask:
+    # Setup directories early but only when actually creating the app (not during migrations)
+    if not is_test:
+        setup_dirs()
+
+    app = _create_flask_app()
+    app.config["PODLY_APP_ROLE"] = app_role
+    auth_settings = _load_auth_settings()
     _apply_auth_settings(app, auth_settings)
     _configure_session(app, auth_settings)
     _configure_cors(app)
@@ -79,18 +151,31 @@ def create_app() -> Flask:
     _initialize_extensions(app)
     _register_routes_and_middleware(app)
 
+    app.config["developer_mode"] = config.developer_mode
+
     with app.app_context():
-        _run_app_startup(auth_settings)
+        if run_startup:
+            _run_app_startup(auth_settings)
+        else:
+            _hydrate_web_config()
+
+        discord_settings = load_discord_settings()
+        app.config["DISCORD_SETTINGS"] = discord_settings
 
     app.config["AUTH_SETTINGS"] = auth_settings.without_password()
 
+    if app.config["DISCORD_SETTINGS"].enabled:
+        logger.info(
+            "Discord SSO enabled (guild restriction: %s)",
+            "yes" if app.config["DISCORD_SETTINGS"].guild_ids else "no",
+        )
+
     _validate_env_key_conflicts()
-    _start_scheduler_and_jobs(app)
+    if start_scheduler:
+        _start_scheduler_and_jobs(app)
     return app
 
 
-if not is_test:
-    setup_dirs()
 print("Config:\n", json.dumps(config.model_dump(), indent=2))
 
 
@@ -113,9 +198,20 @@ def _clear_scheduler_jobstore() -> None:
     jobstore_path = (project_root / Path(relative_path)).resolve()
     jobstore_path.parent.mkdir(parents=True, exist_ok=True)
 
+    sidecars = [
+        jobstore_path,
+        jobstore_path.with_name(jobstore_path.name + "-wal"),
+        jobstore_path.with_name(jobstore_path.name + "-shm"),
+    ]
+
     try:
-        if jobstore_path.exists():
-            jobstore_path.unlink()
+        cleared_any = False
+        for path in sidecars:
+            if path.exists():
+                path.unlink()
+                cleared_any = True
+
+        if cleared_any:
             logger.info(
                 "Startup: cleared persisted APScheduler jobs at %s", jobstore_path
             )
@@ -220,13 +316,24 @@ def _configure_scheduler(app: Flask) -> None:
 
 
 def _configure_database(app: Flask) -> None:
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///sqlite3.db?timeout=90"
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    def _get_sqlite_connect_timeout() -> int:
+        return 60
+
+    uri_scheme = "sqlite"
+    connect_timeout = _get_sqlite_connect_timeout()
+    app.config["SQLALCHEMY_DATABASE_URI"] = (
+        f"{uri_scheme}:///sqlite3.db?timeout={connect_timeout}"
+    )
+    engine_options: dict[str, Any] = {
         "connect_args": {
-            "timeout": 90,
-            "check_same_thread": False,
+            "timeout": connect_timeout,
         },
+        # Keep pool small to reduce concurrent SQLite writers
+        "pool_size": 5,
+        "max_overflow": 5,
     }
+
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_options
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 
@@ -235,9 +342,68 @@ def _configure_external_loggers() -> None:
     groq_logger.setLevel(logging.INFO)
 
 
+def _configure_readonly_sessions(app: Flask) -> None:
+    """
+    Configure SQLAlchemy sessions to be read-only for the web/API app.
+    This prevents Flask from acquiring write locks on the database, which
+    can cause deadlocks with the writer service.
+
+    Only the writer service should perform database writes.
+    """
+    from sqlalchemy.orm import Session
+
+    @event.listens_for(Session, "after_begin", once=False)
+    def receive_after_begin(
+        session: Session, transaction: Any, connection: Any
+    ) -> None:
+        """Set new transactions to read-only by default."""
+        # Only apply to sessions created within this app context
+        try:
+            if not has_app_context():
+                return
+            if current_app.config.get("PODLY_APP_ROLE") != "web":
+                return
+        except Exception:  # pylint: disable=broad-except
+            return
+
+        # Set isolation level to prevent write locks
+        # For SQLite, this prevents RESERVED/EXCLUSIVE locks
+        connection.connection.isolation_level = "DEFERRED"
+
+        # Disable autoflush to prevent accidental writes
+        session.autoflush = False
+
+        # Mark session as read-only to prevent any writes
+        session.info["readonly"] = True
+
+    @event.listens_for(Session, "before_flush", once=False)
+    def receive_before_flush(
+        session: Session, flush_context: Any, instances: Any
+    ) -> None:
+        """Prevent accidental writes in read-only sessions."""
+        try:
+            if not has_app_context():
+                return
+            if current_app.config.get("PODLY_APP_ROLE") != "web":
+                return
+        except Exception:  # pylint: disable=broad-except
+            return
+
+        if session.info.get("readonly"):
+            raise RuntimeError(
+                "Attempted to flush changes in read-only session. "
+                "All database writes must go through the writer service."
+            )
+
+
 def _initialize_extensions(app: Flask) -> None:
     db.init_app(app)
     migrate.init_app(app, db)
+
+    # Configure read-only mode for web/API Flask app to prevent database locks
+    # Only the writer service should acquire write locks
+    if app.config.get("PODLY_APP_ROLE") == "web":
+        _configure_readonly_sessions(app)
 
 
 def _register_routes_and_middleware(app: Flask) -> None:
@@ -247,6 +413,37 @@ def _register_routes_and_middleware(app: Flask) -> None:
     init_auth_middleware(app)
 
     from app import models  # pylint: disable=import-outside-toplevel, unused-import
+
+    _register_api_logging(app)
+
+
+def _register_api_logging(app: Flask) -> None:
+    @app.after_request
+    def _log_api_request(response: Any) -> Any:
+        try:
+            path = request.path
+        except Exception:  # pragma: no cover  # pylint: disable=broad-except
+            return response
+
+        if not path.startswith("/api/"):
+            return response
+
+        method = request.method
+        status = getattr(response, "status_code", None)
+
+        user = getattr(g, "current_user", None)
+        user_id = getattr(user, "id", None)
+
+        logger.info(
+            "[API] %s %s status=%s user_id=%s content_type=%s",
+            method,
+            path,
+            status,
+            user_id,
+            getattr(response, "content_type", None),
+        )
+
+        return response
 
 
 def _run_app_startup(auth_settings: AuthSettings) -> None:
@@ -266,6 +463,21 @@ def _run_app_startup(auth_settings: AuthSettings) -> None:
         ProcessorSingleton.reset_instance()
     except Exception as exc:  # pylint: disable=broad-except
         logger.error(f"Failed to initialize settings: {exc}")
+
+
+def _hydrate_web_config() -> None:
+    """Hydrate runtime config for web app (read-only)."""
+    from app.config_store import (  # pylint: disable=import-outside-toplevel
+        hydrate_runtime_config_inplace,
+    )
+
+    hydrate_runtime_config_inplace()
+
+    from app.processor import (  # pylint: disable=import-outside-toplevel
+        ProcessorSingleton,
+    )
+
+    ProcessorSingleton.reset_instance()
 
 
 def _start_scheduler_and_jobs(app: Flask) -> None:

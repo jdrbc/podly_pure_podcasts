@@ -72,13 +72,9 @@ def test_classifier_with_mocks(
 def test_call_model(test_config: Config, app: Flask) -> None:
     """Test the _call_model method with mocked litellm"""
     with app.app_context():
-        # Create mocks
-        mock_db_session = MagicMock()
+        classifier = AdClassifier(config=test_config, db_session=db.session)
 
-        # Create a classifier with the mocks
-        classifier = AdClassifier(config=test_config, db_session=mock_db_session)
-
-        # Create a dummy ModelCall object
+        # Create and persist a ModelCall row (writer_client local fallback updates by id)
         dummy_model_call = ModelCall(
             post_id=0,
             model_name=test_config.llm_model,
@@ -87,6 +83,8 @@ def test_call_model(test_config: Config, app: Flask) -> None:
             last_segment_sequence_num=0,
             status="pending",
         )
+        db.session.add(dummy_model_call)
+        db.session.commit()
 
         # Create a mock message and choice directly
         mock_message = MagicMock()
@@ -108,20 +106,16 @@ def test_call_model(test_config: Config, app: Flask) -> None:
 
             # Verify response
             assert response == "test response"
-            assert dummy_model_call.status == "success"
-            assert dummy_model_call.response == "test response"
-            assert mock_db_session.add.called
-            assert mock_db_session.commit.called
+            refreshed = db.session.get(ModelCall, dummy_model_call.id)
+            assert refreshed is not None
+            assert refreshed.status == "success"
+            assert refreshed.response == "test response"
 
 
 def test_call_model_retry_on_internal_error(test_config: Config, app: Flask) -> None:
     """Test that _call_model retries on InternalServerError"""
     with app.app_context():
-        # Create mocks
-        mock_db_session = MagicMock()
-
-        # Create a classifier with the mocks
-        classifier = AdClassifier(config=test_config, db_session=mock_db_session)
+        classifier = AdClassifier(config=test_config, db_session=db.session)
 
         dummy_model_call = ModelCall(
             post_id=0,
@@ -131,6 +125,8 @@ def test_call_model_retry_on_internal_error(test_config: Config, app: Flask) -> 
             last_segment_sequence_num=0,
             status="pending",
         )
+        db.session.add(dummy_model_call)
+        db.session.commit()
 
         # Create a mock message and choice directly
         mock_message = MagicMock()
@@ -155,17 +151,19 @@ def test_call_model_retry_on_internal_error(test_config: Config, app: Flask) -> 
         # Patch time.sleep to avoid waiting during tests
         with patch("time.sleep"), patch(
             "litellm.completion", side_effect=mock_completion_side_effects
-        ):
+        ) as mocked_completion:
             response = classifier._call_model(
                 model_call_obj=dummy_model_call,
                 system_prompt="test system prompt",
             )
 
             assert response == "test response"
-            assert dummy_model_call.status == "success"
-            # The completion should be called twice
-            assert mock_db_session.add.call_count >= 2
-            assert mock_db_session.commit.call_count >= 2
+            assert mocked_completion.call_count == 2
+            refreshed = db.session.get(ModelCall, dummy_model_call.id)
+            assert refreshed is not None
+            assert refreshed.status == "success"
+            assert refreshed.response == "test response"
+            assert refreshed.retry_attempts == 2
 
 
 def test_process_chunk(test_config: Config, app: Flask) -> None:
@@ -270,7 +268,7 @@ def test_compute_next_overlap_segments_includes_context(
         max_overlap_segments=6,
     )
 
-    assert [seg.sequence_num for seg in result] == [2, 3, 4, 5]
+    assert [seg.sequence_num for seg in result] == [0, 1, 2, 3, 4, 5]
 
 
 def test_compute_next_overlap_segments_respects_cap(
@@ -297,6 +295,29 @@ def test_compute_next_overlap_segments_respects_cap(
     )
 
     assert [seg.sequence_num for seg in result] == [4, 5]
+
+
+def test_compute_next_overlap_segments_baseline_overlap_without_ads(
+    test_classifier_with_mocks: AdClassifier,
+) -> None:
+    classifier = test_classifier_with_mocks
+    segments = [
+        TranscriptSegment(
+            id=i + 1,
+            post_id=1,
+            sequence_num=i,
+            start_time=float(i),
+            end_time=float(i + 1),
+            text=f"Segment {i}",
+        )
+        for i in range(8)
+    ]
+
+    result = classifier._compute_next_overlap_segments(
+        chunk_segments=segments, identified_segments=[], max_overlap_segments=4
+    )
+
+    assert [seg.sequence_num for seg in result] == [4, 5, 6, 7]
 
 
 def test_create_identifications_skips_existing_ad_label(
