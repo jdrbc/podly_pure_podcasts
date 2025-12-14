@@ -1,12 +1,13 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import flask
-from flask import Blueprint, current_app, g, jsonify, request, send_file
+from flask import Blueprint, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
+from app.auth.guards import require_admin
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
 from app.models import (
@@ -15,7 +16,6 @@ from app.models import (
     ModelCall,
     Post,
     TranscriptSegment,
-    User,
 )
 from app.posts import clear_post_processing_data
 from app.writer.client import writer_client
@@ -24,35 +24,6 @@ logger = logging.getLogger("global_logger")
 
 
 post_bp = Blueprint("post", __name__)
-
-
-def _require_admin(
-    action: str = "perform this action",
-) -> Tuple[User | None, flask.Response | None]:
-    """Ensure the current user is an admin when auth is enabled."""
-
-    settings = current_app.config.get("AUTH_SETTINGS")
-    if not settings or not settings.require_auth:
-        return None, None
-
-    current = getattr(g, "current_user", None)
-    if current is None:
-        return None, flask.make_response(
-            flask.jsonify({"error": "Authentication required."}), 401
-        )
-
-    user: User | None = db.session.get(User, current.id)
-    if user is None:
-        return None, flask.make_response(
-            flask.jsonify({"error": "User not found."}), 404
-        )
-
-    if user.role != "admin":
-        return None, flask.make_response(
-            flask.jsonify({"error": f"Only admins can {action}."}), 403
-        )
-
-    return user, None
 
 
 def _is_latest_post(feed: Feed, post: Post) -> bool:
@@ -121,7 +92,7 @@ def api_post_processing_estimate(p_guid: str) -> ResponseReturnValue:
     if feed is None:
         return flask.make_response(flask.jsonify({"error": "Feed not found"}), 404)
 
-    _, error = _require_admin("estimate processing costs")
+    _, error = require_admin("estimate processing costs")
     if error:
         return error
 
@@ -415,7 +386,7 @@ def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
     if feed is None:
         return flask.make_response(flask.jsonify({"error": "Feed not found"}), 404)
 
-    user, error = _require_admin("whitelist this episode")
+    user, error = require_admin("whitelist this episode")
     if error:
         return error
     if user is not None and user.role != "admin":
@@ -428,7 +399,6 @@ def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
             ),
             403,
         )
-    is_admin = user and user.role == "admin"
 
     data = request.get_json()
     if data is None or "whitelisted" not in data:
@@ -461,16 +431,6 @@ def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
 
     trigger_processing = bool(data.get("trigger_processing"))
     if post.whitelisted and trigger_processing:
-        if not is_admin and not _is_latest_post(feed, post):
-            return (
-                flask.jsonify(
-                    {
-                        "error": "BACKCATALOG_DISABLED",
-                        "message": "Processing back catalog episodes is limited to admins.",
-                    }
-                ),
-                403,
-            )
         billing_user_id = getattr(user, "id", None)
         job_response = get_jobs_manager().start_post_processing(
             post.guid,
@@ -491,7 +451,7 @@ def api_toggle_whitelist_all(feed_id: int) -> ResponseReturnValue:
     """
     feed = Feed.query.get_or_404(feed_id)
 
-    _, error = _require_admin("toggle whitelist for all posts")
+    _, error = require_admin("toggle whitelist for all posts")
     if error:
         return error
 
@@ -573,10 +533,9 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             404,
         )
 
-    user, error = _require_admin("process this episode")
+    user, error = require_admin("process this episode")
     if error:
         return error
-    is_admin = user.role == "admin" if user else False
 
     if not post.whitelisted:
         return (
@@ -597,18 +556,6 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
                 "message": "Post already processed",
                 "download_url": f"/api/posts/{p_guid}/download",
             }
-        )
-
-    if not is_admin and not _is_latest_post(feed, post):
-        return (
-            flask.jsonify(
-                {
-                    "status": "error",
-                    "error_code": "BACKCATALOG_DISABLED",
-                    "message": "Processing back catalog episodes is limited to admins.",
-                }
-            ),
-            403,
         )
 
     billing_user_id = getattr(user, "id", None)
@@ -676,7 +623,7 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
             404,
         )
 
-    user, error = _require_admin("reprocess this episode")
+    user, error = require_admin("reprocess this episode")
     if error:
         logger.warning("[API] Reprocess: auth error for guid=%s", p_guid)
         return error

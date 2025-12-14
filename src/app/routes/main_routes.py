@@ -2,10 +2,11 @@ import logging
 import os
 
 import flask
-from flask import Blueprint, current_app, g, send_from_directory
+from flask import Blueprint, send_from_directory
 
+from app.auth.guards import require_admin
 from app.extensions import db
-from app.models import Feed, Post, User
+from app.models import Feed, Post
 from app.runtime_config import config
 from app.writer.client import writer_client
 
@@ -20,7 +21,7 @@ main_bp = Blueprint("main", __name__)
 @main_bp.route("/")
 def index() -> flask.Response:
     """Serve the React app's index.html."""
-    static_folder = current_app.static_folder
+    static_folder = flask.current_app.static_folder
     if static_folder and os.path.exists(os.path.join(static_folder, "index.html")):
         return send_from_directory(static_folder, "index.html")
 
@@ -37,7 +38,7 @@ def catch_all(path: str) -> flask.Response:
     if path.startswith("api/"):
         flask.abort(404)
 
-    static_folder = current_app.static_folder
+    static_folder = flask.current_app.static_folder
     if static_folder:
         # First try to serve a static file if it exists
         static_file_path = os.path.join(static_folder, path)
@@ -52,34 +53,9 @@ def catch_all(path: str) -> flask.Response:
     flask.abort(404)
 
 
-def _require_admin(action: str = "perform this action") -> flask.Response | None:
-    """Guard endpoints so only admins can access them when auth is enabled."""
-
-    settings = current_app.config.get("AUTH_SETTINGS")
-    if not settings or not settings.require_auth:
-        return None
-
-    current = getattr(g, "current_user", None)
-    if current is None:
-        return flask.make_response(
-            flask.jsonify({"error": "Authentication required."}), 401
-        )
-
-    user: User | None = db.session.get(User, current.id)
-    if user is None:
-        return flask.make_response(flask.jsonify({"error": "User not found."}), 404)
-
-    if user.role != "admin":
-        return flask.make_response(
-            flask.jsonify({"error": f"Only admins can {action}."}), 403
-        )
-
-    return None
-
-
 @main_bp.route("/feed/<int:f_id>/toggle-whitelist-all/<val>", methods=["POST"])
 def whitelist_all(f_id: str, val: str) -> flask.Response:
-    error_response = _require_admin("toggle whitelist for all posts")
+    _, error_response = require_admin("toggle whitelist for all posts")
     if error_response:
         return error_response
 

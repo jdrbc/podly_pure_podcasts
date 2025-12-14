@@ -57,11 +57,24 @@ def update_combined_config_action(params: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("payload must be a dictionary")
 
+    # Import locally to avoid cyclic dependencies
     from app.config_store import (  # pylint: disable=import-outside-toplevel
+        hydrate_runtime_config_inplace,
         update_combined,
     )
 
     updated = update_combined(payload)
+
+    # Ensure the running process sees the new config immediately
+    hydrate_runtime_config_inplace()
+
+    # Reset processor instance to pick up new config (e.g. litellm globals)
+    # Import locally to avoid cyclic dependencies
+    import importlib
+
+    processor = importlib.import_module("app.processor")
+    processor.ProcessorSingleton.reset_instance()
+
     if not isinstance(updated, dict):
         return {"updated": True}
     return updated

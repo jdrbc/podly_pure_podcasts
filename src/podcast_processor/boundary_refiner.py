@@ -73,6 +73,8 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 temperature=0.1,
                 max_tokens=500,
                 timeout=self.config.openai_timeout,
+                api_key=self.config.llm_api_key,
+                base_url=self.config.openai_base_url,
             )
 
             content = response.choices[0].message.content

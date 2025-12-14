@@ -22,7 +22,7 @@ export default function ConfigTabs() {
   const configState = useConfigState();
 
   const showSecurityControls = requireAuth && !!user;
-  const isAdmin = showSecurityControls && user?.role === 'admin';
+  const isAdmin = !requireAuth || (showSecurityControls && user?.role === 'admin');
 
   // Get tab from URL or default
   const activeTab = useMemo<ConfigTabId>(() => {
@@ -33,10 +33,13 @@ export default function ConfigTabs() {
       if (tab?.adminOnly && !isAdmin) {
         return 'default';
       }
+      if (urlTab === 'users' && !requireAuth) {
+        return 'default';
+      }
       return urlTab;
     }
     return 'default';
-  }, [searchParams, isAdmin]);
+  }, [searchParams, isAdmin, requireAuth]);
 
   const activeSubtab = useMemo<AdvancedSubtab>(() => {
     const urlSubtab = searchParams.get('section') as AdvancedSubtab | null;
@@ -86,7 +89,10 @@ export default function ConfigTabs() {
     [configState, activeTab, setActiveTab, activeSubtab, setActiveSubtab, isAdmin, showSecurityControls]
   );
 
-  const visibleTabs = TABS.filter((tab) => !tab.adminOnly || isAdmin);
+  const visibleTabs = TABS.filter((tab) => {
+    if (tab.id === 'users' && !requireAuth) return false;
+    return !tab.adminOnly || isAdmin;
+  });
 
   if (configState.isLoading || !configState.pending) {
     return <div className="text-sm text-gray-700">Loading configuration...</div>;

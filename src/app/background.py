@@ -2,6 +2,9 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.extensions import scheduler
+from app.jobs_manager import (
+    scheduled_refresh_all_feeds,
+)
 from app.post_cleanup import scheduled_cleanup_processed_posts
 
 
@@ -10,9 +13,6 @@ def add_background_job(minutes: int) -> None:
 
     minutes: interval in minutes; must be a positive integer.
     """
-    from app.jobs_manager import (  # pylint: disable=import-outside-toplevel
-        scheduled_refresh_all_feeds,
-    )
 
     scheduler.add_job(
         id="refresh_all_feeds",

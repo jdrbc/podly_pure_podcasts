@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from typing import Any, Dict, Optional, Tuple
@@ -1041,5 +1042,266 @@ def _log_final_snapshot() -> None:
 def ensure_defaults_and_hydrate() -> None:
     """Ensure default rows exist, then hydrate the runtime config from DB."""
     ensure_defaults()
+
+    # Check if environment variables have changed since last boot
+    _check_and_apply_env_changes()
+
     _apply_env_overrides_to_db_first_boot()
     hydrate_runtime_config_inplace()
+
+
+def _calculate_env_hash() -> str:
+    """Calculate a hash of all configuration-related environment variables."""
+    keys = [
+        # LLM
+        "LLM_API_KEY",
+        "OPENAI_API_KEY",
+        "GROQ_API_KEY",
+        "LLM_MODEL",
+        "OPENAI_BASE_URL",
+        "OPENAI_TIMEOUT",
+        "OPENAI_MAX_TOKENS",
+        "LLM_MAX_CONCURRENT_CALLS",
+        "LLM_MAX_RETRY_ATTEMPTS",
+        "LLM_ENABLE_TOKEN_RATE_LIMITING",
+        "LLM_MAX_INPUT_TOKENS_PER_CALL",
+        "LLM_MAX_INPUT_TOKENS_PER_MINUTE",
+        # Whisper
+        "WHISPER_TYPE",
+        "WHISPER_LOCAL_MODEL",
+        "WHISPER_REMOTE_API_KEY",
+        "WHISPER_REMOTE_BASE_URL",
+        "WHISPER_REMOTE_MODEL",
+        "WHISPER_REMOTE_TIMEOUT_SEC",
+        "WHISPER_REMOTE_CHUNKSIZE_MB",
+        "GROQ_WHISPER_MODEL",
+        "WHISPER_GROQ_MODEL",
+        "GROQ_MAX_RETRIES",
+        # App
+        "PODLY_APP_ROLE",
+        "DEVELOPER_MODE",
+    ]
+
+    # Sort keys to ensure stable hash
+    keys.sort()
+
+    hasher = hashlib.sha256()
+    for key in keys:
+        val = os.environ.get(key, "")
+        hasher.update(f"{key}={val}".encode("utf-8"))
+
+    return hasher.hexdigest()
+
+
+def _check_and_apply_env_changes() -> None:
+    """Check if env hash changed and force-apply overrides if so."""
+    try:
+        app_s = AppSettings.query.get(1)
+        if not app_s:
+            return
+
+        # Check if column exists (handle pre-migration state gracefully)
+        if not hasattr(app_s, "env_config_hash"):
+            return
+
+        current_hash = _calculate_env_hash()
+        stored_hash = app_s.env_config_hash
+
+        if stored_hash != current_hash:
+            logger.info(
+                "Environment configuration changed (hash mismatch). "
+                "Applying environment overrides to database settings."
+            )
+            _apply_env_overrides_to_db_force()
+
+            app_s.env_config_hash = current_hash
+            safe_commit(
+                db.session,
+                must_succeed=True,
+                context="update_env_hash",
+                logger_obj=logger,
+            )
+
+    except Exception as e:
+        logger.warning(f"Failed to check/update environment hash: {e}")
+
+
+def _apply_llm_env_overrides(llm: LLMSettings) -> bool:
+    """Apply environment overrides to LLM settings."""
+    changed = False
+
+    env_llm_key = (
+        os.environ.get("LLM_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("GROQ_API_KEY")
+    )
+    if env_llm_key:
+        llm.llm_api_key = env_llm_key
+        changed = True
+
+    env_llm_model = os.environ.get("LLM_MODEL")
+    if env_llm_model:
+        llm.llm_model = env_llm_model
+        changed = True
+
+    env_openai_base_url = os.environ.get("OPENAI_BASE_URL")
+    if env_openai_base_url:
+        llm.openai_base_url = env_openai_base_url
+        changed = True
+
+    env_openai_timeout = _parse_int(os.environ.get("OPENAI_TIMEOUT"))
+    if env_openai_timeout is not None:
+        llm.openai_timeout = env_openai_timeout
+        changed = True
+
+    env_openai_max_tokens = _parse_int(os.environ.get("OPENAI_MAX_TOKENS"))
+    if env_openai_max_tokens is not None:
+        llm.openai_max_tokens = env_openai_max_tokens
+        changed = True
+
+    env_llm_max_concurrent = _parse_int(os.environ.get("LLM_MAX_CONCURRENT_CALLS"))
+    if env_llm_max_concurrent is not None:
+        llm.llm_max_concurrent_calls = env_llm_max_concurrent
+        changed = True
+
+    env_llm_max_retries = _parse_int(os.environ.get("LLM_MAX_RETRY_ATTEMPTS"))
+    if env_llm_max_retries is not None:
+        llm.llm_max_retry_attempts = env_llm_max_retries
+        changed = True
+
+    env_llm_enable_token_rl = _parse_bool(
+        os.environ.get("LLM_ENABLE_TOKEN_RATE_LIMITING")
+    )
+    if (
+        llm.llm_enable_token_rate_limiting == DEFAULTS.LLM_ENABLE_TOKEN_RATE_LIMITING
+        and env_llm_enable_token_rl is not None
+    ):
+        llm.llm_enable_token_rate_limiting = bool(env_llm_enable_token_rl)
+        changed = True
+
+    env_llm_max_input_tokens_per_call = _parse_int(
+        os.environ.get("LLM_MAX_INPUT_TOKENS_PER_CALL")
+    )
+    if (
+        llm.llm_max_input_tokens_per_call is None
+        and env_llm_max_input_tokens_per_call is not None
+    ):
+        llm.llm_max_input_tokens_per_call = env_llm_max_input_tokens_per_call
+        changed = True
+
+    env_llm_max_input_tokens_per_minute = _parse_int(
+        os.environ.get("LLM_MAX_INPUT_TOKENS_PER_MINUTE")
+    )
+    if (
+        llm.llm_max_input_tokens_per_minute is None
+        and env_llm_max_input_tokens_per_minute is not None
+    ):
+        llm.llm_max_input_tokens_per_minute = env_llm_max_input_tokens_per_minute
+        changed = True
+
+    return changed
+
+
+def _apply_whisper_remote_overrides(whisper: WhisperSettings) -> bool:
+    """Apply environment overrides for Remote Whisper settings."""
+    changed = False
+    remote_key = os.environ.get("WHISPER_REMOTE_API_KEY") or os.environ.get(
+        "OPENAI_API_KEY"
+    )
+    if remote_key:
+        whisper.remote_api_key = remote_key
+        changed = True
+
+    remote_base = os.environ.get("WHISPER_REMOTE_BASE_URL") or os.environ.get(
+        "OPENAI_BASE_URL"
+    )
+    if remote_base:
+        whisper.remote_base_url = remote_base
+        changed = True
+
+    remote_model = os.environ.get("WHISPER_REMOTE_MODEL")
+    if remote_model:
+        whisper.remote_model = remote_model
+        changed = True
+
+    remote_timeout = _parse_int(os.environ.get("WHISPER_REMOTE_TIMEOUT_SEC"))
+    if remote_timeout is not None:
+        whisper.remote_timeout_sec = remote_timeout
+        changed = True
+
+    remote_chunksize = _parse_int(os.environ.get("WHISPER_REMOTE_CHUNKSIZE_MB"))
+    if remote_chunksize is not None:
+        whisper.remote_chunksize_mb = remote_chunksize
+        changed = True
+    return changed
+
+
+def _apply_whisper_groq_overrides(whisper: WhisperSettings) -> bool:
+    """Apply environment overrides for Groq Whisper settings."""
+    changed = False
+    groq_model_env = os.environ.get("GROQ_WHISPER_MODEL") or os.environ.get(
+        "WHISPER_GROQ_MODEL"
+    )
+    if groq_model_env:
+        whisper.groq_model = groq_model_env
+        changed = True
+
+    groq_max_retries_env = _parse_int(os.environ.get("GROQ_MAX_RETRIES"))
+    if groq_max_retries_env is not None:
+        whisper.groq_max_retries = groq_max_retries_env
+        changed = True
+    return changed
+
+
+def _apply_whisper_env_overrides_force(whisper: WhisperSettings) -> bool:
+    """Apply environment overrides to Whisper settings."""
+    changed = False
+
+    env_whisper_type = os.environ.get("WHISPER_TYPE")
+    if env_whisper_type:
+        wtype = env_whisper_type.strip().lower()
+        if wtype in {"local", "remote", "groq"}:
+            whisper.whisper_type = wtype
+            changed = True
+
+    # Always update Groq API key if present in env
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        whisper.groq_api_key = groq_key
+        changed = True
+
+    if whisper.whisper_type == "remote":
+        if _apply_whisper_remote_overrides(whisper):
+            changed = True
+
+    elif whisper.whisper_type == "groq":
+        if _apply_whisper_groq_overrides(whisper):
+            changed = True
+
+    elif whisper.whisper_type == "local":
+        local_model_env = os.environ.get("WHISPER_LOCAL_MODEL")
+        if local_model_env:
+            whisper.local_model = local_model_env
+            changed = True
+
+    return changed
+
+
+def _apply_env_overrides_to_db_force() -> None:
+    """Force-apply environment overrides to DB, overwriting existing values."""
+    llm = LLMSettings.query.get(1)
+    whisper = WhisperSettings.query.get(1)
+
+    if not llm or not whisper:
+        return
+
+    llm_changed = _apply_llm_env_overrides(llm)
+    whisper_changed = _apply_whisper_env_overrides_force(whisper)
+
+    if llm_changed or whisper_changed:
+        safe_commit(
+            db.session,
+            must_succeed=True,
+            context="force_env_overrides",
+            logger_obj=logger,
+        )

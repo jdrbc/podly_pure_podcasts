@@ -31,6 +31,7 @@ class WriterClient:
             return False
 
     def _local_execute(self, cmd: WriteCommand) -> WriteResult:
+        # Import locally to avoid cyclic dependencies
         from app import models  # pylint: disable=import-outside-toplevel
         from app.extensions import db  # pylint: disable=import-outside-toplevel
 
@@ -63,6 +64,7 @@ class WriterClient:
     def _local_execute_transaction(
         self, cmd: WriteCommand, model_map: Dict[str, Any]
     ) -> WriteResult:
+        # Import locally to avoid cyclic dependencies
         from app.extensions import db  # pylint: disable=import-outside-toplevel
 
         results = []
@@ -91,9 +93,9 @@ class WriterClient:
         return WriteResult(cmd.id, True, data={"results": [r.data for r in results]})
 
     def _local_execute_action(self, cmd: WriteCommand) -> WriteResult:
-        from app.writer import (
-            actions as writer_actions,  # pylint: disable=import-outside-toplevel
-        )
+        # Import locally to avoid cyclic dependencies
+        # pylint: disable=import-outside-toplevel
+        from app.writer import actions as writer_actions
 
         action_name = cmd.data.get("action")
         func_name = f"{action_name}_action" if action_name else None
@@ -112,6 +114,7 @@ class WriterClient:
     def _local_execute_model(
         self, cmd: WriteCommand, model_map: Dict[str, Any]
     ) -> WriteResult:
+        # Import locally to avoid cyclic dependencies
         from app.extensions import db  # pylint: disable=import-outside-toplevel
 
         if not cmd.model or cmd.model not in model_map:

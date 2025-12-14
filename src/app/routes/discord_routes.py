@@ -8,7 +8,6 @@ from flask import (
     Blueprint,
     Response,
     current_app,
-    g,
     jsonify,
     request,
     session,
@@ -25,8 +24,7 @@ from app.auth.discord_service import (
     get_discord_user,
 )
 from app.auth.discord_settings import reload_discord_settings
-from app.extensions import db
-from app.models import User
+from app.auth.guards import require_admin
 from app.writer.client import writer_client
 
 if TYPE_CHECKING:
@@ -43,23 +41,6 @@ SESSION_OAUTH_PROMPT_UPGRADED = "discord_prompt_upgraded"
 
 def _get_discord_settings() -> DiscordSettings | None:
     return current_app.config.get("DISCORD_SETTINGS")
-
-
-def _require_admin() -> tuple[User | None, tuple[Response, int] | None]:
-    """Check if current user is an admin."""
-    settings = current_app.config.get("AUTH_SETTINGS")
-    if not settings or not settings.require_auth:
-        return None, None
-
-    current = getattr(g, "current_user", None)
-    if current is None:
-        return None, (jsonify({"error": "Authentication required."}), 401)
-
-    user: User | None = db.session.get(User, current.id)
-    if user is None or user.role != "admin":
-        return None, (jsonify({"error": "Admin privileges required."}), 403)
-
-    return user, None
 
 
 def _mask_secret(value: str | None) -> str | None:
@@ -90,9 +71,9 @@ def discord_status() -> Response:
 @discord_bp.route("/api/auth/discord/config", methods=["GET"])
 def discord_config_get() -> Response | tuple[Response, int]:
     """Get Discord configuration (admin only)."""
-    _, error_response = _require_admin()
+    _, error_response = require_admin()
     if error_response:
-        return error_response
+        return error_response, error_response.status_code
 
     settings = _get_discord_settings()
 
@@ -145,9 +126,9 @@ def discord_config_get() -> Response | tuple[Response, int]:
 @discord_bp.route("/api/auth/discord/config", methods=["PUT"])
 def discord_config_put() -> Response | tuple[Response, int]:
     """Update Discord configuration (admin only)."""
-    _, error_response = _require_admin()
+    _, error_response = require_admin()
     if error_response:
-        return error_response
+        return error_response, error_response.status_code
 
     payload = request.get_json(silent=True) or {}
 
