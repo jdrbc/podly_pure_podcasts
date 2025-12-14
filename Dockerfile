@@ -35,26 +35,35 @@ WORKDIR /app
 # Install dependencies based on base image
 RUN if [ -f /etc/debian_version ]; then \
     apt-get update && \
-    apt-get install -y ca-certificates software-properties-common && \
-    # Check if Python 3.11 is available, if not install from deadsnakes PPA \
-    if ! apt-cache show python3.11 > /dev/null 2>&1; then \
-        add-apt-repository ppa:deadsnakes/ppa -y && \
-        apt-get update; \
+    apt-get install -y ca-certificates && \
+    # Determine if we need to install Python 3.11
+    INSTALL_PYTHON=true && \
+    if command -v python3 >/dev/null 2>&1; then \
+        if python3 --version 2>&1 | grep -q "3.11"; then \
+            INSTALL_PYTHON=false; \
+        fi; \
     fi && \
+    if [ "$INSTALL_PYTHON" = "true" ]; then \
+        apt-get install -y software-properties-common && \
+        if ! apt-cache show python3.11 > /dev/null 2>&1; then \
+            add-apt-repository ppa:deadsnakes/ppa -y && \
+            apt-get update; \
+        fi && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-distutils \
+        python3.11-dev \
+        python3-pip && \
+        update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+        update-alternatives --set python3 /usr/bin/python3.11; \
+    fi && \
+    # Install other dependencies
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ffmpeg \
     sqlite3 \
     libsqlite3-dev \
     build-essential \
-    gosu \
-    python3.11 \
-    python3.11-distutils \
-    python3.11-dev \
-    python3-pip \
-    && \
-    # Set python3.11 as the default python3 \
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
-    update-alternatives --set python3 /usr/bin/python3.11 && \
+    gosu && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ; \
     fi

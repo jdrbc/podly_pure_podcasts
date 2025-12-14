@@ -485,6 +485,10 @@ class AppSettings(db.Model):  # type: ignore[name-defined, misc]
         default=DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
     )
 
+    # Hash of the environment variables used to seed configuration.
+    # Used to detect changes in environment variables between restarts.
+    env_config_hash = db.Column(db.String(64), nullable=True)
+
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 

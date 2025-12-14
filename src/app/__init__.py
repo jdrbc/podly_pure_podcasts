@@ -13,14 +13,27 @@ from flask_migrate import upgrade
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
+from app import models
 from app.auth import AuthSettings, load_auth_settings
 from app.auth.bootstrap import bootstrap_admin_user
 from app.auth.discord_settings import load_discord_settings
 from app.auth.middleware import init_auth_middleware
 from app.background import add_background_job, schedule_cleanup_job
+from app.config_store import (
+    ensure_defaults_and_hydrate,
+    hydrate_runtime_config_inplace,
+)
 from app.extensions import db, migrate, scheduler
+from app.jobs_manager import (
+    get_jobs_manager,
+)
 from app.logger import setup_logger
+from app.processor import (
+    ProcessorSingleton,
+)
+from app.routes import register_routes
 from app.runtime_config import config, is_test
+from app.writer.client import writer_client
 from shared.processing_paths import get_in_root, get_srv_root
 
 setup_logger("global_logger", "src/instance/logs/app.log")
@@ -174,9 +187,6 @@ def _create_configured_app(
     if start_scheduler:
         _start_scheduler_and_jobs(app)
     return app
-
-
-print("Config:\n", json.dumps(config.model_dump(), indent=2))
 
 
 def _clear_scheduler_jobstore() -> None:
@@ -407,12 +417,8 @@ def _initialize_extensions(app: Flask) -> None:
 
 
 def _register_routes_and_middleware(app: Flask) -> None:
-    from app.routes import register_routes  # pylint: disable=import-outside-toplevel
-
     register_routes(app)
     init_auth_middleware(app)
-
-    from app import models  # pylint: disable=import-outside-toplevel, unused-import
 
     _register_api_logging(app)
 
@@ -450,15 +456,7 @@ def _run_app_startup(auth_settings: AuthSettings) -> None:
     upgrade()
     bootstrap_admin_user(auth_settings)
     try:
-        from app.config_store import (  # pylint: disable=import-outside-toplevel
-            ensure_defaults_and_hydrate,
-        )
-
         ensure_defaults_and_hydrate()
-
-        from app.processor import (  # pylint: disable=import-outside-toplevel
-            ProcessorSingleton,
-        )
 
         ProcessorSingleton.reset_instance()
     except Exception as exc:  # pylint: disable=broad-except
@@ -467,15 +465,7 @@ def _run_app_startup(auth_settings: AuthSettings) -> None:
 
 def _hydrate_web_config() -> None:
     """Hydrate runtime config for web app (read-only)."""
-    from app.config_store import (  # pylint: disable=import-outside-toplevel
-        hydrate_runtime_config_inplace,
-    )
-
     hydrate_runtime_config_inplace()
-
-    from app.processor import (  # pylint: disable=import-outside-toplevel
-        ProcessorSingleton,
-    )
 
     ProcessorSingleton.reset_instance()
 
@@ -483,10 +473,6 @@ def _hydrate_web_config() -> None:
 def _start_scheduler_and_jobs(app: Flask) -> None:
     _clear_scheduler_jobstore()
     setup_scheduler(app)
-
-    from app.jobs_manager import (  # pylint: disable=import-outside-toplevel
-        get_jobs_manager,
-    )
 
     jobs_manager = get_jobs_manager()
     clear_result = jobs_manager.clear_all_jobs()

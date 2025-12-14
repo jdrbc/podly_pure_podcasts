@@ -86,7 +86,7 @@ function AppShell() {
     );
   }
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = !requireAuth || user?.role === 'admin';
   const showConfigLink = !requireAuth || isAdmin;
   const showJobsLink = !requireAuth || isAdmin;
   const showBillingLink = requireAuth && !isAdmin;

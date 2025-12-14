@@ -4,13 +4,12 @@ from typing import Any, Dict
 
 import flask
 import litellm
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, jsonify, request
 from groq import Groq
 from openai import OpenAI
 
+from app.auth.guards import require_admin
 from app.config_store import read_combined, to_pydantic_config
-from app.extensions import db
-from app.models import User
 from app.processor import ProcessorSingleton
 from app.runtime_config import config as runtime_config
 from app.writer.client import writer_client
@@ -20,28 +19,6 @@ logger = logging.getLogger("global_logger")
 
 
 config_bp = Blueprint("config", __name__)
-
-
-def _require_admin() -> tuple[User | None, flask.Response | None]:
-    settings = current_app.config.get("AUTH_SETTINGS")
-    # When REQUIRE_AUTH=false we intentionally allow these routes.
-    if not settings or not settings.require_auth:
-        return None, None
-
-    current = getattr(g, "current_user", None)
-    if current is None:
-        return None, flask.make_response(
-            jsonify({"error": "Authentication required."}), 401
-        )
-
-    user = db.session.get(User, current.id)
-    if user is None or user.role != "admin":
-        return None, flask.make_response(
-            jsonify({"error": "Admin privileges required."}),
-            403,
-        )
-
-    return user, None
 
 
 def _mask_secret(value: Any | None) -> str | None:
@@ -82,7 +59,7 @@ def _sanitize_config_for_client(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 @config_bp.route("/api/config", methods=["GET"])
 def api_get_config() -> flask.Response:
-    _, error_response = _require_admin()
+    _, error_response = require_admin()
     if error_response:
         return error_response
 
@@ -392,7 +369,7 @@ def _build_env_override_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
 
 @config_bp.route("/api/config", methods=["PUT"])
 def api_put_config() -> flask.Response:
-    _, error_response = _require_admin()
+    _, error_response = require_admin()
     if error_response:
         return error_response
 
@@ -441,7 +418,7 @@ def api_put_config() -> flask.Response:
 
 @config_bp.route("/api/config/test-llm", methods=["POST"])
 def api_test_llm() -> flask.Response:
-    _, error_response = _require_admin()
+    _, error_response = require_admin()
     if error_response:
         return error_response
 
@@ -630,7 +607,7 @@ def _test_groq_whisper(whisper_cfg: Dict[str, Any]) -> flask.Response:
 def api_test_whisper() -> flask.Response:
     """Test whisper configuration based on whisper_type."""
     # pylint: disable=too-many-return-statements
-    _, error_response = _require_admin()
+    _, error_response = require_admin()
     if error_response:
         return error_response
 
@@ -661,7 +638,7 @@ def api_get_whisper_capabilities() -> flask.Response:
     Currently returns a boolean indicating whether local Whisper is importable.
     This enables the frontend to hide the 'local' option when unavailable.
     """
-    _, error_response = _require_admin()
+    _, error_response = require_admin()
     if error_response:
         return error_response
 
@@ -689,7 +666,7 @@ def api_configured_check() -> flask.Response:
     For our purposes, this means an LLM API key is present either in the
     persisted config or the runtime overlay.
     """
-    _, error_response = _require_admin()
+    _, error_response = require_admin()
     if error_response:
         return error_response
 

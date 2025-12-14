@@ -26,8 +26,7 @@ export default function EnvOverrideWarningModal({
           <p className="text-sm text-gray-600">
             These fields are controlled by environment variables. Update the referenced variables in your
             <code className="mx-1 font-mono text-xs">.env</code>
-            (or deployment secrets) to make the change persistent. Saving now will apply it temporarily until the
-            service restarts.
+            (or deployment secrets) to make the change persistent. Your manual change will be saved, but will be overwritten if you modify your environment variables in the future.
           </p>
         </div>
         <ul className="space-y-3 text-sm">

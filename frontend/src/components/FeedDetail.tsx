@@ -44,7 +44,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     queryKey: ['episodes', currentFeed.id],
     queryFn: () => feedsApi.getFeedPosts(currentFeed.id),
   });
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = !requireAuth || user?.role === 'admin';
 
   const whitelistMutation = useMutation({
     mutationFn: ({ guid, whitelisted, triggerProcessing }: { guid: string; whitelisted: boolean; triggerProcessing?: boolean }) =>
