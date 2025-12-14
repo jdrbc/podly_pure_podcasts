@@ -1,16 +1,24 @@
 import logging
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict, Tuple
 
 import flask
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, current_app, g, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
-from app.models import Identification, ModelCall, Post, TranscriptSegment
+from app.models import (
+    Feed,
+    Identification,
+    ModelCall,
+    Post,
+    TranscriptSegment,
+    User,
+)
 from app.posts import clear_post_processing_data
+from app.writer.client import writer_client
 
 logger = logging.getLogger("global_logger")
 
@@ -18,29 +26,69 @@ logger = logging.getLogger("global_logger")
 post_bp = Blueprint("post", __name__)
 
 
+def _require_admin(
+    action: str = "perform this action",
+) -> Tuple[User | None, flask.Response | None]:
+    """Ensure the current user is an admin when auth is enabled."""
+
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if not settings or not settings.require_auth:
+        return None, None
+
+    current = getattr(g, "current_user", None)
+    if current is None:
+        return None, flask.make_response(
+            flask.jsonify({"error": "Authentication required."}), 401
+        )
+
+    user: User | None = db.session.get(User, current.id)
+    if user is None:
+        return None, flask.make_response(
+            flask.jsonify({"error": "User not found."}), 404
+        )
+
+    if user.role != "admin":
+        return None, flask.make_response(
+            flask.jsonify({"error": f"Only admins can {action}."}), 403
+        )
+
+    return user, None
+
+
+def _is_latest_post(feed: Feed, post: Post) -> bool:
+    """Return True if the post is the latest by release_date (fallback to id)."""
+    latest = (
+        Post.query.filter_by(feed_id=feed.id)
+        .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+        .first()
+    )
+    return bool(latest and latest.id == post.id)
+
+
 def _increment_download_count(post: Post) -> None:
     """Safely increment the download counter for a post."""
     try:
-        updated = Post.query.filter_by(id=post.id).update(
-            {Post.download_count: (Post.download_count or 0) + 1},
-            synchronize_session=False,
+        writer_client.action(
+            "increment_download_count", {"post_id": post.id}, wait=False
         )
-        if updated:
-            post.download_count = (post.download_count or 0) + 1
-        db.session.commit()
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.error(
-            "Failed to increment download count for post %s: %s", post.guid, exc
-        )
-        db.session.rollback()
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error(f"Failed to increment download count for post {post.guid}: {e}")
 
 
 @post_bp.route("/api/feeds/<int:feed_id>/posts", methods=["GET"])
 def api_feed_posts(feed_id: int) -> flask.Response:
     """Returns a JSON list of posts for a specific feed."""
-    from app.models import Feed  # local import to avoid circular in other modules
+
+    # Ensure we have fresh data
+    db.session.expire_all()
 
     feed = Feed.query.get_or_404(feed_id)
+
+    # Query posts directly to avoid stale relationship cache
+    db_posts = (
+        Post.query.filter_by(feed_id=feed.id).order_by(Post.release_date.desc()).all()
+    )
+
     posts = [
         {
             "id": post.id,
@@ -58,9 +106,35 @@ def api_feed_posts(feed_id: int) -> flask.Response:
             "image_url": post.image_url,
             "download_count": post.download_count,
         }
-        for post in feed.posts
+        for post in db_posts
     ]
     return flask.jsonify(posts)
+
+
+@post_bp.route("/api/posts/<string:p_guid>/processing-estimate", methods=["GET"])
+def api_post_processing_estimate(p_guid: str) -> ResponseReturnValue:
+    post = Post.query.filter_by(guid=p_guid).first()
+    if post is None:
+        return flask.make_response(flask.jsonify({"error": "Post not found"}), 404)
+
+    feed = db.session.get(Feed, post.feed_id)
+    if feed is None:
+        return flask.make_response(flask.jsonify({"error": "Feed not found"}), 404)
+
+    _, error = _require_admin("estimate processing costs")
+    if error:
+        return error
+
+    minutes = max(1.0, float(post.duration or 0) / 60.0) if post.duration else 60.0
+
+    return flask.jsonify(
+        {
+            "post_guid": post.guid,
+            "estimated_minutes": minutes,
+            "can_process": True,
+            "reason": None,
+        }
+    )
 
 
 @post_bp.route("/post/<string:p_guid>/json", methods=["GET"])
@@ -331,11 +405,30 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
 
 @post_bp.route("/api/posts/<string:p_guid>/whitelist", methods=["POST"])
-def api_toggle_whitelist(p_guid: str) -> flask.Response:
-    """Toggle whitelist status for a post via API."""
+def api_toggle_whitelist(p_guid: str) -> ResponseReturnValue:
+    """Toggle whitelist status for a post via API (admins only)."""
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(flask.jsonify({"error": "Post not found"}), 404)
+
+    feed = db.session.get(Feed, post.feed_id)
+    if feed is None:
+        return flask.make_response(flask.jsonify({"error": "Feed not found"}), 404)
+
+    user, error = _require_admin("whitelist this episode")
+    if error:
+        return error
+    if user is not None and user.role != "admin":
+        return (
+            flask.jsonify(
+                {
+                    "error": "FORBIDDEN",
+                    "message": "Only admins can change whitelist status.",
+                }
+            ),
+            403,
+        )
+    is_admin = user and user.role == "admin"
 
     data = request.get_json()
     if data is None or "whitelisted" not in data:
@@ -343,24 +436,64 @@ def api_toggle_whitelist(p_guid: str) -> flask.Response:
             flask.jsonify({"error": "Missing whitelisted field"}), 400
         )
 
-    post.whitelisted = bool(data["whitelisted"])
-    db.session.commit()
+    try:
+        writer_client.update(
+            "Post", post.id, {"whitelisted": bool(data["whitelisted"])}, wait=True
+        )
+        # Refresh post object
+        db.session.expire(post)
+    except Exception as e:
+        logger.error(f"Failed to toggle whitelist: {e}")
+        return (
+            flask.jsonify(
+                {
+                    "error": "Failed to update post",
+                }
+            ),
+            500,
+        )
 
-    return flask.jsonify(
-        {
-            "guid": post.guid,
-            "whitelisted": post.whitelisted,
-            "message": "Whitelist status updated successfully",
-        }
-    )
+    response_body: Dict[str, Any] = {
+        "guid": post.guid,
+        "whitelisted": post.whitelisted,
+        "message": "Whitelist status updated successfully",
+    }
+
+    trigger_processing = bool(data.get("trigger_processing"))
+    if post.whitelisted and trigger_processing:
+        if not is_admin and not _is_latest_post(feed, post):
+            return (
+                flask.jsonify(
+                    {
+                        "error": "BACKCATALOG_DISABLED",
+                        "message": "Processing back catalog episodes is limited to admins.",
+                    }
+                ),
+                403,
+            )
+        billing_user_id = getattr(user, "id", None)
+        job_response = get_jobs_manager().start_post_processing(
+            post.guid,
+            priority="interactive",
+            requested_by_user_id=billing_user_id,
+            billing_user_id=billing_user_id,
+        )
+        response_body["processing_job"] = job_response
+
+    return flask.jsonify(response_body)
 
 
 @post_bp.route("/api/feeds/<int:feed_id>/toggle-whitelist-all", methods=["POST"])
-def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
-    """Intelligently toggle whitelist status for all posts in a feed."""
-    from app.models import Feed  # local import to avoid circular in other modules
+def api_toggle_whitelist_all(feed_id: int) -> ResponseReturnValue:
+    """Intelligently toggle whitelist status for all posts in a feed.
 
+    Admin only.
+    """
     feed = Feed.query.get_or_404(feed_id)
+
+    _, error = _require_admin("toggle whitelist for all posts")
+    if error:
+        return error
 
     if not feed.posts:
         return flask.jsonify(
@@ -374,26 +507,46 @@ def api_toggle_whitelist_all(feed_id: int) -> flask.Response:
     all_whitelisted = all(post.whitelisted for post in feed.posts)
     new_status = not all_whitelisted
 
-    for post in feed.posts:
-        post.whitelisted = new_status
+    try:
+        result = writer_client.action(
+            "toggle_whitelist_all_for_feed",
+            {"feed_id": feed.id, "new_status": new_status},
+            wait=True,
+        )
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Unknown writer error"))
+        updated = int((result.data or {}).get("updated_count") or 0)
+    except Exception:  # pylint: disable=broad-except
+        return (
+            flask.jsonify(
+                {
+                    "error": "Database busy, please retry",
+                    "retry_after_seconds": 1,
+                }
+            ),
+            503,
+        )
 
-    db.session.commit()
-
-    whitelisted_count = sum(1 for post in feed.posts if post.whitelisted)
+    whitelisted_count = Post.query.filter_by(feed_id=feed.id, whitelisted=True).count()
+    total_count = Post.query.filter_by(feed_id=feed.id).count()
 
     return flask.jsonify(
         {
             "message": f"{'Whitelisted' if new_status else 'Unwhitelisted'} all posts",
             "whitelisted_count": whitelisted_count,
-            "total_count": len(feed.posts),
+            "total_count": total_count,
             "all_whitelisted": new_status,
+            "updated_count": updated,
         }
     )
 
 
 @post_bp.route("/api/posts/<string:p_guid>/process", methods=["POST"])
 def api_process_post(p_guid: str) -> ResponseReturnValue:
-    """Start processing a post and return immediately."""
+    """Start processing a post and return immediately.
+
+    Admin only.
+    """
     post = Post.query.filter_by(guid=p_guid).first()
     if not post:
         return (
@@ -406,6 +559,24 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             ),
             404,
         )
+
+    feed = db.session.get(Feed, post.feed_id)
+    if feed is None:
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "FEED_NOT_FOUND",
+                    "message": "Feed not found",
+                }
+            ),
+            404,
+        )
+
+    user, error = _require_admin("process this episode")
+    if error:
+        return error
+    is_admin = user.role == "admin" if user else False
 
     if not post.whitelisted:
         return (
@@ -428,9 +599,26 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
             }
         )
 
+    if not is_admin and not _is_latest_post(feed, post):
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "BACKCATALOG_DISABLED",
+                    "message": "Processing back catalog episodes is limited to admins.",
+                }
+            ),
+            403,
+        )
+
+    billing_user_id = getattr(user, "id", None)
+
     try:
         result = get_jobs_manager().start_post_processing(
-            p_guid, priority="interactive"
+            p_guid,
+            priority="interactive",
+            requested_by_user_id=billing_user_id,
+            billing_user_id=billing_user_id,
         )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
         return flask.jsonify(result), status_code
@@ -450,9 +638,15 @@ def api_process_post(p_guid: str) -> ResponseReturnValue:
 
 @post_bp.route("/api/posts/<string:p_guid>/reprocess", methods=["POST"])
 def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
-    """Clear all processing data for a post and start processing from scratch."""
+    """Clear all processing data for a post and start processing from scratch.
+
+    Admin only.
+    """
+    logger.info("[API] Reprocess requested for post_guid=%s", p_guid)
+
     post = Post.query.filter_by(guid=p_guid).first()
     if not post:
+        logger.warning("[API] Reprocess: post not found for guid=%s", p_guid)
         return (
             flask.jsonify(
                 {
@@ -464,7 +658,52 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
             404,
         )
 
+    feed = db.session.get(Feed, post.feed_id)
+    if feed is None:
+        logger.warning(
+            "[API] Reprocess: feed not found for guid=%s feed_id=%s",
+            p_guid,
+            getattr(post, "feed_id", None),
+        )
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "FEED_NOT_FOUND",
+                    "message": "Feed not found",
+                }
+            ),
+            404,
+        )
+
+    user, error = _require_admin("reprocess this episode")
+    if error:
+        logger.warning("[API] Reprocess: auth error for guid=%s", p_guid)
+        return error
+    if user and user.role != "admin":
+        logger.warning(
+            "[API] Reprocess: non-admin user attempted reprocess guid=%s user_id=%s role=%s",
+            p_guid,
+            getattr(user, "id", None),
+            getattr(user, "role", None),
+        )
+        return (
+            flask.jsonify(
+                {
+                    "status": "error",
+                    "error_code": "REPROCESS_FORBIDDEN",
+                    "message": "Only admins can reprocess episodes.",
+                }
+            ),
+            403,
+        )
+
     if not post.whitelisted:
+        logger.info(
+            "[API] Reprocess: post not whitelisted guid=%s post_id=%s",
+            p_guid,
+            getattr(post, "id", None),
+        )
         return (
             flask.jsonify(
                 {
@@ -476,15 +715,36 @@ def api_reprocess_post(p_guid: str) -> ResponseReturnValue:
             400,
         )
 
+    billing_user_id = getattr(user, "id", None)
+
     try:
+        logger.info(
+            "[API] Reprocess: cancelling jobs and clearing processing data guid=%s post_id=%s",
+            p_guid,
+            getattr(post, "id", None),
+        )
         get_jobs_manager().cancel_post_jobs(p_guid)
         clear_post_processing_data(post)
+        logger.info(
+            "[API] Reprocess: starting post processing guid=%s post_id=%s",
+            p_guid,
+            getattr(post, "id", None),
+        )
         result = get_jobs_manager().start_post_processing(
-            p_guid, priority="interactive"
+            p_guid,
+            priority="interactive",
+            requested_by_user_id=billing_user_id,
+            billing_user_id=billing_user_id,
         )
         status_code = 200 if result.get("status") in ("started", "completed") else 400
         if result.get("status") == "started":
             result["message"] = "Post cleared and reprocessing started"
+        logger.info(
+            "[API] Reprocess: completed guid=%s status=%s code=%s",
+            p_guid,
+            result.get("status"),
+            status_code,
+        )
         return flask.jsonify(result), status_code
     except Exception as e:
         logger.error(f"Failed to reprocess post {p_guid}: {e}", exc_info=True)

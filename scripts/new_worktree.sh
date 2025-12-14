@@ -45,7 +45,7 @@ pushd "$WORKTREE_PATH" >/dev/null
 
 if command -v pipenv >/dev/null; then
   echo "Installing dependencies via pipenv" >&2
-  pipenv install
+  pipenv install --dev
 else
   echo "pipenv not found on PATH; skipping dependency installation" >&2
 fi

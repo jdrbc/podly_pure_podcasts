@@ -4,7 +4,9 @@ import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
-from app.background import add_background_job, schedule_cleanup_job
+from flask import current_app
+
+from app.db_commit import safe_commit
 from app.extensions import db, scheduler
 from app.models import (
     AppSettings,
@@ -22,6 +24,9 @@ from shared.config import (
     RemoteWhisperConfig,
     TestWhisperConfig,
 )
+
+# pylint: disable=too-many-lines
+
 
 logger = logging.getLogger("global_logger")
 
@@ -69,9 +74,30 @@ def _set_if_default(obj: Any, attr: str, new_val: Any, default_val: Any) -> bool
 def _ensure_row(model: type, defaults: Dict[str, Any]) -> Any:
     row = db.session.get(model, 1)
     if row is None:
-        row = model(id=1, **defaults)
-        db.session.add(row)
-        db.session.commit()
+        role = None
+        try:
+            role = current_app.config.get("PODLY_APP_ROLE")
+        except Exception:  # pylint: disable=broad-except
+            role = None
+
+        # Web app should be read-only; only the writer process is allowed to create
+        # missing settings rows.
+        if role == "writer":
+            row = model(id=1, **defaults)
+            db.session.add(row)
+            safe_commit(
+                db.session,
+                must_succeed=True,
+                context="ensure_settings_row",
+                logger_obj=logger,
+            )
+        else:
+            logger.warning(
+                "Settings row %s missing; returning defaults without persisting (role=%s)",
+                getattr(model, "__name__", str(model)),
+                role,
+            )
+            return model(id=1, **defaults)
     return row
 
 
@@ -128,6 +154,7 @@ def ensure_defaults() -> None:
             "automatically_whitelist_new_episodes": DEFAULTS.APP_AUTOMATICALLY_WHITELIST_NEW_EPISODES,
             "post_cleanup_retention_days": DEFAULTS.APP_POST_CLEANUP_RETENTION_DAYS,
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
+            "enable_public_landing_page": DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
         },
     )
 
@@ -362,7 +389,12 @@ def _apply_env_overrides_to_db_first_boot() -> None:
     # Future: add processing/output/app env-to-db seeding if envs defined
 
     if changed:
-        db.session.commit()
+        safe_commit(
+            db.session,
+            must_succeed=True,
+            context="env_overrides_to_db",
+            logger_obj=logger,
+        )
 
 
 def read_combined() -> Dict[str, Any]:
@@ -430,6 +462,7 @@ def read_combined() -> Dict[str, Any]:
             "automatically_whitelist_new_episodes": app_s.automatically_whitelist_new_episodes,
             "post_cleanup_retention_days": app_s.post_cleanup_retention_days,
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": app_s.number_of_episodes_to_whitelist_from_archive_of_new_feed,
+            "enable_public_landing_page": app_s.enable_public_landing_page,
         },
     }
 
@@ -454,7 +487,12 @@ def _update_section_llm(data: Dict[str, Any]) -> None:
             if key == "llm_api_key" and _is_empty(new_val):
                 continue
             setattr(row, key, new_val)
-    db.session.commit()
+    safe_commit(
+        db.session,
+        must_succeed=True,
+        context="update_llm_settings",
+        logger_obj=logger,
+    )
 
 
 def _update_section_whisper(data: Dict[str, Any]) -> None:
@@ -501,7 +539,12 @@ def _update_section_whisper(data: Dict[str, Any]) -> None:
     else:
         # test type has no extra fields
         pass
-    db.session.commit()
+    safe_commit(
+        db.session,
+        must_succeed=True,
+        context="update_whisper_settings",
+        logger_obj=logger,
+    )
 
 
 def _update_section_processing(data: Dict[str, Any]) -> None:
@@ -512,7 +555,12 @@ def _update_section_processing(data: Dict[str, Any]) -> None:
     ]:
         if key in data:
             setattr(row, key, data[key])
-    db.session.commit()
+    safe_commit(
+        db.session,
+        must_succeed=True,
+        context="update_processing_settings",
+        logger_obj=logger,
+    )
 
 
 def _update_section_output(data: Dict[str, Any]) -> None:
@@ -526,7 +574,12 @@ def _update_section_output(data: Dict[str, Any]) -> None:
     ]:
         if key in data:
             setattr(row, key, data[key])
-    db.session.commit()
+    safe_commit(
+        db.session,
+        must_succeed=True,
+        context="update_output_settings",
+        logger_obj=logger,
+    )
 
 
 def _update_section_app(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
@@ -539,11 +592,62 @@ def _update_section_app(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[i
         "automatically_whitelist_new_episodes",
         "post_cleanup_retention_days",
         "number_of_episodes_to_whitelist_from_archive_of_new_feed",
+        "enable_public_landing_page",
     ]:
         if key in data:
             setattr(row, key, data[key])
-    db.session.commit()
+    safe_commit(
+        db.session,
+        must_succeed=True,
+        context="update_app_settings",
+        logger_obj=logger,
+    )
     return old_interval, old_retention
+
+
+def _maybe_reschedule_refresh_job(
+    old_interval: Optional[int], new_interval: Optional[int]
+) -> None:
+    if old_interval == new_interval:
+        return
+
+    job_id = "refresh_all_feeds"
+    job = scheduler.get_job(job_id)
+
+    if new_interval is None:
+        if job:
+            try:
+                scheduler.remove_job(job_id)
+            except Exception:
+                pass
+        return
+
+    if not job:
+        return
+
+    # Avoid importing app.background here (it creates a cycle for pylint).
+    # Use best-effort rescheduling on the underlying APScheduler instance.
+    scheduler_obj = getattr(scheduler, "scheduler", scheduler)
+    reschedule = getattr(scheduler_obj, "reschedule_job", None)
+    if callable(reschedule):
+        reschedule(job_id, trigger="interval", minutes=int(new_interval))
+
+
+def _maybe_disable_cleanup_job(
+    old_retention: Optional[int], new_retention: Optional[int]
+) -> None:
+    if old_retention == new_retention:
+        return
+
+    job_id = "cleanup_processed_posts"
+    job = scheduler.get_job(job_id)
+
+    if new_retention is None or new_retention <= 0:
+        if job:
+            try:
+                scheduler.remove_job(job_id)
+            except Exception:
+                pass
 
 
 def update_combined(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -557,19 +661,13 @@ def update_combined(payload: Dict[str, Any]) -> Dict[str, Any]:
         _update_section_output(payload["output"] or {})
     if "app" in payload:
         old_interval, old_retention = _update_section_app(payload["app"] or {})
-        # Reschedule background job if interval changed
+
         app_s = AppSettings.query.get(1)
         if app_s:
-            if old_interval != app_s.background_update_interval_minute:
-                try:
-                    scheduler.remove_job("refresh_all_feeds")
-                except Exception:
-                    # job may not exist yet; ignore
-                    pass
-                if app_s.background_update_interval_minute is not None:
-                    add_background_job(int(app_s.background_update_interval_minute))
-            if old_retention != app_s.post_cleanup_retention_days:
-                schedule_cleanup_job(app_s.post_cleanup_retention_days)
+            _maybe_reschedule_refresh_job(
+                old_interval, app_s.background_update_interval_minute
+            )
+            _maybe_disable_cleanup_job(old_retention, app_s.post_cleanup_retention_days)
 
     return read_combined()
 
@@ -656,6 +754,12 @@ def to_pydantic_config() -> PydanticConfig:
                 DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
             )
             or DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED
+        ),
+        enable_public_landing_page=bool(
+            data["app"].get(
+                "enable_public_landing_page",
+                DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
+            )
         ),
     )
 

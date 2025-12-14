@@ -8,10 +8,12 @@ from flask import Blueprint, current_app, g, jsonify, request
 from groq import Groq
 from openai import OpenAI
 
-from app.config_store import read_combined, to_pydantic_config, update_combined
+from app.config_store import read_combined, to_pydantic_config
+from app.extensions import db
 from app.models import User
 from app.processor import ProcessorSingleton
 from app.runtime_config import config as runtime_config
+from app.writer.client import writer_client
 from shared.llm_utils import model_uses_max_completion_tokens
 
 logger = logging.getLogger("global_logger")
@@ -32,7 +34,7 @@ def _require_admin() -> tuple[User | None, flask.Response | None]:
             jsonify({"error": "Authentication required."}), 401
         )
 
-    user = User.query.get(current.id)
+    user = db.session.get(User, current.id)
     if user is None or user.role != "admin":
         return None, flask.make_response(
             jsonify({"error": "Admin privileges required."}),
@@ -105,137 +107,123 @@ def api_get_config() -> flask.Response:
 
 
 def _hydrate_runtime_config(data: Dict[str, Any]) -> None:
-    # LLM overlay
+    _hydrate_llm_config(data)
+    _hydrate_whisper_config(data)
+    _hydrate_app_config(data)
+
+
+def _hydrate_llm_config(data: Dict[str, Any]) -> None:
     data.setdefault("llm", {})
-    data["llm"]["llm_api_key"] = getattr(
-        runtime_config, "llm_api_key", data["llm"].get("llm_api_key")
+    llm = data["llm"]
+    llm["llm_api_key"] = getattr(runtime_config, "llm_api_key", llm.get("llm_api_key"))
+    llm["llm_model"] = getattr(runtime_config, "llm_model", llm.get("llm_model"))
+    llm["openai_base_url"] = getattr(
+        runtime_config, "openai_base_url", llm.get("openai_base_url")
     )
-    data["llm"]["llm_model"] = getattr(
-        runtime_config, "llm_model", data["llm"].get("llm_model")
+    llm["openai_timeout"] = getattr(
+        runtime_config, "openai_timeout", llm.get("openai_timeout")
     )
-    data["llm"]["openai_base_url"] = getattr(
-        runtime_config, "openai_base_url", data["llm"].get("openai_base_url")
+    llm["openai_max_tokens"] = getattr(
+        runtime_config, "openai_max_tokens", llm.get("openai_max_tokens")
     )
-    data["llm"]["openai_timeout"] = getattr(
-        runtime_config, "openai_timeout", data["llm"].get("openai_timeout")
+    llm["llm_max_concurrent_calls"] = getattr(
+        runtime_config, "llm_max_concurrent_calls", llm.get("llm_max_concurrent_calls")
     )
-    data["llm"]["openai_max_tokens"] = getattr(
-        runtime_config, "openai_max_tokens", data["llm"].get("openai_max_tokens")
+    llm["llm_max_retry_attempts"] = getattr(
+        runtime_config, "llm_max_retry_attempts", llm.get("llm_max_retry_attempts")
     )
-    data["llm"]["llm_max_concurrent_calls"] = getattr(
-        runtime_config,
-        "llm_max_concurrent_calls",
-        data["llm"].get("llm_max_concurrent_calls"),
-    )
-    data["llm"]["llm_max_retry_attempts"] = getattr(
-        runtime_config,
-        "llm_max_retry_attempts",
-        data["llm"].get("llm_max_retry_attempts"),
-    )
-    data["llm"]["llm_max_input_tokens_per_call"] = getattr(
+    llm["llm_max_input_tokens_per_call"] = getattr(
         runtime_config,
         "llm_max_input_tokens_per_call",
-        data["llm"].get("llm_max_input_tokens_per_call"),
+        llm.get("llm_max_input_tokens_per_call"),
     )
-    data["llm"]["llm_enable_token_rate_limiting"] = getattr(
+    llm["llm_enable_token_rate_limiting"] = getattr(
         runtime_config,
         "llm_enable_token_rate_limiting",
-        data["llm"].get("llm_enable_token_rate_limiting"),
+        llm.get("llm_enable_token_rate_limiting"),
     )
-    data["llm"]["llm_max_input_tokens_per_minute"] = getattr(
+    llm["llm_max_input_tokens_per_minute"] = getattr(
         runtime_config,
         "llm_max_input_tokens_per_minute",
-        data["llm"].get("llm_max_input_tokens_per_minute"),
+        llm.get("llm_max_input_tokens_per_minute"),
     )
 
-    # Whisper overlay (handle both dict and typed objects)
+
+def _hydrate_whisper_config(data: Dict[str, Any]) -> None:
     data.setdefault("whisper", {})
+    whisper = data["whisper"]
     rt_whisper = getattr(runtime_config, "whisper", None)
+
     if isinstance(rt_whisper, dict):
-        wtype = rt_whisper.get("whisper_type")
-        data["whisper"]["whisper_type"] = wtype or data["whisper"].get("whisper_type")
-        if wtype == "local":
-            data["whisper"]["model"] = rt_whisper.get(
-                "model", data["whisper"].get("model")
-            )
-        elif wtype == "remote":
-            data["whisper"]["model"] = rt_whisper.get(
-                "model", data["whisper"].get("model")
-            )
-            data["whisper"]["api_key"] = rt_whisper.get(
-                "api_key", data["whisper"].get("api_key")
-            )
-            data["whisper"]["base_url"] = rt_whisper.get(
-                "base_url", data["whisper"].get("base_url")
-            )
-            data["whisper"]["language"] = rt_whisper.get(
-                "language", data["whisper"].get("language")
-            )
-            data["whisper"]["timeout_sec"] = rt_whisper.get(
-                "timeout_sec", data["whisper"].get("timeout_sec")
-            )
-            data["whisper"]["chunksize_mb"] = rt_whisper.get(
-                "chunksize_mb", data["whisper"].get("chunksize_mb")
-            )
-        elif wtype == "groq":
-            data["whisper"]["api_key"] = rt_whisper.get(
-                "api_key", data["whisper"].get("api_key")
-            )
-            data["whisper"]["model"] = rt_whisper.get(
-                "model", data["whisper"].get("model")
-            )
-            data["whisper"]["language"] = rt_whisper.get(
-                "language", data["whisper"].get("language")
-            )
-            data["whisper"]["max_retries"] = rt_whisper.get(
-                "max_retries", data["whisper"].get("max_retries")
-            )
-    else:
-        # typed pydantic whisper configs
-        if rt_whisper is not None and hasattr(rt_whisper, "whisper_type"):
-            wtype = getattr(rt_whisper, "whisper_type")
-            data["whisper"]["whisper_type"] = wtype
-            if wtype == "local":
-                data["whisper"]["model"] = getattr(
-                    rt_whisper, "model", data["whisper"].get("model")
-                )
-            elif wtype == "remote":
-                data["whisper"]["model"] = getattr(
-                    rt_whisper, "model", data["whisper"].get("model")
-                )
-                data["whisper"]["api_key"] = getattr(
-                    rt_whisper, "api_key", data["whisper"].get("api_key")
-                )
-                data["whisper"]["base_url"] = getattr(
-                    rt_whisper, "base_url", data["whisper"].get("base_url")
-                )
-                data["whisper"]["language"] = getattr(
-                    rt_whisper, "language", data["whisper"].get("language")
-                )
-                data["whisper"]["timeout_sec"] = getattr(
-                    rt_whisper, "timeout_sec", data["whisper"].get("timeout_sec")
-                )
-                data["whisper"]["chunksize_mb"] = getattr(
-                    rt_whisper, "chunksize_mb", data["whisper"].get("chunksize_mb")
-                )
-            elif wtype == "groq":
-                data["whisper"]["api_key"] = getattr(
-                    rt_whisper, "api_key", data["whisper"].get("api_key")
-                )
-                data["whisper"]["model"] = getattr(
-                    rt_whisper, "model", data["whisper"].get("model")
-                )
-                data["whisper"]["language"] = getattr(
-                    rt_whisper, "language", data["whisper"].get("language")
-                )
-                data["whisper"]["max_retries"] = getattr(
-                    rt_whisper, "max_retries", data["whisper"].get("max_retries")
-                )
+        _overlay_whisper_dict(whisper, rt_whisper)
+        return
+
+    if rt_whisper is not None and hasattr(rt_whisper, "whisper_type"):
+        _overlay_whisper_object(whisper, rt_whisper)
+
+
+def _overlay_whisper_dict(target: Dict[str, Any], source: Dict[str, Any]) -> None:
+    wtype = source.get("whisper_type")
+    target["whisper_type"] = wtype or target.get("whisper_type")
+    if wtype == "local":
+        target["model"] = source.get("model", target.get("model"))
+    elif wtype == "remote":
+        _overlay_remote_whisper_fields(target, source)
+    elif wtype == "groq":
+        _overlay_groq_whisper_fields(target, source)
+
+
+def _overlay_whisper_object(target: Dict[str, Any], source: Any) -> None:
+    wtype = getattr(source, "whisper_type")
+    target["whisper_type"] = wtype
+    if wtype == "local":
+        target["model"] = getattr(source, "model", target.get("model"))
+    elif wtype == "remote":
+        _overlay_remote_whisper_fields(target, source)
+    elif wtype == "groq":
+        _overlay_groq_whisper_fields(target, source)
+
+
+def _overlay_remote_whisper_fields(target: Dict[str, Any], source: Any) -> None:
+    target["model"] = _get_attr_or_value(source, "model", target.get("model"))
+    target["api_key"] = _get_attr_or_value(source, "api_key", target.get("api_key"))
+    target["base_url"] = _get_attr_or_value(source, "base_url", target.get("base_url"))
+    target["language"] = _get_attr_or_value(source, "language", target.get("language"))
+    target["timeout_sec"] = _get_attr_or_value(
+        source, "timeout_sec", target.get("timeout_sec")
+    )
+    target["chunksize_mb"] = _get_attr_or_value(
+        source, "chunksize_mb", target.get("chunksize_mb")
+    )
+
+
+def _overlay_groq_whisper_fields(target: Dict[str, Any], source: Any) -> None:
+    target["api_key"] = _get_attr_or_value(source, "api_key", target.get("api_key"))
+    target["model"] = _get_attr_or_value(source, "model", target.get("model"))
+    target["language"] = _get_attr_or_value(source, "language", target.get("language"))
+    target["max_retries"] = _get_attr_or_value(
+        source, "max_retries", target.get("max_retries")
+    )
+
+
+def _get_attr_or_value(source: Any, key: str, default: Any) -> Any:
+    if isinstance(source, dict):
+        return source.get(key, default)
+    return getattr(source, key, default)
+
+
+def _hydrate_app_config(data: Dict[str, Any]) -> None:
     data.setdefault("app", {})
-    data["app"]["post_cleanup_retention_days"] = getattr(
+    app_cfg = data["app"]
+    app_cfg["post_cleanup_retention_days"] = getattr(
         runtime_config,
         "post_cleanup_retention_days",
-        data["app"].get("post_cleanup_retention_days"),
+        app_cfg.get("post_cleanup_retention_days"),
+    )
+    app_cfg["enable_public_landing_page"] = getattr(
+        runtime_config,
+        "enable_public_landing_page",
+        app_cfg.get("enable_public_landing_page"),
     )
 
 
@@ -419,7 +407,14 @@ def api_put_config() -> flask.Response:
         whisper_payload.pop("api_key_preview", None)
 
     try:
-        data = update_combined(payload)
+        result = writer_client.action(
+            "update_combined_config",
+            {"payload": payload},
+            wait=True,
+        )
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Writer update failed"))
+        data = result.data or {}
 
         try:
             db_cfg = to_pydantic_config()

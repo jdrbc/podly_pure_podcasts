@@ -4,18 +4,21 @@ import type { PodcastSearchResult } from '../types';
 
 interface AddFeedFormProps {
   onSuccess: () => void;
+  onUpgradePlan?: () => void;
+  planLimitReached?: boolean;
 }
 
 type AddMode = 'url' | 'search';
 
 const PAGE_SIZE = 10;
 
-export default function AddFeedForm({ onSuccess }: AddFeedFormProps) {
+export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached }: AddFeedFormProps) {
   const [url, setUrl] = useState('');
   const [activeMode, setActiveMode] = useState<AddMode>('search');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [addingFeedUrl, setAddingFeedUrl] = useState<string | null>(null);
+  const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<PodcastSearchResult[]>([]);
@@ -40,9 +43,14 @@ export default function AddFeedForm({ onSuccess }: AddFeedFormProps) {
   };
 
   const addFeed = async (feedUrl: string, source: AddMode) => {
+    if (planLimitReached) {
+      setUpgradePrompt('Your plan is full. Increase your feed allowance to add more.');
+      return;
+    }
     setIsSubmitting(true);
     setAddingFeedUrl(source === 'url' ? 'manual' : feedUrl);
     setError('');
+    setUpgradePrompt(null);
 
     try {
       await feedsApi.addFeed(feedUrl);
@@ -52,7 +60,14 @@ export default function AddFeedForm({ onSuccess }: AddFeedFormProps) {
       onSuccess();
     } catch (err) {
       console.error('Failed to add feed:', err);
-      setError('Failed to add feed. Please check the URL and try again.');
+      const data = (err as any)?.response?.data;
+      const code = data?.error;
+      const message = data?.message || data?.error;
+      if (code === 'FEED_LIMIT_REACHED') {
+        setUpgradePrompt(message ?? 'Plan limit reached. Increase your feeds to add more.');
+      } else {
+        setError(message ?? 'Failed to add feed. Please check the URL and try again.');
+      }
     } finally {
       setIsSubmitting(false);
       setAddingFeedUrl(null);
@@ -107,6 +122,11 @@ export default function AddFeedForm({ onSuccess }: AddFeedFormProps) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6">
       <h3 className="text-lg font-medium text-gray-900 mb-4">Add New Podcast Feed</h3>
+      {planLimitReached && (
+        <div className="mb-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Your plan is full. Increase your feed allowance to add more.
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-2 mb-4">
         <button
@@ -153,22 +173,37 @@ export default function AddFeedForm({ onSuccess }: AddFeedFormProps) {
               placeholder="https://example.com/podcast/feed.xml"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
+              disabled={!!planLimitReached}
             />
           </div>
 
-          {error && (
-            <div className="text-red-600 text-sm">{error}</div>
-          )}
-
-          <div className="flex flex-col sm:flex-row sm:justify-end gap-3">
+      {error && (
+        <div className="text-red-600 text-sm">{error}</div>
+      )}
+      {upgradePrompt && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 p-3 border border-amber-200 bg-amber-50 rounded-md text-sm text-amber-800">
+          <span>{upgradePrompt}</span>
+          {onUpgradePlan && (
             <button
-              type="submit"
-              disabled={isSubmitting || !url.trim()}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-md font-medium transition-colors sm:w-auto w-full"
+              type="button"
+              onClick={onUpgradePlan}
+              className="inline-flex items-center justify-center px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
             >
-              {isSubmitting && addingFeedUrl === 'manual' ? 'Adding...' : 'Add Feed'}
+              Increase plan
             </button>
-          </div>
+          )}
+        </div>
+      )}
+
+        <div className="flex flex-col sm:flex-row sm:justify-end gap-3">
+          <button
+            type="submit"
+            disabled={isSubmitting || !url.trim() || !!planLimitReached}
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-md font-medium transition-colors sm:w-auto w-full"
+          >
+            {isSubmitting && addingFeedUrl === 'manual' ? 'Adding...' : 'Add Feed'}
+          </button>
+        </div>
         </form>
       )}
 
@@ -186,13 +221,14 @@ export default function AddFeedForm({ onSuccess }: AddFeedFormProps) {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="e.g. history, space, entrepreneurship"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={!!planLimitReached}
               />
             </div>
 
             <div className="flex items-end">
               <button
                 type="submit"
-                disabled={isSearching}
+                disabled={isSearching || !!planLimitReached}
                 className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-md font-medium transition-colors w-full md:w-auto"
               >
                 {isSearching ? 'Searching...' : 'Search'}
@@ -275,7 +311,7 @@ export default function AddFeedForm({ onSuccess }: AddFeedFormProps) {
                       <button
                         type="button"
                         onClick={() => handleAddFromSearch(result)}
-                        disabled={isSubmitting && addingFeedUrl === result.feedUrl}
+                        disabled={planLimitReached || (isSubmitting && addingFeedUrl === result.feedUrl)}
                         className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-3 py-2 rounded-md text-sm transition-colors"
                       >
                         {isSubmitting && addingFeedUrl === result.feedUrl ? 'Adding...' : 'Add'}

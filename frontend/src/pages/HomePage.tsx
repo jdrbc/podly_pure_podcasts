@@ -1,14 +1,16 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { feedsApi, configApi } from '../services/api';
+import { feedsApi, configApi, billingApi } from '../services/api';
 import FeedList from '../components/FeedList';
 import FeedDetail from '../components/FeedDetail';
 import AddFeedForm from '../components/AddFeedForm';
 import type { Feed, ConfigResponse } from '../types';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function HomePage() {
+  const navigate = useNavigate();
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedFeed, setSelectedFeed] = useState<Feed | null>(null);
   const { requireAuth, user } = useAuth();
@@ -18,11 +20,18 @@ export default function HomePage() {
     queryFn: feedsApi.getFeeds,
   });
 
+  const { data: billingSummary, refetch: refetchBilling } = useQuery({
+    queryKey: ['billing', 'summary'],
+    queryFn: billingApi.getSummary,
+    enabled: requireAuth && !!user,
+  });
+
   useQuery<ConfigResponse>({
     queryKey: ['config'],
     queryFn: configApi.getConfig,
     enabled: !requireAuth || user?.role === 'admin',
   });
+  const canRefreshAll = !requireAuth || user?.role === 'admin';
   const refreshAllMutation = useMutation({
     mutationFn: () => feedsApi.refreshAllFeeds(),
     onSuccess: (data) => {
@@ -34,6 +43,25 @@ export default function HomePage() {
     onError: (err) => {
       console.error('Failed to refresh all feeds', err);
       toast.error('Failed to refresh all feeds');
+    },
+  });
+
+  const updateQuantityMutation = useMutation({
+    mutationFn: (quantity: number) =>
+      billingApi.setQuantity(quantity, {
+        subscriptionId: billingSummary?.stripe_subscription_id ?? null,
+      }),
+    onSuccess: (res) => {
+      if ((res as any).checkout_url) {
+        window.location.href = (res as any).checkout_url;
+        return;
+      }
+      toast.success('Plan updated');
+      refetchBilling();
+    },
+    onError: (err) => {
+      console.error('Failed to update billing quantity', err);
+      toast.error('Could not update plan');
     },
   });
 
@@ -65,6 +93,25 @@ export default function HomePage() {
     );
   }
 
+  const planLimitReached =
+    !!billingSummary &&
+    billingSummary.feeds_in_use >= billingSummary.feed_allowance &&
+    user?.role !== 'admin';
+
+  const handleChangePlan = () => {
+    const current = billingSummary?.feed_allowance ?? 0;
+    const input = window.prompt('How many feeds do you want in your plan?', String(current));
+    if (input === null) return;
+    const quantity = Number(input);
+    if (Number.isNaN(quantity) || quantity < 0) {
+      toast.error('Enter a valid non-negative number of feeds.');
+      return;
+    }
+    updateQuantityMutation.mutate(quantity, {
+      onSuccess: () => {},
+    });
+  };
+
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-6">
@@ -75,27 +122,40 @@ export default function HomePage() {
         <div className="flex justify-between items-center mb-6 gap-3">
           <h2 className="text-2xl font-bold text-gray-900">Podcast Feeds</h2>
           <div className="flex items-center gap-2">
+            {canRefreshAll && (
+              <button
+                onClick={() => refreshAllMutation.mutate()}
+                disabled={refreshAllMutation.isPending}
+                title="Refresh all feeds"
+                className={`flex items-center justify-center px-3 py-2 rounded-md border transition-colors ${
+                  refreshAllMutation.isPending
+                    ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <img
+                  src="/reload-icon.svg"
+                  alt="Refresh all"
+                  className={`w-4 h-4 ${refreshAllMutation.isPending ? 'animate-spin' : ''}`}
+                />
+              </button>
+            )}
             <button
-              onClick={() => refreshAllMutation.mutate()}
-              disabled={refreshAllMutation.isPending}
-              title="Refresh all feeds"
-              className={`flex items-center justify-center px-3 py-2 rounded-md border transition-colors ${
-                refreshAllMutation.isPending
-                  ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+              onClick={() => {
+                if (planLimitReached) {
+                  navigate('/billing');
+                } else {
+                  setShowAddForm((prev) => !prev);
+                }
+              }}
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                planLimitReached
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
+              title={planLimitReached ? 'Your plan is full. Click to upgrade.' : undefined}
             >
-              <img
-                src="/reload-icon.svg"
-                alt="Refresh all"
-                className={`w-4 h-4 ${refreshAllMutation.isPending ? 'animate-spin' : ''}`}
-              />
-            </button>
-            <button
-              onClick={() => setShowAddForm((prev) => !prev)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
-            >
-              {showAddForm ? 'Close' : 'Add Feed'}
+              {planLimitReached ? 'Plan full' : showAddForm ? 'Close' : 'Add Feed'}
             </button>
           </div>
         </div>
@@ -171,7 +231,10 @@ export default function HomePage() {
                 onSuccess={() => {
                   setShowAddForm(false);
                   refetch();
+                  refetchBilling();
                 }}
+                onUpgradePlan={handleChangePlan}
+                planLimitReached={planLimitReached}
               />
             </div>
           </div>
@@ -179,4 +242,4 @@ export default function HomePage() {
       )}
     </div>
   );
-} 
+}

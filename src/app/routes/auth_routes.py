@@ -20,7 +20,9 @@ from app.auth.service import (
     update_password,
 )
 from app.auth.state import failure_rate_limiter
+from app.extensions import db
 from app.models import User
+from app.runtime_config import config as runtime_config
 
 logger = logging.getLogger("global_logger")
 
@@ -39,7 +41,10 @@ def _auth_enabled() -> bool:
 
 @auth_bp.route("/api/auth/status", methods=["GET"])
 def auth_status() -> Response:
-    return jsonify({"require_auth": _auth_enabled()})
+    landing_enabled = bool(getattr(runtime_config, "enable_public_landing_page", False))
+    return jsonify(
+        {"require_auth": _auth_enabled(), "landing_page_enabled": landing_enabled}
+    )
 
 
 @auth_bp.route("/api/auth/login", methods=["POST"])
@@ -78,12 +83,21 @@ def login() -> RouteResult:
     session.clear()
     session[SESSION_USER_KEY] = authenticated.id
     session.permanent = True
+    # Calculate effective allowance for frontend display
+    allowance = getattr(authenticated, "manual_feed_allowance", None)
+    if allowance is None:
+        allowance = getattr(authenticated, "feed_allowance", 0)
+
     return jsonify(
         {
             "user": {
                 "id": authenticated.id,
                 "username": authenticated.username,
                 "role": authenticated.role,
+                "feed_allowance": allowance,
+                "feed_subscription_status": getattr(
+                    authenticated, "feed_subscription_status", "inactive"
+                ),
             }
         }
     )
@@ -117,6 +131,10 @@ def auth_me() -> RouteResult:
                 "id": user.id,
                 "username": user.username,
                 "role": user.role,
+                "feed_allowance": getattr(user, "feed_allowance", 0),
+                "feed_subscription_status": getattr(
+                    user, "feed_subscription_status", "inactive"
+                ),
             }
         }
     )
@@ -176,6 +194,10 @@ def list_users_route() -> RouteResult:
                     "role": u.role,
                     "created_at": u.created_at.isoformat(),
                     "updated_at": u.updated_at.isoformat(),
+                    "feed_allowance": getattr(u, "feed_allowance", 0),
+                    "feed_subscription_status": getattr(
+                        u, "feed_subscription_status", "inactive"
+                    ),
                 }
                 for u in users
             ]
@@ -286,7 +308,7 @@ def _require_authenticated_user() -> User | None:
     if current is None:
         return None
 
-    return cast(User | None, User.query.get(current.id))
+    return cast(User | None, db.session.get(User, current.id))
 
 
 def _unauthorized_response() -> RouteResult:

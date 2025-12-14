@@ -8,6 +8,7 @@ from flask import Response, current_app, g, jsonify, request, session
 from app.auth.feed_tokens import FeedTokenAuthResult, authenticate_feed_token
 from app.auth.service import AuthenticatedUser
 from app.auth.state import failure_rate_limiter
+from app.extensions import db
 from app.models import User
 
 SESSION_USER_KEY = "user_id"
@@ -21,6 +22,9 @@ _PUBLIC_PATHS: set[str] = {
     "/favicon.ico",
     "/api/auth/login",
     "/api/auth/status",
+    "/api/auth/discord/status",
+    "/api/auth/discord/login",
+    "/api/auth/discord/callback",
 }
 
 _PUBLIC_PREFIXES: tuple[str, ...] = (
@@ -108,7 +112,7 @@ def _load_session_user() -> AuthenticatedUser | None:
     else:
         return None
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user is None:
         session.pop(SESSION_USER_KEY, None)
         return None

@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import type { Feed, Episode } from '../types';
 import { feedsApi } from '../services/api';
 import DownloadButton from './DownloadButton';
 import PlayButton from './PlayButton';
 import ProcessingStatsButton from './ProcessingStatsButton';
+import EpisodeProcessingStatus from './EpisodeProcessingStatus';
 import { useAuth } from '../contexts/AuthContext';
 
 interface FeedDetailProps {
@@ -16,8 +17,15 @@ interface FeedDetailProps {
 
 type SortOption = 'newest' | 'oldest' | 'title';
 
+interface ProcessingEstimate {
+  post_guid: string;
+  estimated_minutes: number;
+  can_process: boolean;
+  reason: string | null;
+}
+
 export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailProps) {
-  const { requireAuth, isAuthenticated } = useAuth();
+  const { requireAuth, isAuthenticated, user } = useAuth();
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [showStickyHeader, setShowStickyHeader] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -25,32 +33,43 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const queryClient = useQueryClient();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const feedHeaderRef = useRef<HTMLDivElement>(null);
+  const [currentFeed, setCurrentFeed] = useState(feed);
+  const [pendingEpisode, setPendingEpisode] = useState<Episode | null>(null);
+  const [showProcessingModal, setShowProcessingModal] = useState(false);
+  const [processingEstimate, setProcessingEstimate] = useState<ProcessingEstimate | null>(null);
+  const [isEstimating, setIsEstimating] = useState(false);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
 
   const { data: episodes, isLoading, error } = useQuery({
-    queryKey: ['episodes', feed.id],
-    queryFn: () => feedsApi.getFeedPosts(feed.id),
+    queryKey: ['episodes', currentFeed.id],
+    queryFn: () => feedsApi.getFeedPosts(currentFeed.id),
   });
+  const isAdmin = user?.role === 'admin';
 
   const whitelistMutation = useMutation({
-    mutationFn: ({ guid, whitelisted }: { guid: string; whitelisted: boolean }) =>
-      feedsApi.togglePostWhitelist(guid, whitelisted),
+    mutationFn: ({ guid, whitelisted, triggerProcessing }: { guid: string; whitelisted: boolean; triggerProcessing?: boolean }) =>
+      feedsApi.togglePostWhitelist(guid, whitelisted, triggerProcessing),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['episodes', feed.id] });
+      queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
+    },
+    onError: (err) => {
+      const message = (err as any)?.response?.data?.message;
+      toast.error(message ?? 'Failed to update whitelist status');
     },
   });
 
   const bulkWhitelistMutation = useMutation({
-    mutationFn: () => feedsApi.toggleAllPostsWhitelist(feed.id),
+    mutationFn: () => feedsApi.toggleAllPostsWhitelist(currentFeed.id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['episodes', feed.id] });
+      queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
     },
   });
 
   const refreshFeedMutation = useMutation({
-    mutationFn: () => feedsApi.refreshFeed(feed.id),
+    mutationFn: () => feedsApi.refreshFeed(currentFeed.id),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['feeds'] });
-      queryClient.invalidateQueries({ queryKey: ['episodes', feed.id] });
+      queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
       toast.success(data?.message ?? 'Feed refreshed');
     },
     onError: (err) => {
@@ -60,14 +79,39 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   });
 
   const deleteFeedMutation = useMutation({
-    mutationFn: () => feedsApi.deleteFeed(feed.id),
+    mutationFn: () => feedsApi.deleteFeed(currentFeed.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['feeds'] });
       if (onFeedDeleted) {
         onFeedDeleted();
       }
     },
+    onError: (err) => {
+      console.error('Failed to delete feed', err);
+      const message = (err as any)?.response?.data?.error;
+      toast.error(message ?? 'Failed to delete feed');
+    },
   });
+
+  const leaveFeedMutation = useMutation({
+    mutationFn: () => feedsApi.leaveFeed(currentFeed.id),
+    onSuccess: () => {
+      toast.success('Removed from your feeds');
+      queryClient.invalidateQueries({ queryKey: ['feeds'] });
+      if (onFeedDeleted) {
+        onFeedDeleted();
+      }
+    },
+    onError: (err) => {
+      console.error('Failed to leave feed', err);
+      const message = (err as any)?.response?.data?.error;
+      toast.error(message ?? 'Unable to remove this feed');
+    },
+  });
+
+  useEffect(() => {
+    setCurrentFeed(feed);
+  }, [feed]);
 
   // Handle scroll to show/hide sticky header
   useEffect(() => {
@@ -101,23 +145,86 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   }, [showMenu]);
 
   const handleWhitelistToggle = (episode: Episode) => {
+    if (!episode.whitelisted) {
+      setPendingEpisode(episode);
+      setShowProcessingModal(true);
+      setProcessingEstimate(null);
+      setEstimateError(null);
+      setIsEstimating(true);
+      feedsApi
+        .getProcessingEstimate(episode.guid)
+        .then((estimate) => {
+          setProcessingEstimate(estimate);
+        })
+        .catch((err) => {
+          console.error('Failed to load processing estimate', err);
+          const message = (err as any)?.response?.data?.error;
+          setEstimateError(message ?? 'Unable to estimate processing time');
+        })
+        .finally(() => setIsEstimating(false));
+      return;
+    }
+
     whitelistMutation.mutate({
       guid: episode.guid,
-      whitelisted: !episode.whitelisted,
+      whitelisted: false,
     });
   };
 
+  const handleConfirmProcessing = () => {
+    if (!pendingEpisode) return;
+    whitelistMutation.mutate(
+      {
+        guid: pendingEpisode.guid,
+        whitelisted: true,
+        triggerProcessing: true,
+      },
+      {
+        onSuccess: () => {
+          setShowProcessingModal(false);
+          setPendingEpisode(null);
+          setProcessingEstimate(null);
+        },
+      }
+    );
+  };
+
+  const handleCancelProcessing = () => {
+    setShowProcessingModal(false);
+    setPendingEpisode(null);
+    setProcessingEstimate(null);
+    setEstimateError(null);
+  };
+
+  // Admins can manage everything; regular users are read-only.
+  const canDeleteFeed = isAdmin; // only admins can delete feeds
+  const canModifyEpisodes = !requireAuth ? true : Boolean(isAdmin);
+  const canBulkModifyEpisodes = !requireAuth ? true : Boolean(isAdmin);
+  const canSubscribe = true;
+  const showWhitelistUi = canModifyEpisodes && isAdmin;
+
   const handleBulkWhitelistToggle = () => {
+    if (requireAuth && !isAdmin) {
+      toast.error('Only admins can bulk toggle whitelist status.');
+      return;
+    }
     bulkWhitelistMutation.mutate();
   };
 
   const handleDeleteFeed = () => {
-    if (confirm(`Are you sure you want to delete "${feed.title}"? This action cannot be undone.`)) {
+    if (confirm(`Are you sure you want to delete "${currentFeed.title}"? This action cannot be undone.`)) {
       deleteFeedMutation.mutate();
     }
   };
 
-  const sortedEpisodes = episodes ? [...episodes].sort((a, b) => {
+  const episodesToShow = useMemo(() => {
+    if (!episodes) return [];
+    if (isAdmin) return episodes;
+
+    return episodes.filter((ep) => ep.whitelisted);
+  }, [episodes, isAdmin]);
+
+  const sortedEpisodes = episodesToShow.sort((a, b) => {
     switch (sortBy) {
       case 'newest':
         return new Date(b.release_date || 0).getTime() - new Date(a.release_date || 0).getTime();
@@ -128,7 +235,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
       default:
         return 0;
     }
-  }) : [];
+  });
 
   // Calculate whitelist status for bulk button
   const whitelistedCount = episodes ? episodes.filter(ep => ep.whitelisted).length : 0;
@@ -163,10 +270,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     try {
       let rssUrl: string;
       if (requireAuth) {
-        const response = await feedsApi.createProtectedFeedShareLink(feed.id);
+        const response = await feedsApi.createProtectedFeedShareLink(currentFeed.id);
         rssUrl = response.url;
       } else {
-        rssUrl = new URL(`/feed/${feed.id}`, window.location.origin).toString();
+        rssUrl = new URL(`/feed/${currentFeed.id}`, window.location.origin).toString();
       }
 
       if (navigator.clipboard && window.isSecureContext) {
@@ -199,7 +306,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
   const handleCopyOriginalRssToClipboard = async () => {
     try {
-      const rssUrl = feed.rss_url || '';
+      const rssUrl = currentFeed.rss_url || '';
       if (!rssUrl) throw new Error('No RSS URL');
 
       if (navigator.clipboard && window.isSecureContext) {
@@ -248,17 +355,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
       }`}>
         <div className="p-4">
           <div className="flex items-center gap-3">
-            {feed.image_url && (
+            {currentFeed.image_url && (
               <img
-                src={feed.image_url}
-                alt={feed.title}
+                src={currentFeed.image_url}
+                alt={currentFeed.title}
                 className="w-10 h-10 rounded-lg object-cover"
               />
             )}
             <div className="flex-1 min-w-0">
-              <h2 className="font-semibold text-gray-900 truncate">{feed.title}</h2>
-              {feed.author && (
-                <p className="text-sm text-gray-600 truncate">by {feed.author}</p>
+              <h2 className="font-semibold text-gray-900 truncate">{currentFeed.title}</h2>
+              {currentFeed.author && (
+                <p className="text-sm text-gray-600 truncate">by {currentFeed.author}</p>
               )}
             </div>
             <select
@@ -285,10 +392,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             <div className="flex items-end gap-6">
               {/* Podcast Image */}
               <div className="flex-shrink-0">
-                {feed.image_url ? (
+                {currentFeed.image_url ? (
                   <img
-                    src={feed.image_url}
-                    alt={feed.title}
+                    src={currentFeed.image_url}
+                    alt={currentFeed.title}
                     className="w-32 h-32 sm:w-40 sm:h-40 rounded-lg object-cover shadow-lg"
                   />
                 ) : (
@@ -302,12 +409,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
               {/* Title aligned to bottom-left of image */}
               <div className="flex-1 min-w-0 pb-2">
-                <h1 className="text-2xl font-bold text-gray-900 mb-1">{feed.title}</h1>
-                {feed.author && (
-                  <p className="text-lg text-gray-600">by {feed.author}</p>
+                <h1 className="text-2xl font-bold text-gray-900 mb-1">{currentFeed.title}</h1>
+                {currentFeed.author && (
+                  <p className="text-lg text-gray-600">by {currentFeed.author}</p>
                 )}
                 <div className="mt-2 text-sm text-gray-500">
-                  <span>{feed.posts_count} episodes</span>
+                  <span>{sortedEpisodes.length} episodes visible</span>
                 </div>
               </div>
             </div>
@@ -318,7 +425,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
               <button
                 onClick={handleCopyRssToClipboard}
                 title="Copy Podly RSS feed URL"
-                className="flex items-center gap-3 px-5 py-2 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition-colors"
+                className={`flex items-center gap-3 px-5 py-2 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition-colors ${
+                  !canSubscribe ? 'opacity-60 cursor-not-allowed' : ''
+                }`}
+                disabled={!canSubscribe}
               >
                 <img
                   src="/rss-round-color-icon.svg"
@@ -326,27 +436,31 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                   className="w-6 h-6"
                   aria-hidden="true"
                 />
-                <span className="text-white">Subscribe to Podly RSS</span>
+                <span className="text-white">
+                  {canSubscribe ? 'Subscribe to Podly RSS' : 'Join feed to subscribe'}
+                </span>
               </button>
 
-              <button
-                onClick={() => refreshFeedMutation.mutate()}
-                disabled={refreshFeedMutation.isPending}
-                title="Refresh feed from source"
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                  refreshFeedMutation.isPending
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <img
-                  className={`w-4 h-4 ${refreshFeedMutation.isPending ? 'animate-spin' : ''}`}
-                  src="/reload-icon.svg"
-                  alt="Refresh feed"
-                  aria-hidden="true"
-                />
-                <span>Refresh Feed</span>
-              </button>
+              {canModifyEpisodes && (
+                <button
+                  onClick={() => refreshFeedMutation.mutate()}
+                  disabled={refreshFeedMutation.isPending}
+                  title="Refresh feed from source"
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    refreshFeedMutation.isPending
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <img
+                    className={`w-4 h-4 ${refreshFeedMutation.isPending ? 'animate-spin' : ''}`}
+                    src="/reload-icon.svg"
+                    alt="Refresh feed"
+                    aria-hidden="true"
+                  />
+                  <span>Refresh Feed</span>
+                </button>
+              )}
 
               {/* Ellipsis Menu */}
               <div className="relative menu-container">
@@ -361,45 +475,51 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
                 {/* Dropdown Menu */}
                 {showMenu && (
-                  <div className="absolute top-full left-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
-                    <button
-                      onClick={() => {
-                        if (!allWhitelisted) {
-                          handleBulkWhitelistToggle();
-                        }
-                        setShowMenu(false);
-                      }}
-                      disabled={bulkWhitelistMutation.isPending || totalCount === 0 || allWhitelisted}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <span className="text-green-600">✓</span>
-                      Enable all episodes
-                    </button>
+                  <div className="absolute top-full right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 max-w-[calc(100vw-2rem)]">
+                      {canBulkModifyEpisodes && (
+                        <>
+                          <button
+                            onClick={() => {
+                              if (!allWhitelisted) {
+                                handleBulkWhitelistToggle();
+                            }
+                            setShowMenu(false);
+                          }}
+                          disabled={bulkWhitelistMutation.isPending || totalCount === 0 || allWhitelisted}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <span className="text-green-600">✓</span>
+                          Enable all episodes
+                        </button>
 
-                    <button
-                      onClick={() => {
-                        if (allWhitelisted) {
-                          handleBulkWhitelistToggle();
-                        }
-                        setShowMenu(false);
-                      }}
-                      disabled={bulkWhitelistMutation.isPending || totalCount === 0 || !allWhitelisted}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <span className="text-red-600">⛔</span>
-                      Disable all episodes
-                    </button>
+                        <button
+                          onClick={() => {
+                            if (allWhitelisted) {
+                              handleBulkWhitelistToggle();
+                            }
+                            setShowMenu(false);
+                          }}
+                          disabled={bulkWhitelistMutation.isPending || totalCount === 0 || !allWhitelisted}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <span className="text-red-600">⛔</span>
+                          Disable all episodes
+                        </button>
+                      </>
+                      )}
 
-                    <button
-                      onClick={() => {
-                        setShowHelp(!showHelp);
-                        setShowMenu(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
-                    >
-                      <span className="text-blue-600">ℹ️</span>
-                      Explain whitelist
-                    </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => {
+                            setShowHelp(!showHelp);
+                            setShowMenu(false);
+                          }}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                        >
+                          <span className="text-blue-600">ℹ️</span>
+                          Explain whitelist
+                        </button>
+                      )}
 
                     <button
                       onClick={() => {
@@ -412,34 +532,72 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                       Original RSS feed
                     </button>
 
-                    <div className="border-t border-gray-100 my-1"></div>
+                    {!isAdmin && (
+                      <>
+                        <div className="border-t border-gray-100 my-1"></div>
+                        <button
+                          onClick={() => {
+                            leaveFeedMutation.mutate();
+                            setShowMenu(false);
+                          }}
+                          disabled={leaveFeedMutation.isPending}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          </svg>
+                          Remove from my feeds
+                        </button>
+                      </>
+                    )}
 
-                    <button
-                      onClick={() => {
-                        handleDeleteFeed();
-                        setShowMenu(false);
-                      }}
-                      disabled={deleteFeedMutation.isPending}
-                      className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                      Delete feed
-                    </button>
+                    {canDeleteFeed && (
+                      <>
+                        <div className="border-t border-gray-100 my-1"></div>
+
+                        <button
+                          onClick={() => {
+                            handleDeleteFeed();
+                            setShowMenu(false);
+                          }}
+                          disabled={deleteFeedMutation.isPending}
+                          className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Delete feed
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
             </div>
 
             {/* Feed Description */}
-            {feed.description && (
+            {currentFeed.description && (
               <div className="text-gray-700 leading-relaxed">
-                <p>{feed.description.replace(/<[^>]*>/g, '')}</p>
+                <p>{currentFeed.description.replace(/<[^>]*>/g, '')}</p>
               </div>
             )}
           </div>
         </div>
+
+        {/* Inactive Subscription Warning */}
+        {currentFeed.is_member && currentFeed.is_active_subscription === false && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+            <svg className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <h3 className="text-sm font-medium text-amber-800">Processing Paused</h3>
+              <p className="text-sm text-amber-700 mt-1">
+                This feed exceeds your plan's allowance. New episodes will not be processed automatically until you upgrade your plan or leave other feeds.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Episodes Header with Sort Only */}
         <div className="p-4 border-b bg-gray-50">
@@ -457,8 +615,8 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
           </div>
         </div>
 
-        {/* Help Explainer */}
-        {showHelp && (
+            {/* Help Explainer (admins only) */}
+            {showHelp && isAdmin && (
           <div className="bg-blue-50 border-b border-blue-200 p-4">
             <div className="max-w-2xl">
               <h4 className="font-semibold text-blue-900 mb-2">About Enabling & Disabling Ad Removal</h4>
@@ -473,7 +631,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 </p>
                 <p>
                   <strong>Why whitelist episodes?</strong> Processing takes time and computational resources.
-                  By only enabling episodes you want to hear, you can save LLM credits. This is useful when adding a new feed with a large back catalog.
+                  Enable only the episodes you want to hear to keep your feed focused. This is useful when adding a new feed with a large back catalog.
                 </p>
               </div>
               <button
@@ -513,9 +671,9 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                     <div className="flex items-start gap-3">
                       {/* Episode/Podcast Thumbnail */}
                       <div className="flex-shrink-0">
-                        {(episode.image_url || feed.image_url) ? (
+                        {(episode.image_url || currentFeed.image_url) ? (
                           <img
-                            src={episode.image_url || feed.image_url}
+                            src={episode.image_url || currentFeed.image_url}
                             alt={episode.title}
                             className="w-16 h-16 rounded-lg object-cover"
                           />
@@ -534,7 +692,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                           {episode.title}
                         </h4>
                         <p className="text-sm text-gray-600 text-left">
-                          {feed.title}
+                          {currentFeed.title}
                         </p>
                       </div>
                     </div>
@@ -550,35 +708,39 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
                     {/* Metadata: Status, Date and Duration */}
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <button
-                        onClick={() => handleWhitelistToggle(episode)}
-                        disabled={whitelistMutation.isPending}
-                        className={`px-2 py-1 text-xs font-medium rounded-full transition-colors flex items-center justify-center gap-1 ${
-                          episode.whitelisted
-                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                            : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                        } ${whitelistMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        {whitelistMutation.isPending ? (
-                          <>
-                            <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            <span>...</span>
-                          </>
-                        ) : episode.whitelisted ? (
-                          <>
-                            <span>✅</span>
-                            <span>Enabled</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>⛔</span>
-                            <span>Disabled</span>
-                          </>
-                        )}
-                      </button>
-                      <span>•</span>
+                      {showWhitelistUi && (
+                        <>
+                          <button
+                            onClick={() => handleWhitelistToggle(episode)}
+                            disabled={whitelistMutation.isPending}
+                            className={`px-2 py-1 text-xs font-medium rounded-full transition-colors flex items-center justify-center gap-1 ${
+                              episode.whitelisted
+                                ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                                : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                            } ${whitelistMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            {whitelistMutation.isPending ? (
+                              <>
+                                <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                <span>...</span>
+                              </>
+                            ) : episode.whitelisted ? (
+                              <>
+                                <span>✅</span>
+                                <span>Enabled</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>⛔</span>
+                                <span>Disabled</span>
+                              </>
+                            )}
+                          </button>
+                          <span>•</span>
+                        </>
+                      )}
                       <span>{formatDate(episode.release_date)}</span>
                       {episode.duration && (
                         <>
@@ -603,8 +765,16 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                             episodeGuid={episode.guid}
                             isWhitelisted={episode.whitelisted}
                             hasProcessedAudio={episode.has_processed_audio}
-                            feedId={feed.id}
+                            feedId={currentFeed.id}
+                            canModifyEpisodes={canModifyEpisodes}
                             className="min-w-[100px]"
+                          />
+
+                          <EpisodeProcessingStatus
+                            episodeGuid={episode.guid}
+                            isWhitelisted={episode.whitelisted}
+                            hasProcessedAudio={episode.has_processed_audio}
+                            feedId={currentFeed.id}
                           />
 
                           <ProcessingStatsButton
@@ -631,6 +801,58 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
           )}
         </div>
       </div>
+
+      {showProcessingModal && pendingEpisode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={handleCancelProcessing}>
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-gray-900">Enable episode</h3>
+            <p className="text-sm text-gray-600">{pendingEpisode.title}</p>
+            {isEstimating && (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                Estimating processing time…
+              </div>
+            )}
+            {!isEstimating && estimateError && (
+              <p className="text-sm text-red-600">{estimateError}</p>
+            )}
+            {!isEstimating && processingEstimate && (
+              <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700 space-y-1">
+                <p><strong>Estimated minutes:</strong> {processingEstimate.estimated_minutes.toFixed(2)}</p>
+                {!processingEstimate.can_process && (
+                  <p className="text-red-600 font-medium">Processing not available for this episode.</p>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={handleCancelProcessing}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmProcessing}
+                disabled={
+                  whitelistMutation.isPending ||
+                  isEstimating ||
+                  !processingEstimate?.can_process
+                }
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                  whitelistMutation.isPending || isEstimating || !processingEstimate?.can_process
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {whitelistMutation.isPending ? 'Starting…' : 'Confirm & process'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

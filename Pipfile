@@ -36,6 +36,7 @@ pytest-cov = "*"
 flask-cors = "*"
 bcrypt = "*"
 httpx-aiohttp = "*"
+stripe = "*"
 
 [dev-packages]
 black = "*"

@@ -6,7 +6,7 @@ import pytest
 from flask import Flask
 
 from app.extensions import db
-from app.models import ModelCall, Post, TranscriptSegment
+from app.models import Feed, ModelCall, Post, TranscriptSegment
 from podcast_processor.transcribe import Segment, Transcriber
 from podcast_processor.transcription_manager import TranscriptionManager
 from shared.config import Config, TestWhisperConfig
@@ -162,83 +162,70 @@ def test_check_existing_transcription_no_model_call(
 def test_transcribe_new(
     test_config: Config,
     test_logger: logging.Logger,
-    mock_db_session: MagicMock,
     app: Flask,
 ) -> None:
     """Test transcribing a new audio file"""
-    # Create a new manager instance with mocks
     with app.app_context():
-        # Set up mock responses
-        mock_model_call_query = MagicMock()
-        mock_model_call_query.filter_by().order_by().first.return_value = None
-        mock_model_call_query.get.return_value = None
+        feed = Feed(title="Test Feed", rss_url="http://example.com/rss.xml")
+        post = Post(
+            feed=feed,
+            guid="guid-1",
+            download_url="http://example.com/audio-1.mp3",
+            title="Test Post",
+            unprocessed_audio_path="/path/to/audio.mp3",
+        )
+        db.session.add_all([feed, post])
+        db.session.commit()
 
-        mock_segment_query = MagicMock()
-
-        # Create a mock transcriber with specific response
-        mock_transcriber = MockTranscriber(
+        transcriber = MockTranscriber(
             [
                 Segment(start=0.0, end=5.0, text="Test segment 1"),
                 Segment(start=5.0, end=10.0, text="Test segment 2"),
             ]
         )
-
-        # Create manager with constructor injection of all dependencies
         manager = TranscriptionManager(
             test_logger,
             test_config,
-            model_call_query=mock_model_call_query,
-            segment_query=mock_segment_query,
-            db_session=mock_db_session,
-            transcriber=mock_transcriber,
+            db_session=db.session,
+            transcriber=transcriber,
         )
 
-        post = Post(
-            id=1, title="Test Post", unprocessed_audio_path="/path/to/audio.mp3"
-        )
-
-        # Call the method under test
         segments = manager.transcribe(post)
 
         assert len(segments) == 2
         assert segments[0].text == "Test segment 1"
         assert segments[1].text == "Test segment 2"
-        assert mock_db_session.add.called
-        assert mock_db_session.commit.called
+        assert TranscriptSegment.query.filter_by(post_id=post.id).count() == 2
+        assert ModelCall.query.filter_by(post_id=post.id).count() == 1
+        assert ModelCall.query.filter_by(post_id=post.id).first().status == "success"
 
 
 def test_transcribe_handles_error(
     test_config: Config,
     test_logger: logging.Logger,
-    mock_db_session: MagicMock,
     app: Flask,
 ) -> None:
     """Test error handling during transcription"""
-    # Create a new manager instance with mocks
     with app.app_context():
-        # Set up mock responses
-        mock_model_call_query = MagicMock()
-        mock_model_call_query.filter_by().order_by().first.return_value = None
-        mock_model_call_query.get.return_value = ModelCall(id=1)
-
-        mock_segment_query = MagicMock()
-        mock_segment_query.filter_by().order_by().all.return_value = []
+        feed = Feed(title="Test Feed", rss_url="http://example.com/rss.xml")
+        post = Post(
+            feed=feed,
+            guid="guid-err",
+            download_url="http://example.com/audio-err.mp3",
+            title="Test Post",
+            unprocessed_audio_path="/path/to/audio.mp3",
+        )
+        db.session.add_all([feed, post])
+        db.session.commit()
 
         # Create a mock transcriber that raises an exception
         error_transcriber = MockTranscriber(Exception("Transcription failed"))
 
-        # Create manager with constructor injection of all dependencies
         manager = TranscriptionManager(
             test_logger,
             test_config,
-            model_call_query=mock_model_call_query,
-            segment_query=mock_segment_query,
-            db_session=mock_db_session,
+            db_session=db.session,
             transcriber=error_transcriber,
-        )
-
-        post = Post(
-            id=1, title="Test Post", unprocessed_audio_path="/path/to/audio.mp3"
         )
 
         # Test the exception
@@ -246,6 +233,62 @@ def test_transcribe_handles_error(
             manager.transcribe(post)
 
         assert str(exc_info.value) == "Transcription failed"
-        assert mock_db_session.rollback.called
-        assert mock_db_session.add.called
-        assert mock_db_session.commit.called
+        call = (
+            ModelCall.query.filter_by(post_id=post.id)
+            .order_by(ModelCall.timestamp.desc())
+            .first()
+        )
+        assert call is not None
+        assert call.status == "failed_permanent"
+        assert call.error_message == "Transcription failed"
+
+
+def test_transcribe_reuses_placeholder_model_call(
+    test_config: Config,
+    test_logger: logging.Logger,
+    app: Flask,
+) -> None:
+    """Ensure we reuse existing placeholder ModelCall rows instead of crashing on uniqueness."""
+    with app.app_context():
+        feed = Feed(title="Test Feed", rss_url="http://example.com/rss.xml")
+        post = Post(
+            feed=feed,
+            guid="guid-123",
+            download_url="http://example.com/audio.mp3",
+            title="Test Post",
+            unprocessed_audio_path="/tmp/audio.mp3",
+        )
+        db.session.add_all([feed, post])
+        db.session.commit()
+
+        existing_call = ModelCall(
+            post_id=post.id,
+            model_name="mock_transcriber",
+            first_segment_sequence_num=0,
+            last_segment_sequence_num=-1,
+            prompt="Whisper transcription job",
+            status="failed_permanent",
+        )
+        db.session.add(existing_call)
+        db.session.commit()
+
+        manager = TranscriptionManager(
+            test_logger,
+            test_config,
+            db_session=db.session,
+            transcriber=MockTranscriber(
+                [
+                    Segment(start=0.0, end=5.0, text="Segment 1"),
+                    Segment(start=5.0, end=10.0, text="Segment 2"),
+                ]
+            ),
+        )
+
+        segments = manager.transcribe(post)
+
+        assert len(segments) == 2
+        assert ModelCall.query.count() == 1
+        refreshed_call = ModelCall.query.first()
+        assert refreshed_call.id == existing_call.id
+        assert refreshed_call.status == "success"
+        assert refreshed_call.last_segment_sequence_num == 1

@@ -16,7 +16,7 @@ from podcast_processor.token_rate_limiter import (
 class TestTokenRateLimiter:
     """Test cases for the TokenRateLimiter class."""
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         """Test rate limiter initialization with default and custom parameters."""
         # Test default initialization
         limiter = TokenRateLimiter()
@@ -29,12 +29,12 @@ class TestTokenRateLimiter:
         assert limiter.tokens_per_minute == 15000
         assert limiter.window_seconds == 120
 
-    def test_count_tokens(self):
+    def test_count_tokens(self) -> None:
         """Test token counting functionality."""
         limiter = TokenRateLimiter()
 
         # Test empty messages
-        messages = []
+        messages: list[dict[str, str]] = []
         tokens = limiter.count_tokens(messages, "gpt-4")
         assert tokens == 0
 
@@ -51,16 +51,16 @@ class TestTokenRateLimiter:
         tokens = limiter.count_tokens(messages, "gpt-4")
         assert tokens > 0
 
-    def test_token_counting_fallback(self):
+    def test_token_counting_fallback(self) -> None:
         """Test token counting fallback on error."""
         limiter = TokenRateLimiter()
 
         # Test with malformed message (should use fallback)
-        messages = [{"role": "user"}]  # Missing content
+        messages: list[dict[str, str]] = [{"role": "user"}]  # Missing content
         tokens = limiter.count_tokens(messages, "gpt-4")
         assert tokens == 0  # Should return 0 for missing content
 
-    def test_cleanup_old_usage(self):
+    def test_cleanup_old_usage(self) -> None:
         """Test cleanup of old token usage records."""
         limiter = TokenRateLimiter(tokens_per_minute=1000, window_minutes=1)
 
@@ -78,7 +78,7 @@ class TestTokenRateLimiter:
         assert limiter.token_usage[0][1] == 200  # 30 seconds ago should remain
         assert limiter.token_usage[1][1] == 300  # 10 seconds ago should remain
 
-    def test_get_current_usage(self):
+    def test_get_current_usage(self) -> None:
         """Test getting current token usage within time window."""
         limiter = TokenRateLimiter(tokens_per_minute=1000, window_minutes=1)
 
@@ -92,17 +92,17 @@ class TestTokenRateLimiter:
         usage = limiter._get_current_usage(current_time)
         assert usage == 500  # 200 + 300 (only records within window)
 
-    def test_check_rate_limit_within_limits(self):
+    def test_check_rate_limit_within_limits(self) -> None:
         """Test rate limit check when within limits."""
         limiter = TokenRateLimiter(tokens_per_minute=1000)
 
-        messages = [{"role": "user", "content": "Short message"}]
+        messages: list[dict[str, str]] = [{"role": "user", "content": "Short message"}]
         can_proceed, wait_seconds = limiter.check_rate_limit(messages, "gpt-4")
 
         assert can_proceed is True
         assert wait_seconds == 0.0
 
-    def test_check_rate_limit_exceeds_limits(self):
+    def test_check_rate_limit_exceeds_limits(self) -> None:
         """Test rate limit check when exceeding limits."""
         limiter = TokenRateLimiter(tokens_per_minute=100)  # Very low limit
 
@@ -112,7 +112,7 @@ class TestTokenRateLimiter:
         limiter.token_usage.append((current_time - 30, 90))
 
         # Try to add more tokens that would exceed the limit
-        messages = [
+        messages: list[dict[str, str]] = [
             {
                 "role": "user",
                 "content": "This is a longer message that should exceed the token limit",
@@ -123,11 +123,11 @@ class TestTokenRateLimiter:
         assert can_proceed is False
         assert wait_seconds > 0
 
-    def test_record_usage(self):
+    def test_record_usage(self) -> None:
         """Test recording token usage."""
         limiter = TokenRateLimiter()
 
-        messages = [{"role": "user", "content": "Test message"}]
+        messages: list[dict[str, str]] = [{"role": "user", "content": "Test message"}]
         initial_count = len(limiter.token_usage)
 
         limiter.record_usage(messages, "gpt-4")
@@ -137,11 +137,11 @@ class TestTokenRateLimiter:
         assert timestamp > 0
         assert token_count > 0
 
-    def test_wait_if_needed_no_wait(self):
+    def test_wait_if_needed_no_wait(self) -> None:
         """Test wait_if_needed when no waiting is required."""
         limiter = TokenRateLimiter(tokens_per_minute=10000)  # High limit
 
-        messages = [{"role": "user", "content": "Short message"}]
+        messages: list[dict[str, str]] = [{"role": "user", "content": "Short message"}]
         start_time = time.time()
 
         limiter.wait_if_needed(messages, "gpt-4")
@@ -155,7 +155,7 @@ class TestTokenRateLimiter:
         # Should have recorded usage
         assert len(limiter.token_usage) > 0
 
-    def test_wait_if_needed_with_wait(self):
+    def test_wait_if_needed_with_wait(self) -> None:
         """Test wait_if_needed when waiting is required."""
         limiter = TokenRateLimiter(tokens_per_minute=50)  # Very low limit
 
@@ -163,7 +163,9 @@ class TestTokenRateLimiter:
         current_time = time.time()
         limiter.token_usage.append((current_time - 10, 45))
 
-        messages = [{"role": "user", "content": "This message should trigger waiting"}]
+        messages: list[dict[str, str]] = [
+            {"role": "user", "content": "This message should trigger waiting"}
+        ]
 
         # Mock time.sleep to avoid actual waiting in tests
         with patch("time.sleep") as mock_sleep:
@@ -174,7 +176,7 @@ class TestTokenRateLimiter:
             call_args = mock_sleep.call_args[0]
             assert call_args[0] > 0  # Should have waited some positive amount
 
-    def test_get_usage_stats(self):
+    def test_get_usage_stats(self) -> None:
         """Test getting usage statistics."""
         limiter = TokenRateLimiter(tokens_per_minute=1000)
 
@@ -197,12 +199,12 @@ class TestTokenRateLimiter:
         assert stats["window_seconds"] == 60
         assert stats["active_records"] == 2
 
-    def test_thread_safety(self):
+    def test_thread_safety(self) -> None:
         """Test that the rate limiter is thread-safe."""
         limiter = TokenRateLimiter(tokens_per_minute=10000)
-        messages = [{"role": "user", "content": "Test message"}]
+        messages: list[dict[str, str]] = [{"role": "user", "content": "Test message"}]
 
-        def worker():
+        def worker() -> None:
             for _ in range(10):
                 limiter.wait_if_needed(messages, "gpt-4")
 
@@ -224,7 +226,7 @@ class TestTokenRateLimiter:
 class TestGlobalRateLimiter:
     """Test cases for global rate limiter functions."""
 
-    def test_get_rate_limiter_singleton(self):
+    def test_get_rate_limiter_singleton(self) -> None:
         """Test that get_rate_limiter returns the same instance."""
         limiter1 = get_rate_limiter(5000)
         limiter2 = get_rate_limiter(5000)
@@ -232,7 +234,7 @@ class TestGlobalRateLimiter:
         assert limiter1 is limiter2  # Should be the same instance
         assert limiter1.tokens_per_minute == 5000
 
-    def test_get_rate_limiter_different_limits(self):
+    def test_get_rate_limiter_different_limits(self) -> None:
         """Test that get_rate_limiter creates new instance for different limits."""
         limiter1 = get_rate_limiter(5000)
         limiter2 = get_rate_limiter(8000)
@@ -241,14 +243,14 @@ class TestGlobalRateLimiter:
         assert limiter1.tokens_per_minute == 5000
         assert limiter2.tokens_per_minute == 8000
 
-    def test_configure_rate_limiter_for_model_anthropic(self):
+    def test_configure_rate_limiter_for_model_anthropic(self) -> None:
         """Test model-specific configuration for Anthropic models."""
         limiter = configure_rate_limiter_for_model(
             "anthropic/claude-3-5-sonnet-20240620"
         )
         assert limiter.tokens_per_minute == 30000
 
-    def test_configure_rate_limiter_for_model_openai(self):
+    def test_configure_rate_limiter_for_model_openai(self) -> None:
         """Test model-specific configuration for OpenAI models."""
         # Test each model in isolation to avoid singleton issues
         import podcast_processor.token_rate_limiter as trl_module
@@ -263,17 +265,17 @@ class TestGlobalRateLimiter:
         limiter = configure_rate_limiter_for_model("gpt-4o")
         assert limiter.tokens_per_minute == 150000
 
-    def test_configure_rate_limiter_for_model_gemini(self):
+    def test_configure_rate_limiter_for_model_gemini(self) -> None:
         """Test model-specific configuration for Gemini models."""
         limiter = configure_rate_limiter_for_model("gemini/gemini-2.5-flash")
         assert limiter.tokens_per_minute == 60000
 
-    def test_configure_rate_limiter_for_model_unknown(self):
+    def test_configure_rate_limiter_for_model_unknown(self) -> None:
         """Test model-specific configuration for unknown models."""
         limiter = configure_rate_limiter_for_model("unknown/model-name")
         assert limiter.tokens_per_minute == 30000  # Should use default
 
-    def test_configure_rate_limiter_partial_match(self):
+    def test_configure_rate_limiter_partial_match(self) -> None:
         """Test model-specific configuration with partial model names."""
         # Test that partial matches work
         limiter = configure_rate_limiter_for_model("some-prefix/gpt-4o/some-suffix")

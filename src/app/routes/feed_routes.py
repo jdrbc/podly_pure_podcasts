@@ -2,7 +2,9 @@ import logging
 import re
 from pathlib import Path
 from threading import Thread
-from typing import Any, cast
+from typing import Any, Optional, cast
+
+# pylint: disable=chained-comparison
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import requests
@@ -22,21 +24,25 @@ from flask import (
 )
 from flask.typing import ResponseReturnValue
 
-from app.auth.feed_tokens import create_feed_access_token
 from app.extensions import db
-from app.feeds import add_or_refresh_feed, generate_feed_xml, refresh_feed
+from app.feeds import (
+    add_or_refresh_feed,
+    generate_feed_xml,
+    is_feed_active_for_user,
+    refresh_feed,
+)
 from app.jobs_manager import get_jobs_manager
 from app.models import (
     Feed,
-    Identification,
-    ModelCall,
     Post,
-    ProcessingJob,
-    TranscriptSegment,
     User,
+    UserFeed,
 )
+from app.writer.client import writer_client
 from podcast_processor.podcast_downloader import sanitize_title
 from shared.processing_paths import get_in_root, get_srv_root
+
+from .auth_routes import _require_authenticated_user as _auth_get_user
 
 logger = logging.getLogger("global_logger")
 
@@ -51,19 +57,165 @@ def fix_url(url: str) -> str:
     return url
 
 
+def _user_feed_count(user_id: int) -> int:
+    return int(UserFeed.query.filter_by(user_id=user_id).count())
+
+
+def _get_latest_post(feed: Feed) -> Post | None:
+    return cast(
+        Optional[Post],
+        Post.query.filter_by(feed_id=feed.id)
+        .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+        .first(),
+    )
+
+
+def _ensure_user_feed_membership(feed: Feed, user_id: int | None) -> tuple[bool, int]:
+    """Add a user↔feed link if missing. Returns (created, previous_feed_member_count)."""
+    if not user_id:
+        return False, UserFeed.query.filter_by(feed_id=feed.id).count()
+    result = writer_client.action(
+        "ensure_user_feed_membership",
+        {"feed_id": feed.id, "user_id": int(user_id)},
+        wait=True,
+    )
+    if not result or not result.success or not isinstance(result.data, dict):
+        raise RuntimeError(getattr(result, "error", "Failed to join feed"))
+    return bool(result.data.get("created")), int(result.data.get("previous_count") or 0)
+
+
+def _whitelist_latest_for_first_member(
+    feed: Feed, requested_by_user_id: int | None
+) -> None:
+    """When a feed goes from 0→1 members, whitelist and process the latest post."""
+    try:
+        result = writer_client.action(
+            "whitelist_latest_post_for_feed", {"feed_id": feed.id}, wait=True
+        )
+        if not result or not result.success or not isinstance(result.data, dict):
+            return
+        post_guid = result.data.get("post_guid")
+        updated = bool(result.data.get("updated"))
+        if not updated or not post_guid:
+            return
+    except Exception:  # pylint: disable=broad-except
+        return
+    try:
+        get_jobs_manager().start_post_processing(
+            str(post_guid),
+            priority="interactive",
+            requested_by_user_id=requested_by_user_id,
+            billing_user_id=requested_by_user_id,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error(
+            "Failed to enqueue processing for latest post %s: %s", post_guid, exc
+        )
+
+
+def _handle_developer_mode_feed(url: str, user: Optional[User]) -> ResponseReturnValue:
+    try:
+        feed_id_str = url.split("/")[-1]
+        feed_num = int(feed_id_str)
+
+        result = writer_client.action(
+            "create_dev_test_feed",
+            {
+                "rss_url": url,
+                "title": f"Test Feed {feed_num}",
+                "image_url": "https://via.placeholder.com/150",
+                "description": "A test feed for development",
+                "author": "Test Author",
+                "post_count": 5,
+                "guid_prefix": f"test-guid-{feed_num}",
+                "download_url_prefix": f"http://test-feed/{feed_num}",
+            },
+            wait=True,
+        )
+        if not result or not result.success or not isinstance(result.data, dict):
+            raise RuntimeError(getattr(result, "error", "Failed to create test feed"))
+        feed_id = int(result.data["feed_id"])
+        feed = db.session.get(Feed, feed_id)
+        if not feed:
+            raise RuntimeError("Test feed disappeared")
+
+        if user:
+            created, previous_count = _ensure_user_feed_membership(feed, user.id)
+            if created and previous_count == 0:
+                _whitelist_latest_for_first_member(feed, getattr(user, "id", None))
+
+        return redirect(url_for("main.index"))
+
+    except Exception as e:
+        logger.error(f"Error adding test feed: {e}")
+        return make_response((f"Error adding test feed: {e}", 500))
+
+
+def _check_feed_allowance(user: User, url: str) -> Optional[ResponseReturnValue]:
+    if user.role == "admin":
+        return None
+
+    existing_feed = Feed.query.filter_by(rss_url=url).first()
+    existing_membership = None
+    if existing_feed:
+        existing_membership = UserFeed.query.filter_by(
+            feed_id=existing_feed.id, user_id=user.id
+        ).first()
+
+    # Use manual allowance if set, otherwise fall back to plan allowance
+    allowance = user.manual_feed_allowance
+    if allowance is None:
+        allowance = getattr(user, "feed_allowance", 0) or 0
+
+    if allowance > 0:
+        current_count = _user_feed_count(user.id)
+        if current_count >= allowance and existing_membership is None:
+            return (
+                jsonify(
+                    {
+                        "error": "FEED_LIMIT_REACHED",
+                        "message": f"Your plan allows {allowance} feeds. Increase your plan to add more.",
+                        "feeds_in_use": current_count,
+                        "feed_allowance": allowance,
+                    }
+                ),
+                402,
+            )
+    return None
+
+
 @feed_bp.route("/feed", methods=["POST"])
 def add_feed() -> ResponseReturnValue:
+    settings = current_app.config.get("AUTH_SETTINGS")
+    user = None
+    if settings and settings.require_auth:
+        user, error = _require_user_or_error()
+        if error:
+            return error
     url = request.form.get("url")
     if not url:
         return make_response(("URL is required", 400))
 
     url = fix_url(url)
 
+    if current_app.config.get("developer_mode") and url.startswith("http://test-feed/"):
+        return _handle_developer_mode_feed(url, user)
+
     if not validators.url(url):
         return make_response(("Invalid URL", 400))
 
     try:
-        add_or_refresh_feed(url)
+        if user:
+            allowance_error = _check_feed_allowance(user, url)
+            if allowance_error:
+                return allowance_error
+
+        feed = add_or_refresh_feed(url)
+        if user:
+            created, previous_count = _ensure_user_feed_membership(feed, user.id)
+            if created and previous_count == 0:
+                _whitelist_latest_for_first_member(feed, getattr(user, "id", None))
+
         app = cast(Any, current_app)._get_current_object()
         Thread(
             target=_enqueue_pending_jobs_async,
@@ -88,11 +240,19 @@ def create_feed_share_link(feed_id: int) -> ResponseReturnValue:
         return jsonify({"error": "Authentication required."}), 401
 
     feed = Feed.query.get_or_404(feed_id)
-    user = User.query.get(current.id)
+    user = db.session.get(User, current.id)
     if user is None:
         return jsonify({"error": "User not found."}), 404
 
-    token_id, secret = create_feed_access_token(user, feed)
+    result = writer_client.action(
+        "create_feed_access_token",
+        {"user_id": user.id, "feed_id": feed.id},
+        wait=True,
+    )
+    if not result or not result.success or not isinstance(result.data, dict):
+        return jsonify({"error": "Failed to create feed token"}), 500
+    token_id = str(result.data["token_id"])
+    secret = str(result.data["secret"])
 
     parsed = urlparse(request.host_url)
     netloc = parsed.netloc
@@ -117,6 +277,7 @@ def create_feed_share_link(feed_id: int) -> ResponseReturnValue:
 @feed_bp.route("/api/feeds/search", methods=["GET"])
 def search_feeds() -> ResponseReturnValue:
     term = (request.args.get("term") or "").strip()
+    logger.info("Searching for podcasts with term: %s", term)
     if not term:
         return jsonify({"error": "term parameter is required"}), 400
 
@@ -144,6 +305,23 @@ def search_feeds() -> ResponseReturnValue:
 
     results = upstream_data.get("results") or []
     transformed_results = []
+
+    if current_app.config.get("developer_mode") and term.lower() == "test":
+        logger.info("Developer mode test search - adding mock results")
+        for i in range(1, 11):
+            transformed_results.append(
+                {
+                    "title": f"Test Feed {i}",
+                    "author": "Test Author",
+                    "feedUrl": f"http://test-feed/{i}",
+                    "artwork": "https://via.placeholder.com/150",
+                    "genres": ["Test Genre"],
+                }
+            )
+    else:
+        logger.info(
+            "(dev mode disabled) Podcast search returned %d results", len(results)
+        )
 
     for item in results:
         feed_url = item.get("feedUrl")
@@ -195,12 +373,20 @@ def get_feed(f_id: int) -> Response:
 
 
 @feed_bp.route("/feed/<int:f_id>", methods=["DELETE"])
-def delete_feed(f_id: int) -> Response:
+def delete_feed(f_id: int) -> ResponseReturnValue:  # pylint: disable=too-many-branches
+    user, error = _require_user_or_error(allow_missing_auth=True)
+    if error:
+        return error
+
     feed = Feed.query.get_or_404(f_id)
+    if user is not None and user.role != "admin":
+        return (
+            jsonify({"error": "Only administrators can delete feeds."}),
+            403,
+        )
 
     # Get all post IDs for this feed
     post_ids = [post.id for post in feed.posts]
-    post_guids = [post.guid for post in feed.posts]
 
     # Delete audio files if they exist
     for post in feed.posts:
@@ -225,52 +411,15 @@ def delete_feed(f_id: int) -> Response:
     # Clean up directory structures
     _cleanup_feed_directories(feed)
 
-    # Delete related database records in the correct order to avoid foreign key constraints
-    if post_ids:
-        # Delete identifications for all posts in this feed
-        identifications_to_delete = (
-            db.session.query(Identification)
-            .join(
-                TranscriptSegment,
-                Identification.transcript_segment_id == TranscriptSegment.id,
-            )
-            .filter(TranscriptSegment.post_id.in_(post_ids))
-            .all()
+    try:
+        result = writer_client.action(
+            "delete_feed_cascade", {"feed_id": feed.id}, wait=True
         )
-
-        for identification in identifications_to_delete:
-            db.session.delete(identification)
-
-        # Delete model calls for all posts in this feed
-        model_calls_to_delete = ModelCall.query.filter(
-            ModelCall.post_id.in_(post_ids)
-        ).all()
-        for model_call in model_calls_to_delete:
-            db.session.delete(model_call)
-
-        # Delete transcript segments for all posts in this feed
-        transcript_segments_to_delete = TranscriptSegment.query.filter(
-            TranscriptSegment.post_id.in_(post_ids)
-        ).all()
-        for segment in transcript_segments_to_delete:
-            db.session.delete(segment)
-
-        # Delete processing jobs for all posts in this feed
-        if post_guids:
-            processing_jobs_to_delete = ProcessingJob.query.filter(
-                ProcessingJob.post_guid.in_(post_guids)
-            ).all()
-            for job in processing_jobs_to_delete:
-                db.session.delete(job)
-
-        # Delete all posts for this feed
-        posts_to_delete = Post.query.filter(Post.feed_id == feed.id).all()
-        for post in posts_to_delete:
-            db.session.delete(post)
-
-    # Delete the feed from the database
-    db.session.delete(feed)
-    db.session.commit()
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Failed to delete feed"))
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Failed to delete feed %s: %s", feed.id, e)
+        return make_response(("Failed to delete feed", 500))
 
     logger.info(
         f"Deleted feed: {feed.title} (ID: {feed.id}) with {len(post_ids)} posts"
@@ -307,7 +456,7 @@ def refresh_feed_endpoint(f_id: int) -> ResponseReturnValue:
 
 def _refresh_feed_background(app: Flask, feed_id: int) -> None:
     with app.app_context():
-        feed = Feed.query.get(feed_id)
+        feed = db.session.get(Feed, feed_id)
         if not feed:
             logger.warning("Feed %s disappeared before refresh could run", feed_id)
             return
@@ -418,18 +567,166 @@ def get_feed_by_alt_or_url(something_or_rss: str) -> Response:
 
 
 @feed_bp.route("/feeds", methods=["GET"])
-def api_feeds() -> Response:
-    feeds = Feed.query.all()
-    feeds_data = [
-        {
-            "id": feed.id,
-            "title": feed.title,
-            "rss_url": feed.rss_url,
-            "description": feed.description,
-            "author": feed.author,
-            "image_url": feed.image_url,
-            "posts_count": len(feed.posts),
-        }
-        for feed in feeds
-    ]
+def api_feeds() -> ResponseReturnValue:
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if settings and settings.require_auth:
+        user, error = _require_user_or_error()
+        if error:
+            return error
+        if user and user.role != "admin":
+            feeds = (
+                Feed.query.join(UserFeed, UserFeed.feed_id == Feed.id)
+                .filter(UserFeed.user_id == user.id)
+                .all()
+            )
+            # Hack: Always include Feed 1
+            feed_1 = Feed.query.get(1)
+            if feed_1 and feed_1 not in feeds:
+                feeds.append(feed_1)
+        else:
+            feeds = Feed.query.all()
+        current_user = user
+    else:
+        feeds = Feed.query.all()
+        current_user = getattr(g, "current_user", None)
+
+    feeds_data = [_serialize_feed(feed, current_user=current_user) for feed in feeds]
     return jsonify(feeds_data)
+
+
+@feed_bp.route("/api/feeds/<int:feed_id>/join", methods=["POST"])
+def api_join_feed(feed_id: int) -> ResponseReturnValue:
+    user, error = _require_user_or_error()
+    if error:
+        return error
+    if user is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    feed = Feed.query.get_or_404(feed_id)
+    existing_membership = UserFeed.query.filter_by(
+        feed_id=feed.id, user_id=user.id
+    ).first()
+    if user.role != "admin":
+        # Use manual allowance if set, otherwise fall back to plan allowance
+        allowance = user.manual_feed_allowance
+        if allowance is None:
+            allowance = getattr(user, "feed_allowance", 0) or 0
+
+        at_capacity = allowance > 0 and _user_feed_count(user.id) >= allowance
+        missing_membership = existing_membership is None
+        if at_capacity and missing_membership:
+            return (
+                jsonify(
+                    {
+                        "error": "FEED_LIMIT_REACHED",
+                        "message": f"Your plan allows {allowance} feeds. Increase your plan to add more.",
+                        "feeds_in_use": _user_feed_count(user.id),
+                        "feed_allowance": allowance,
+                    }
+                ),
+                402,
+            )
+    if existing_membership:
+        refreshed = Feed.query.get(feed_id)
+        return jsonify(_serialize_feed(refreshed or feed, current_user=user)), 200
+
+    created, previous_count = _ensure_user_feed_membership(
+        feed, getattr(user, "id", None)
+    )
+    if created and previous_count == 0:
+        _whitelist_latest_for_first_member(feed, getattr(user, "id", None))
+    refreshed = Feed.query.get(feed_id)
+    return (
+        jsonify(_serialize_feed(refreshed or feed, current_user=user)),
+        200,
+    )
+
+
+@feed_bp.route("/api/feeds/<int:feed_id>/exit", methods=["POST"])
+def api_exit_feed(feed_id: int) -> ResponseReturnValue:
+    user, error = _require_user_or_error()
+    if error:
+        return error
+    if user is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    feed = Feed.query.get_or_404(feed_id)
+    writer_client.action(
+        "remove_user_feed_membership",
+        {"feed_id": feed.id, "user_id": user.id},
+        wait=True,
+    )
+    refreshed = Feed.query.get(feed_id)
+    return (
+        jsonify(_serialize_feed(refreshed or feed, current_user=user)),
+        200,
+    )
+
+
+@feed_bp.route("/api/feeds/<int:feed_id>/leave", methods=["POST"])
+def api_leave_feed(feed_id: int) -> ResponseReturnValue:
+    """Remove current user membership; hide from their view."""
+    user, error = _require_user_or_error()
+    if error:
+        return error
+    if user is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    feed = Feed.query.get_or_404(feed_id)
+    writer_client.action(
+        "remove_user_feed_membership",
+        {"feed_id": feed.id, "user_id": user.id},
+        wait=True,
+    )
+    return jsonify({"status": "ok", "feed_id": feed.id})
+
+
+def _require_user_or_error(
+    allow_missing_auth: bool = False,
+) -> tuple[User | None, ResponseReturnValue | None]:
+    settings = current_app.config.get("AUTH_SETTINGS")
+    if not settings or not settings.require_auth:
+        if allow_missing_auth:
+            return None, None
+        return None, (jsonify({"error": "Authentication is disabled."}), 404)
+
+    current = getattr(g, "current_user", None)
+    if current is None:
+        return None, (jsonify({"error": "Authentication required."}), 401)
+
+    user = _auth_get_user()
+    if user is None:
+        return None, (jsonify({"error": "User not found."}), 404)
+
+    return user, None
+
+
+def _serialize_feed(
+    feed: Feed,
+    *,
+    current_user: Optional[User] = None,
+) -> dict[str, Any]:
+    member_ids = [membership.user_id for membership in getattr(feed, "user_feeds", [])]
+    is_member = bool(current_user and getattr(current_user, "id", None) in member_ids)
+
+    # Hack: Always treat Feed 1 as a member
+    if feed.id == 1 and current_user:
+        is_member = True
+
+    is_active_subscription = False
+    if is_member and current_user:
+        is_active_subscription = is_feed_active_for_user(feed.id, current_user)
+
+    feed_payload = {
+        "id": feed.id,
+        "title": feed.title,
+        "rss_url": feed.rss_url,
+        "description": feed.description,
+        "author": feed.author,
+        "image_url": feed.image_url,
+        "posts_count": len(feed.posts),
+        "member_count": len(member_ids),
+        "is_member": is_member,
+        "is_active_subscription": is_active_subscription,
+    }
+    return feed_payload

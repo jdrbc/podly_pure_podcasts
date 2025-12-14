@@ -1,4 +1,6 @@
+# pylint: disable=too-many-lines
 import logging
+import math
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -7,10 +9,13 @@ from jinja2 import Template
 from litellm.exceptions import InternalServerError
 from litellm.types.utils import Choices
 from pydantic import ValidationError
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_
 
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
+from app.writer.client import writer_client
+from podcast_processor.boundary_refiner import BoundaryRefiner
+from podcast_processor.cue_detector import CueDetector
 from podcast_processor.llm_concurrency_limiter import (
     ConcurrencyContext,
     LLMConcurrencyLimiter,
@@ -100,6 +105,16 @@ class AdClassifier:
             self.concurrency_limiter = None
             self.logger.info("LLM concurrency limiting disabled")
 
+        # Initialize cue detector for neighbor expansion
+        self.cue_detector = CueDetector()
+
+        # Initialize boundary refiner
+        self.boundary_refiner: Optional[BoundaryRefiner]
+        if getattr(config, "boundary_refinement_enabled", False):
+            self.boundary_refiner = BoundaryRefiner(config, self.logger)
+        else:
+            self.boundary_refiner = None
+
     def classify(
         self,
         *,
@@ -159,6 +174,40 @@ class AdClassifier:
                         "Breaking to avoid infinite loop."
                     )
                     break
+
+            # Expand neighbors using bulk operations
+            # NOTE: Use self.db_session.query() instead of self.identification_query
+            # to ensure all operations use the same session consistently.
+            ad_identifications = (
+                self.db_session.query(Identification)
+                .join(TranscriptSegment)
+                .filter(
+                    TranscriptSegment.post_id == post.id,
+                    Identification.label == "ad",
+                )
+                .all()
+            )
+
+            if ad_identifications:
+                # Get model_call from first identification
+                model_call = (
+                    ad_identifications[0].model_call if ad_identifications else None
+                )
+                if model_call:
+                    created = self.expand_neighbors_bulk(
+                        ad_identifications=ad_identifications,
+                        model_call=model_call,
+                        post_id=post.id,
+                        window=5,
+                    )
+                    self.logger.info(
+                        f"Created {created} neighbor identifications via bulk ops"
+                    )
+
+            # Pass 2: Refine boundaries
+            if self.boundary_refiner:
+                self._refine_boundaries(transcript_segments, post)
+
         except ClassifyException as e:
             self.logger.error(f"Classification failed for post {post.id}: {e}")
             return
@@ -391,69 +440,60 @@ class AdClassifier:
         max_overlap_segments: int,
     ) -> List[TranscriptSegment]:
         """Determine which segments should be carried forward to the next chunk."""
-        if not identified_segments or max_overlap_segments <= 0:
-            self.logger.debug(
-                "Skipping overlap computation: identified_segments=%s, max_overlap=%s",
-                len(identified_segments) if identified_segments else 0,
-                max_overlap_segments,
-            )
+        if max_overlap_segments <= 0 or not chunk_segments:
             return []
 
-        # Find the earliest identified ad segment in the chunk
-        identified_ids = {seg.id for seg in identified_segments}
-        earliest_index = None
-        for i, seg in enumerate(chunk_segments):
-            if seg.id in identified_ids:
-                earliest_index = i
-                break
+        # Baseline: carry ~50% of the chunk to guarantee overlap even without detections
+        base_tail_count = max(1, math.ceil(len(chunk_segments) / 2))
+        overlap_candidates = list(chunk_segments[-base_tail_count:])
 
-        if earliest_index is None:
-            self.logger.debug(
-                "No ad segments found in chunk; no overlap to carry forward"
+        if identified_segments:
+            # Preserve from earliest detected ad through the end of the chunk
+            identified_ids = {seg.id for seg in identified_segments}
+            earliest_index = None
+            for i, seg in enumerate(chunk_segments):
+                if seg.id in identified_ids:
+                    earliest_index = i
+                    break
+
+            if earliest_index is not None:
+                ad_tail = chunk_segments[earliest_index:]
+                overlap_candidates = self._combine_overlap_segments(
+                    overlap_segments=ad_tail,
+                    base_segments=overlap_candidates,
+                )
+
+            # Conditional tail replay: always include the final ~15 seconds when ads are present
+            tail_replay_segments = self._segments_covering_tail(
+                chunk_segments=chunk_segments, seconds=15.0
             )
-            return []
-
-        self.logger.debug(
-            "Found earliest ad segment at index %s (seq_num %s)",
-            earliest_index,
-            chunk_segments[earliest_index].sequence_num,
-        )
-
-        # Take from earliest ad to end of chunk
-        overlap_segments = chunk_segments[earliest_index:]
-
-        self.logger.debug(
-            "Taking from earliest ad to end: %s segments (seq_nums %s-%s)",
-            len(overlap_segments),
-            overlap_segments[0].sequence_num,
-            overlap_segments[-1].sequence_num,
-        )
-
-        # Cap at max_overlap_segments from the end
-        if len(overlap_segments) > max_overlap_segments:
-            trimmed = overlap_segments[-max_overlap_segments:]
-            self.logger.debug(
-                "Trimming overlap from %s to %s segments (max=%s). "
-                "Keeping seq_nums: %s",
-                len(overlap_segments),
-                len(trimmed),
-                max_overlap_segments,
-                [seg.sequence_num for seg in trimmed],
+            overlap_candidates = self._combine_overlap_segments(
+                overlap_segments=tail_replay_segments,
+                base_segments=overlap_candidates,
             )
-            return trimmed
 
-        self.logger.debug(
-            "Carrying forward %s overlap segments: seq_nums %s",
-            len(overlap_segments),
-            [seg.sequence_num for seg in overlap_segments],
+        capped = self._apply_overlap_cap(
+            overlap_candidates, max_override=max_overlap_segments
         )
-        return overlap_segments
+        self.logger.debug(
+            "Carrying forward %s overlap segments: seq_nums %s (identified=%s)",
+            len(capped),
+            [seg.sequence_num for seg in capped],
+            bool(identified_segments),
+        )
+        return capped
 
     def _apply_overlap_cap(
-        self, overlap_segments: List[TranscriptSegment]
+        self,
+        overlap_segments: List[TranscriptSegment],
+        max_override: Optional[int] = None,
     ) -> List[TranscriptSegment]:
         """Ensure stored overlap obeys configured limits."""
-        max_overlap = self.config.processing.max_overlap_segments
+        max_overlap = (
+            self.config.processing.max_overlap_segments
+            if max_override is None
+            else max_override
+        )
         if max_overlap <= 0 or not overlap_segments:
             if max_overlap <= 0 and overlap_segments:
                 self.logger.debug(
@@ -481,6 +521,28 @@ class AdClassifier:
             [seg.sequence_num for seg in trimmed],
         )
         return trimmed
+
+    def _segments_covering_tail(
+        self, *, chunk_segments: List[TranscriptSegment], seconds: float
+    ) -> List[TranscriptSegment]:
+        """Return the minimal set of segments covering the last `seconds` of audio."""
+        if not chunk_segments:
+            return []
+
+        last_end_time = (
+            chunk_segments[-1].end_time
+            if chunk_segments[-1].end_time is not None
+            else chunk_segments[-1].start_time
+        )
+        cutoff = last_end_time - seconds
+
+        tail_segments: List[TranscriptSegment] = []
+        for seg in reversed(chunk_segments):
+            tail_segments.append(seg)
+            if seg.start_time <= cutoff:
+                break
+
+        return list(reversed(tail_segments))
 
     def _validate_token_limit(self, user_prompt_str: str, system_prompt: str) -> bool:
         """Validate that the prompt doesn't exceed the configured token limit."""
@@ -546,10 +608,20 @@ class AdClassifier:
                     f"Consider reducing num_segments_to_input_to_prompt."
                 )
                 self.logger.error(error_msg)
-                model_call_obj.status = "failed"
-                model_call_obj.error_message = error_msg
-                self.db_session.add(model_call_obj)
-                self.db_session.commit()
+                if model_call_obj.id is not None:
+                    res = writer_client.update(
+                        "ModelCall",
+                        model_call_obj.id,
+                        {"status": "failed", "error_message": error_msg},
+                        wait=True,
+                    )
+                    if not res or not res.success:
+                        raise RuntimeError(
+                            getattr(res, "error", "Failed to update ModelCall")
+                        )
+                    # Update local object to reflect database state
+                    model_call_obj.status = "failed"
+                    model_call_obj.error_message = error_msg
                 return None
 
         # Prepare completion arguments
@@ -613,69 +685,29 @@ class AdClassifier:
         last_seq_num: int,
         user_prompt_str: str,
     ) -> Optional[ModelCall]:
-        """Get an existing ModelCall or create a new one."""
+        """Get an existing ModelCall or create a new one via writer."""
         model = self.config.llm_model
-        model_call: Optional[ModelCall] = (
-            self.model_call_query.filter_by(
-                post_id=post.id,
-                model_name=model,
-                first_segment_sequence_num=first_seq_num,
-                last_segment_sequence_num=last_seq_num,
-            )
-            .order_by(ModelCall.timestamp.desc())
-            .first()
+        result = writer_client.action(
+            "upsert_model_call",
+            {
+                "post_id": post.id,
+                "model_name": model,
+                "first_segment_sequence_num": first_seq_num,
+                "last_segment_sequence_num": last_seq_num,
+                "prompt": user_prompt_str,
+            },
+            wait=True,
         )
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Failed to upsert ModelCall"))
 
-        if model_call:
-            self.logger.info(
-                f"Found existing ModelCall {model_call.id} (status: {model_call.status}) for post {post.id}, segments {first_seq_num}-{last_seq_num}."
-            )
-            if model_call.status in ["pending", "failed_retries"]:
-                model_call.status = "pending"
-                model_call.prompt = user_prompt_str
-                model_call.retry_attempts = 0
-                model_call.error_message = None
-                model_call.response = None
-        else:
-            self.logger.info(
-                f"Creating new ModelCall for post {post.id}, segments {first_seq_num}-{last_seq_num}, model {model}."
-            )
-            model_call = ModelCall(
-                post_id=post.id,
-                first_segment_sequence_num=first_seq_num,
-                last_segment_sequence_num=last_seq_num,
-                model_name=model,
-                prompt=user_prompt_str,
-                status="pending",
-            )
-            try:
-                self.db_session.add(model_call)
-                self.db_session.commit()
-            except IntegrityError:
-                # Someone else created the same unique row concurrently; fetch and reuse
-                self.db_session.rollback()
-                model_call = (
-                    self.model_call_query.filter_by(
-                        post_id=post.id,
-                        model_name=model,
-                        first_segment_sequence_num=first_seq_num,
-                        last_segment_sequence_num=last_seq_num,
-                    )
-                    .order_by(ModelCall.timestamp.desc())
-                    .first()
-                )
-                if not model_call:
-                    raise
-                # If found, update prompt/status to pending for retry
-                model_call.status = "pending"
-                model_call.prompt = user_prompt_str
-                model_call.retry_attempts = 0
-                model_call.error_message = None
-                model_call.response = None
+        model_call_id = (result.data or {}).get("model_call_id")
+        if model_call_id is None:
+            raise RuntimeError("Writer did not return model_call_id")
 
-        # If we got here without creating, ensure commit for any field updates
-        if self.db_session.is_active:
-            self.db_session.commit()
+        model_call = self.db_session.get(ModelCall, int(model_call_id))
+        if model_call is None:
+            raise RuntimeError(f"ModelCall {model_call_id} not found after upsert")
         return model_call
 
     def _should_call_llm(self, model_call: ModelCall) -> bool:
@@ -701,12 +733,24 @@ class AdClassifier:
     def _handle_test_mode_call(self, model_call: ModelCall) -> None:
         """Handle LLM call in test mode."""
         self.logger.info("Test mode: Simulating successful LLM call for classify.")
-        model_call.response = AdSegmentPredictionList(ad_segments=[]).model_dump_json()
+        test_response = AdSegmentPredictionList(ad_segments=[]).model_dump_json()
+        res = writer_client.update(
+            "ModelCall",
+            model_call.id,
+            {
+                "response": test_response,
+                "status": "success",
+                "error_message": None,
+                "retry_attempts": 1,
+            },
+            wait=True,
+        )
+        if not res or not res.success:
+            raise RuntimeError(getattr(res, "error", "Failed to update ModelCall"))
+        # Update local object to reflect database state
         model_call.status = "success"
+        model_call.response = test_response
         model_call.error_message = None
-        model_call.retry_attempts = 1
-        self.db_session.add(model_call)
-        self.db_session.commit()
 
     def _process_successful_response(
         self,
@@ -732,7 +776,6 @@ class AdClassifier:
                 self.logger.info(
                     f"Created {created_identification_count} new Identification records for ModelCall {model_call.id}."
                 )
-            self.db_session.commit()
             return matched_segments
         except (ValidationError, AssertionError) as e:
             self.logger.error(
@@ -749,12 +792,18 @@ class AdClassifier:
         model_call: ModelCall,
     ) -> Tuple[int, List[TranscriptSegment]]:
         """Create Identification records from the prediction list."""
-        created_count = 0
+        to_insert: List[Dict[str, Any]] = []
         matched_segments: List[TranscriptSegment] = []
         processed_segment_ids: Set[int] = set()
+        content_type = prediction_list.content_type
 
         for pred in prediction_list.ad_segments:
-            if pred.confidence < self.config.output.min_confidence:
+            adjusted_confidence = self._adjust_confidence(
+                base_confidence=pred.confidence,
+                content_type=content_type,
+            )
+
+            if adjusted_confidence < self.config.output.min_confidence:
                 self.logger.info(
                     f"Ad prediction offset {pred.segment_offset:.2f} for post {model_call.post_id} ignored due to low confidence: {pred.confidence:.2f} (min: {self.config.output.min_confidence})"
                 )
@@ -785,16 +834,100 @@ class AdClassifier:
                 )
                 continue
 
-            identification = Identification(
-                transcript_segment_id=matched_segment.id,
-                model_call_id=model_call.id,
-                label="ad",
-                confidence=pred.confidence,
+            to_insert.append(
+                {
+                    "transcript_segment_id": matched_segment.id,
+                    "model_call_id": model_call.id,
+                    "label": "ad",
+                    "confidence": adjusted_confidence,
+                }
             )
-            self.db_session.add(identification)
-            created_count += 1
 
-        return created_count, matched_segments
+            self._maybe_add_preroll_context(
+                matched_segment=matched_segment,
+                current_chunk_db_segments=current_chunk_db_segments,
+                model_call=model_call,
+                processed_segment_ids=processed_segment_ids,
+                matched_segments=matched_segments,
+                base_confidence=adjusted_confidence,
+                to_insert=to_insert,
+            )
+
+        if not to_insert:
+            return 0, matched_segments
+
+        res = writer_client.action(
+            "insert_identifications",
+            {"identifications": to_insert},
+            wait=True,
+        )
+        if not res or not res.success:
+            raise RuntimeError(
+                getattr(res, "error", "Failed to insert identifications")
+            )
+
+        inserted = int((res.data or {}).get("inserted") or 0)
+        return inserted, matched_segments
+
+    def _adjust_confidence(
+        self, *, base_confidence: float, content_type: Optional[str]
+    ) -> float:
+        """Demote confidence for self-promo/educational contexts."""
+        if not content_type:
+            return base_confidence
+
+        if content_type in {"educational/self_promo", "technical_discussion"}:
+            return max(0.0, base_confidence - 0.25)
+        if content_type == "transition":
+            return max(0.0, base_confidence - 0.1)
+        return base_confidence
+
+    def _maybe_add_preroll_context(
+        self,
+        *,
+        matched_segment: TranscriptSegment,
+        current_chunk_db_segments: List[TranscriptSegment],
+        model_call: ModelCall,
+        processed_segment_ids: Set[int],
+        matched_segments: List[TranscriptSegment],
+        base_confidence: float,
+        to_insert: List[Dict[str, Any]],
+    ) -> int:
+        """If an ad is detected within the first 45s, include up to 3 preceding intro segments."""
+        if matched_segment.start_time > 45.0:
+            return 0
+
+        created = 0
+        matched_index = current_chunk_db_segments.index(matched_segment)
+        start_index = max(0, matched_index - 3)
+        for seg in current_chunk_db_segments[start_index:matched_index]:
+            if seg.id in processed_segment_ids:
+                continue
+            if self._segment_has_ad_identification(seg.id):
+                continue
+
+            processed_segment_ids.add(seg.id)
+            matched_segments.append(seg)
+            to_insert.append(
+                {
+                    "transcript_segment_id": seg.id,
+                    "model_call_id": model_call.id,
+                    "label": "ad",
+                    "confidence": max(
+                        base_confidence, self.config.output.min_confidence
+                    ),
+                }
+            )
+            created += 1
+
+        if created:
+            self.logger.debug(
+                "Pre-roll look-back added %s intro segments before %s (post %s)",
+                created,
+                matched_segment.sequence_num,
+                model_call.post_id,
+            )
+        return created
 
     def _find_matching_segment(
         self,
@@ -813,12 +946,17 @@ class AdClassifier:
         return matched_segment
 
     def _segment_has_ad_identification(self, transcript_segment_id: int) -> bool:
-        """Check if a transcript segment already has an ad identification."""
+        """Check if a transcript segment already has an ad identification.
+
+        NOTE: Uses self.db_session.query() for session consistency.
+        """
         return (
-            self.identification_query.filter_by(
+            self.db_session.query(Identification)
+            .filter_by(
                 transcript_segment_id=transcript_segment_id,
                 label="ad",
-            ).first()
+            )
+            .first()
             is not None
         )
 
@@ -861,7 +999,7 @@ class AdClassifier:
         )
 
         for attempt in range(retry_count):
-            model_call_obj.retry_attempts = original_retry_attempts + attempt + 1
+            retry_attempts_value = original_retry_attempts + attempt + 1
             current_attempt_num = attempt + 1
 
             self.logger.info(
@@ -869,8 +1007,18 @@ class AdClassifier:
             )
 
             try:
-                if model_call_obj.status != "pending":
-                    model_call_obj.status = "pending"
+                # Persist retry attempt + pending status via writer
+                if model_call_obj.id is not None:
+                    pending_res = writer_client.update(
+                        "ModelCall",
+                        model_call_obj.id,
+                        {"status": "pending", "retry_attempts": retry_attempts_value},
+                        wait=True,
+                    )
+                    if not pending_res or not pending_res.success:
+                        raise RuntimeError(
+                            getattr(pending_res, "error", "Failed to update ModelCall")
+                        )
 
                 # Prepare API call and validate token limits
                 completion_args = self._prepare_api_call(model_call_obj, system_prompt)
@@ -890,11 +1038,25 @@ class AdClassifier:
                 assert content is not None
                 raw_response_content = content
 
-                model_call_obj.response = raw_response_content
+                success_res = writer_client.update(
+                    "ModelCall",
+                    model_call_obj.id,
+                    {
+                        "response": raw_response_content,
+                        "status": "success",
+                        "error_message": None,
+                        "retry_attempts": retry_attempts_value,
+                    },
+                    wait=True,
+                )
+                if not success_res or not success_res.success:
+                    raise RuntimeError(
+                        getattr(success_res, "error", "Failed to update ModelCall")
+                    )
+                # Update local object to reflect database state
                 model_call_obj.status = "success"
+                model_call_obj.response = raw_response_content
                 model_call_obj.error_message = None
-                self.db_session.add(model_call_obj)
-                self.db_session.commit()
                 self.logger.info(
                     f"Model call {model_call_obj.id} successful on attempt {current_attempt_num}."
                 )
@@ -915,10 +1077,19 @@ class AdClassifier:
                         f"Non-retryable LLM error for ModelCall {model_call_obj.id} (attempt {current_attempt_num}): {e}",
                         exc_info=True,
                     )
+                    fail_res = writer_client.update(
+                        "ModelCall",
+                        model_call_obj.id,
+                        {"status": "failed_permanent", "error_message": str(e)},
+                        wait=True,
+                    )
+                    if not fail_res or not fail_res.success:
+                        raise RuntimeError(
+                            getattr(fail_res, "error", "Failed to update ModelCall")
+                        ) from e
+                    # Update local object to reflect database state
                     model_call_obj.status = "failed_permanent"
                     model_call_obj.error_message = str(e)
-                    self.db_session.add(model_call_obj)
-                    self.db_session.commit()
                     raise  # Re-raise non-retryable exceptions immediately
 
         # If we get here, all retries were exhausted
@@ -942,9 +1113,16 @@ class AdClassifier:
         self.logger.error(
             f"LLM retryable error for ModelCall {model_call_obj.id} (attempt {current_attempt_num}): {error}"
         )
+        res = writer_client.update(
+            "ModelCall",
+            model_call_obj.id,
+            {"error_message": str(error)},
+            wait=True,
+        )
+        if not res or not res.success:
+            raise RuntimeError(getattr(res, "error", "Failed to update ModelCall"))
+        # Update local object to reflect database state
         model_call_obj.error_message = str(error)
-        self.db_session.add(model_call_obj)
-        self.db_session.commit()
 
         # Use longer backoff for rate limiting errors
         error_str = str(error).lower()
@@ -976,10 +1154,289 @@ class AdClassifier:
         self.logger.error(
             f"Failed to call model for ModelCall {model_call_obj.id} after {max_retries} attempts."
         )
-        model_call_obj.status = "failed_retries"
         if last_error:
-            model_call_obj.error_message = str(last_error)
+            error_message = str(last_error)
         else:
-            model_call_obj.error_message = f"Maximum retries ({max_retries}) exceeded without a specific InternalServerError."
-        self.db_session.add(model_call_obj)
-        self.db_session.commit()
+            error_message = f"Maximum retries ({max_retries}) exceeded without a specific InternalServerError."
+
+        res = writer_client.update(
+            "ModelCall",
+            model_call_obj.id,
+            {"status": "failed_retries", "error_message": error_message},
+            wait=True,
+        )
+        if not res or not res.success:
+            raise RuntimeError(getattr(res, "error", "Failed to update ModelCall"))
+        # Update local object to reflect database state
+        model_call_obj.status = "failed_retries"
+        model_call_obj.error_message = error_message
+
+    def _get_segments_bulk(
+        self, post_id: int, sequence_numbers: List[int]
+    ) -> Dict[int, TranscriptSegment]:
+        """Fetch multiple segments in one query.
+
+        NOTE: Must use self.db_session.query() instead of TranscriptSegment.query
+        to ensure we use the same session. Using TranscriptSegment.query
+        (the Flask-SQLAlchemy scoped session) can lead to SQLite lock issues
+        when another query on self.db_session is mid-transaction.
+        """
+        segments = (
+            self.db_session.query(TranscriptSegment)
+            .filter(
+                and_(
+                    TranscriptSegment.post_id == post_id,
+                    TranscriptSegment.sequence_num.in_(sequence_numbers),
+                )
+            )
+            .all()
+        )
+        return {seg.sequence_num: seg for seg in segments}
+
+    def _get_existing_ids_bulk(
+        self, post_id: int, model_call_id: int
+    ) -> Set[Tuple[int, int, str]]:
+        """Fetch all existing identifications as a set for O(1) lookup.
+
+        NOTE: Uses self.db_session.query() for session consistency.
+        """
+        ids = (
+            self.db_session.query(Identification)
+            .join(TranscriptSegment)
+            .filter(
+                and_(
+                    TranscriptSegment.post_id == post_id,
+                    Identification.model_call_id == model_call_id,
+                )
+            )
+            .all()
+        )
+        return {(i.transcript_segment_id, i.model_call_id, i.label) for i in ids}
+
+    def _create_identifications_bulk(
+        self, identifications: List[Dict[str, Any]]
+    ) -> int:
+        """Bulk insert identifications"""
+        if not identifications:
+            return 0
+        res = writer_client.action(
+            "insert_identifications",
+            {"identifications": identifications},
+            wait=True,
+        )
+        if not res or not res.success:
+            raise RuntimeError(
+                getattr(res, "error", "Failed to insert identifications")
+            )
+        return int((res.data or {}).get("inserted") or 0)
+
+    def expand_neighbors_bulk(
+        self,
+        ad_identifications: List[Identification],
+        model_call: ModelCall,
+        post_id: int,
+        window: int = 5,
+    ) -> int:
+        """Expand neighbors using bulk operations (3 queries instead of 900)"""
+
+        # PHASE 1: Bulk data collection (2 queries)
+
+        # Collect all sequence numbers we need
+        sequence_numbers = set()
+        for ident in ad_identifications:
+            base_seq = ident.transcript_segment.sequence_num
+            for offset in range(-window, window + 1):
+                sequence_numbers.add(base_seq + offset)
+
+        # Query 1: Bulk fetch segments
+        segments_by_seq = self._get_segments_bulk(post_id, list(sequence_numbers))
+
+        # Query 2: Bulk fetch existing identifications
+        existing = self._get_existing_ids_bulk(post_id, model_call.id)
+
+        # PHASE 2: In-memory processing (0 queries)
+
+        to_create = []
+        for ident in ad_identifications:
+            base_seq = ident.transcript_segment.sequence_num
+
+            for offset in range(-window, window + 1):
+                if offset == 0:
+                    continue
+
+                neighbor_seq = base_seq + offset
+                seg = segments_by_seq.get(neighbor_seq)
+                if not seg:
+                    continue
+
+                # Check if already exists (O(1) lookup)
+                key = (seg.id, model_call.id, "ad")
+                if key in existing:
+                    continue
+
+                text = seg.text or ""
+                signals = self.cue_detector.analyze(text)
+                has_strong_cue = (
+                    signals["url"]
+                    or signals["promo"]
+                    or signals["phone"]
+                    or signals["cta"]
+                )
+                is_transition = signals["transition"]
+                is_self_promo = signals["self_promo"]
+
+                gap_seconds = abs(
+                    (seg.start_time or 0.0)
+                    - (ident.transcript_segment.start_time or 0.0)
+                )
+
+                if not (has_strong_cue or is_transition):
+                    if gap_seconds > 10.0:
+                        continue
+
+                confidence = 0.72 if is_transition else 0.75
+                if has_strong_cue:
+                    confidence = 0.85 if gap_seconds <= 10.0 else 0.8
+                if is_self_promo:
+                    confidence = max(0.5, confidence - 0.25)
+
+                to_create.append(
+                    {
+                        "transcript_segment_id": seg.id,
+                        "model_call_id": model_call.id,
+                        "label": "ad",
+                        "confidence": confidence,
+                    }
+                )
+                existing.add(key)  # Avoid duplicates in this batch
+
+        # PHASE 3: Bulk insert (1 query)
+
+        if to_create:
+            return self._create_identifications_bulk(to_create)
+        return 0
+
+    def _refine_boundaries(
+        self, transcript_segments: List[TranscriptSegment], post: Post
+    ) -> None:
+        """Apply boundary refinement to detected ads.
+
+        NOTE: Uses self.db_session.query() for session consistency.
+        """
+        if not self.boundary_refiner:
+            return
+
+        # Get ad identifications
+        identifications = (
+            self.db_session.query(Identification)
+            .join(TranscriptSegment)
+            .filter(TranscriptSegment.post_id == post.id, Identification.label == "ad")
+            .all()
+        )
+
+        # Group into ad blocks
+        ad_blocks = self._group_into_blocks(identifications)
+
+        for block in ad_blocks:
+            # Skip low confidence or very short blocks
+            if block["confidence"] < 0.6 or (block["end"] - block["start"]) < 15.0:
+                continue
+
+            # Refine
+            refinement = self.boundary_refiner.refine(
+                ad_start=block["start"],
+                ad_end=block["end"],
+                confidence=block["confidence"],
+                all_segments=[
+                    {"start_time": s.start_time, "text": s.text, "end_time": s.end_time}
+                    for s in transcript_segments
+                ],
+            )
+
+            # Apply refinement: delete old identifications, create new ones
+            # Note: Get model_call from block identifications
+            model_call = (
+                block["identifications"][0].model_call
+                if block["identifications"]
+                else None
+            )
+            if model_call:
+                self._apply_refinement(
+                    block, refinement, transcript_segments, post, model_call
+                )
+
+    def _group_into_blocks(
+        self, identifications: List[Identification]
+    ) -> List[Dict[str, Any]]:
+        """Group adjacent identifications into ad blocks"""
+        if not identifications:
+            return []
+
+        identifications = sorted(
+            identifications, key=lambda i: i.transcript_segment.start_time
+        )
+        blocks: List[Dict[str, Any]] = []
+        current: List[Identification] = []
+
+        for ident in identifications:
+            if (
+                not current
+                or ident.transcript_segment.start_time
+                - current[-1].transcript_segment.end_time
+                <= 10.0
+            ):
+                current.append(ident)
+            else:
+                blocks.append(self._create_block(current))
+                current = [ident]
+
+        if current:
+            blocks.append(self._create_block(current))
+
+        return blocks
+
+    def _create_block(self, identifications: List[Identification]) -> Dict[str, Any]:
+        return {
+            "start": min(i.transcript_segment.start_time for i in identifications),
+            "end": max(i.transcript_segment.end_time for i in identifications),
+            "confidence": sum(i.confidence for i in identifications)
+            / len(identifications),
+            "identifications": identifications,
+        }
+
+    def _apply_refinement(
+        self,
+        block: Dict[str, Any],
+        refinement: Any,
+        transcript_segments: List[TranscriptSegment],
+        post: Post,
+        model_call: ModelCall,
+    ) -> None:
+        """Update identifications based on refined boundaries"""
+        delete_ids = [
+            i.id
+            for i in block.get("identifications", [])
+            if getattr(i, "id", None) is not None
+        ]
+
+        new_identifications: List[Dict[str, Any]] = []
+        for seg in transcript_segments:
+            if refinement.refined_start <= seg.start_time <= refinement.refined_end:
+                new_identifications.append(
+                    {
+                        "transcript_segment_id": seg.id,
+                        "model_call_id": model_call.id,
+                        "label": "ad",
+                        "confidence": block["confidence"],
+                    }
+                )
+
+        res = writer_client.action(
+            "replace_identifications",
+            {"delete_ids": delete_ids, "new_identifications": new_identifications},
+            wait=True,
+        )
+        if not res or not res.success:
+            raise RuntimeError(
+                getattr(res, "error", "Failed to replace identifications")
+            )

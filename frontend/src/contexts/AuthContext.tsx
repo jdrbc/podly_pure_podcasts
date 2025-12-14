@@ -10,6 +10,7 @@ interface AuthContextValue {
   requireAuth: boolean;
   isAuthenticated: boolean;
   user: AuthUser | null;
+  landingPageEnabled: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
@@ -22,6 +23,7 @@ interface InternalState {
   status: AuthStatus;
   requireAuth: boolean;
   user: AuthUser | null;
+  landingPageEnabled: boolean;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -29,18 +31,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     status: 'loading',
     requireAuth: false,
     user: null,
+    landingPageEnabled: false,
   });
 
   const bootstrapAuth = useCallback(async () => {
     try {
       const statusResponse = await authApi.getStatus();
       const requireAuth = Boolean(statusResponse.require_auth);
+      const landingPageEnabled = Boolean(statusResponse.landing_page_enabled);
 
       if (!requireAuth) {
         setState({
           status: 'ready',
           requireAuth: false,
           user: null,
+          landingPageEnabled,
         });
         return;
       }
@@ -51,12 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           status: 'ready',
           requireAuth: true,
           user: me.user,
+          landingPageEnabled,
         });
       } catch (error) {
         setState({
           status: 'ready',
           requireAuth: true,
           user: null,
+          landingPageEnabled,
         });
       }
     } catch (error) {
@@ -65,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status: 'ready',
         requireAuth: false,
         user: null,
+        landingPageEnabled: false,
       });
     }
   }, []);
@@ -80,11 +88,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const response = await authApi.login(trimmedUsername, password);
-    setState({
+    setState((prev) => ({
       status: 'ready',
       requireAuth: true,
       user: response.user,
-    });
+      landingPageEnabled: prev.landingPageEnabled,
+    }));
   }, []);
 
   const logout = useCallback(() => {
@@ -95,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status: 'ready',
       requireAuth: prev.requireAuth,
       user: prev.requireAuth ? null : prev.user,
+      landingPageEnabled: prev.landingPageEnabled,
     }));
   }, []);
 
@@ -134,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requireAuth: state.requireAuth,
       isAuthenticated,
       user: state.user,
+      landingPageEnabled: state.landingPageEnabled,
       login,
       logout,
       changePassword,
