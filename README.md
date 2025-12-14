@@ -46,6 +46,7 @@ You have a few options to get started:
 
 | Cost    | Hosting  | Transcription | LLM    |
 |---------|----------|---------------|--------|
+| **$1 per 3 hours**| [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
 | **free**| local    | local         | local  |
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
