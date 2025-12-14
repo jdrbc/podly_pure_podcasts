@@ -170,15 +170,15 @@ class TokenRateLimiter:
 
 
 # Global rate limiter instance
-_rate_limiter: Optional[TokenRateLimiter] = None
+_RATE_LIMITER: Optional[TokenRateLimiter] = None  # pylint: disable=invalid-name
 
 
 def get_rate_limiter(tokens_per_minute: int = 30000) -> TokenRateLimiter:
     """Get or create the global rate limiter instance."""
-    global _rate_limiter  # pylint: disable=global-statement
-    if _rate_limiter is None or _rate_limiter.tokens_per_minute != tokens_per_minute:
-        _rate_limiter = TokenRateLimiter(tokens_per_minute=tokens_per_minute)
-    return _rate_limiter
+    global _RATE_LIMITER  # pylint: disable=global-statement
+    if _RATE_LIMITER is None or _RATE_LIMITER.tokens_per_minute != tokens_per_minute:
+        _RATE_LIMITER = TokenRateLimiter(tokens_per_minute=tokens_per_minute)
+    return _RATE_LIMITER
 
 
 def configure_rate_limiter_for_model(model: str) -> TokenRateLimiter:

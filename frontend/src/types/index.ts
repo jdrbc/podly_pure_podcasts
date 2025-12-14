@@ -136,6 +136,7 @@ export interface AppConfigUI {
   post_cleanup_retention_days: number | null;
   number_of_episodes_to_whitelist_from_archive_of_new_feed: number;
   enable_public_landing_page: boolean;
+  user_limit_total: number | null;
 }
 
 export interface CombinedConfig {
@@ -196,4 +197,12 @@ export interface BillingSummary {
   stripe_customer_id?: string | null;
   price_id?: string | null;
   message?: string;
+}
+
+export interface LandingStatus {
+  require_auth: boolean;
+  landing_page_enabled: boolean;
+  user_count: number;
+  user_limit_total: number | null;
+  slots_remaining: number | null;
 }

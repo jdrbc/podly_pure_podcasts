@@ -4,11 +4,28 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { authApi } from '../../../services/api';
 import { useAuth } from '../../../contexts/AuthContext';
-import { Section, Field } from '../shared';
+import { useConfigContext } from '../ConfigContext';
+import { Section, Field, SaveButton } from '../shared';
 import type { ManagedUser } from '../../../types';
 
 export default function UserManagementTab() {
   const { changePassword, refreshUser, user, logout } = useAuth();
+  const { pending, setField, handleSave, isSaving } = useConfigContext();
+
+  const {
+    data: managedUsers,
+    isLoading: usersLoading,
+    refetch: refetchUsers,
+  } = useQuery<ManagedUser[]>({
+    queryKey: ['auth-users'],
+    queryFn: async () => {
+      const response = await authApi.listUsers();
+      return response.users;
+    },
+  });
+
+  const totalUsers = useMemo(() => managedUsers?.length ?? 0, [managedUsers]);
+  const limitValue = pending?.app?.user_limit_total ?? null;
 
   return (
     <div className="space-y-6">
@@ -16,10 +33,28 @@ export default function UserManagementTab() {
         changePassword={changePassword}
         refreshUser={refreshUser}
       />
+      {pending && (
+        <UserLimitSection
+          currentUsers={totalUsers}
+          userLimit={limitValue}
+          onChangeLimit={(value) =>
+            setField(
+              ['app', 'user_limit_total'],
+              value === '' ? null : Number(value)
+            )
+          }
+          onSave={handleSave}
+          isSaving={isSaving}
+          isLoadingUsers={usersLoading}
+        />
+      )}
       <UserManagementSection
         currentUser={user}
         refreshUser={refreshUser}
         logout={logout}
+        managedUsers={managedUsers}
+        usersLoading={usersLoading}
+        refetchUsers={refetchUsers}
       />
     </div>
   );
@@ -112,30 +147,70 @@ function AccountSecuritySection({ changePassword, refreshUser }: AccountSecurity
   );
 }
 
+// --- User Limit Section ---
+interface UserLimitSectionProps {
+  currentUsers: number;
+  userLimit: number | null;
+  onChangeLimit: (value: string) => void;
+  onSave: () => void;
+  isSaving: boolean;
+  isLoadingUsers: boolean;
+}
+
+function UserLimitSection({ currentUsers, userLimit, onChangeLimit, onSave, isSaving, isLoadingUsers }: UserLimitSectionProps) {
+  return (
+    <Section title="User Limits">
+      <div className="grid gap-3 md:grid-cols-2 md:items-end">
+        <Field label="Total users allowed">
+          <input
+            className="input"
+            type="number"
+            min={0}
+            value={userLimit ?? ''}
+            onChange={(event) => onChangeLimit(event.target.value)}
+            placeholder="Unlimited"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Leave blank for unlimited; set to 0 to block new user creation. Applies only when authentication is enabled.
+          </p>
+        </Field>
+        <div className="text-sm text-gray-700 space-y-1">
+          <div className="font-semibold">Current users</div>
+          <div>{isLoadingUsers ? 'Loading…' : currentUsers}</div>
+          {userLimit !== null && userLimit > 0 && currentUsers >= userLimit ? (
+            <div className="text-xs text-red-600">
+              Limit reached. New users are blocked until the total drops below {userLimit}.
+            </div>
+          ) : (
+            <div className="text-xs text-gray-500">
+              New user creation is blocked once the limit is reached.
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="mt-3">
+        <SaveButton onSave={onSave} isPending={isSaving} />
+      </div>
+      <style>{`.input{width:100%;padding:0.5rem;border:1px solid #e5e7eb;border-radius:0.375rem;font-size:0.875rem}`}</style>
+    </Section>
+  );
+}
+
 // --- User Management Section ---
 interface UserManagementProps {
   currentUser: { id: number; username: string; role: string } | null;
   refreshUser: () => Promise<void>;
   logout: () => void;
+  managedUsers: ManagedUser[] | undefined;
+  usersLoading: boolean;
+  refetchUsers: () => Promise<unknown>;
 }
 
-function UserManagementSection({ currentUser, refreshUser, logout }: UserManagementProps) {
+function UserManagementSection({ currentUser, refreshUser, logout, managedUsers, usersLoading, refetchUsers }: UserManagementProps) {
   const [newUser, setNewUser] = useState({ username: '', password: '', confirm: '', role: 'user' });
   const [activeResetUser, setActiveResetUser] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
-
-  const {
-    data: managedUsers,
-    isLoading: usersLoading,
-    refetch: refetchUsers,
-  } = useQuery<ManagedUser[]>({
-    queryKey: ['auth-users'],
-    queryFn: async () => {
-      const response = await authApi.listUsers();
-      return response.users;
-    },
-  });
 
   const sortedUsers = useMemo(() => {
     if (!managedUsers) {

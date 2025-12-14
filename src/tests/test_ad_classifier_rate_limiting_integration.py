@@ -173,7 +173,7 @@ class TestAdClassifierRateLimiting:
             # Clear singleton before each test case
             import podcast_processor.token_rate_limiter as trl_module
 
-            trl_module._rate_limiter = None
+            trl_module._RATE_LIMITER = None
 
             config = create_test_config(llm_model=model_name)
 

@@ -484,6 +484,7 @@ class AppSettings(db.Model):  # type: ignore[name-defined, misc]
         nullable=False,
         default=DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
     )
+    user_limit_total = db.Column(db.Integer, nullable=True)
 
     # Hash of the environment variables used to seed configuration.
     # Used to detect changes in environment variables between restarts.

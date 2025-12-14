@@ -6,7 +6,7 @@ from flask import Blueprint, send_from_directory
 
 from app.auth.guards import require_admin
 from app.extensions import db
-from app.models import Feed, Post
+from app.models import Feed, Post, User
 from app.runtime_config import config
 from app.writer.client import writer_client
 
@@ -28,6 +28,54 @@ def index() -> flask.Response:
     feeds = Feed.query.all()
     return flask.make_response(
         flask.render_template("index.html", feeds=feeds, config=config), 200
+    )
+
+
+@main_bp.route("/api/landing/status", methods=["GET"])
+def landing_status() -> flask.Response:
+    """Public landing-page status with user counts and limits.
+
+    Intended for the unauthenticated landing page; returns current user count
+    and configured total limit (if any) so the UI can show remaining slots.
+    """
+
+    require_auth = False
+    landing_enabled = False
+
+    try:
+        settings = flask.current_app.config.get("AUTH_SETTINGS")
+        require_auth = bool(settings and settings.require_auth)
+    except Exception:  # pragma: no cover - defensive
+        require_auth = False
+
+    try:
+        landing_enabled = bool(getattr(config, "enable_public_landing_page", False))
+    except Exception:  # pragma: no cover - defensive
+        landing_enabled = False
+
+    try:
+        user_count = int(User.query.count())
+    except Exception:  # pragma: no cover - defensive
+        user_count = 0
+
+    limit_raw = getattr(config, "user_limit_total", None)
+    try:
+        user_limit_total = int(limit_raw) if limit_raw is not None else None
+    except Exception:  # pragma: no cover - defensive
+        user_limit_total = None
+
+    slots_remaining = None
+    if user_limit_total is not None:
+        slots_remaining = max(user_limit_total - user_count, 0)
+
+    return flask.jsonify(
+        {
+            "require_auth": require_auth,
+            "landing_page_enabled": landing_enabled,
+            "user_count": user_count,
+            "user_limit_total": user_limit_total,
+            "slots_remaining": slots_remaining,
+        }
     )
 
 

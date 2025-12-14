@@ -6,6 +6,7 @@ from typing import Sequence, cast
 
 from app.extensions import db
 from app.models import User
+from app.runtime_config import config as runtime_config
 from app.writer.client import writer_client
 
 logger = logging.getLogger("global_logger")
@@ -29,6 +30,10 @@ class DuplicateUserError(AuthServiceError):
 
 class LastAdminRemovalError(AuthServiceError):
     """Raised when deleting or demoting the final admin user."""
+
+
+class UserLimitExceededError(AuthServiceError):
+    """Raised when creating a user would exceed the configured limit."""
 
 
 ALLOWED_ROLES: set[str] = {"admin", "user"}
@@ -71,6 +76,8 @@ def create_user(username: str, password: str, role: str = "user") -> User:
 
     if User.query.filter_by(username=normalized_username).first():
         raise DuplicateUserError("A user with that username already exists.")
+
+    _enforce_user_limit()
 
     result = writer_client.action(
         "create_user",
@@ -131,3 +138,33 @@ def set_role(user: User, role: str) -> None:
 
 def _count_admins() -> int:
     return cast(int, User.query.filter_by(role="admin").count())
+
+
+def _enforce_user_limit() -> None:
+    """Prevent creating users beyond the configured total limit.
+
+    Limit applies only when authentication is enabled; a non-positive or
+    missing limit means unlimited users.
+    """
+
+    try:
+        limit = getattr(runtime_config, "user_limit_total", None)
+    except Exception:  # pragma: no cover - defensive
+        limit = None
+
+    if limit is None:
+        return
+
+    try:
+        limit_int = int(limit)
+    except Exception:
+        return
+
+    if limit_int < 0:
+        return
+
+    current_total = cast(int, User.query.count())
+    if limit_int == 0 or current_total >= limit_int:
+        raise UserLimitExceededError(
+            f"User limit reached ({current_total}/{limit_int}). Delete a user or increase the limit."
+        )

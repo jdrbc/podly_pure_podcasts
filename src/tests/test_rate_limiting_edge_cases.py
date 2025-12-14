@@ -234,7 +234,7 @@ class TestRateLimitingEdgeCases:
             # Clear singleton to ensure fresh test
             import podcast_processor.token_rate_limiter as trl_module
 
-            trl_module._rate_limiter = None
+            trl_module._RATE_LIMITER = None
 
             # Only the exact lowercase match should work due to current implementation
             limiter = configure_rate_limiter_for_model(model_name)

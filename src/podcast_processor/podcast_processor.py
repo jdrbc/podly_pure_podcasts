@@ -1,6 +1,8 @@
 import logging
 import os
+import shutil
 import threading
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import litellm
@@ -175,6 +177,17 @@ class PodcastProcessor:
                     job, "completed", 4, "Processing complete", 100.0
                 )
                 return str(post.processed_audio_path)
+
+            simulated_path = self._simulate_developer_processing(
+                post,
+                job,
+                cached_post_guid,
+                cached_post_title,
+                cached_feed_title,
+                cached_job_id,
+            )
+            if simulated_path:
+                return simulated_path
 
             # Step 1: Download (if needed)
             self._handle_download_step(
@@ -398,6 +411,82 @@ class PodcastProcessor:
             user_prompt_template=user_prompt_template,
             post=post,
         )
+
+    def _simulate_developer_processing(
+        self,
+        post: Post,
+        job: ProcessingJob,
+        post_guid: str,
+        post_title: str,
+        feed_title: str,
+        job_id: str,
+    ) -> Optional[str]:
+        """Short-circuit processing for developer-mode test feeds.
+
+        When developer mode is enabled and a post comes from a synthetic test feed
+        (download_url contains "test-feed"), skip the full pipeline and copy a
+        tiny bundled MP3 into the expected processed/unprocessed locations. This
+        keeps the UI happy without relying on external downloads or LLM calls.
+        """
+
+        download_url = (post.download_url or "").lower()
+        is_test_feed = "test-feed" in download_url or post_guid.startswith("test-guid")
+        if not (self.config.developer_mode or is_test_feed):
+            return None
+
+        sample_audio = (
+            Path(__file__).resolve().parent.parent / "tests" / "data" / "count_0_99.mp3"
+        )
+        if not sample_audio.exists():
+            self.status_manager.update_job_status(
+                job,
+                "failed",
+                job.current_step or 0,
+                "Developer sample audio missing",
+            )
+            raise ProcessorException("Developer sample audio missing")
+
+        self.status_manager.update_job_status(
+            job,
+            "running",
+            1,
+            "Simulating processing (developer mode)",
+            25.0,
+        )
+
+        unprocessed_path = get_job_unprocessed_path(post_guid, job_id, post_title)
+        unprocessed_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(sample_audio, unprocessed_path)
+
+        processed_path = (
+            get_srv_root()
+            / sanitize_title(feed_title)
+            / f"{sanitize_title(post_title)}.mp3"
+        )
+        processed_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(sample_audio, processed_path)
+
+        result = writer_client.update(
+            "Post",
+            post.id,
+            {
+                "unprocessed_audio_path": str(unprocessed_path),
+                "processed_audio_path": str(processed_path),
+            },
+            wait=True,
+        )
+        if not result or not result.success:
+            raise RuntimeError(getattr(result, "error", "Failed to update post"))
+
+        self.status_manager.update_job_status(
+            job,
+            "completed",
+            4,
+            "Processing complete (developer mode)",
+            100.0,
+        )
+
+        return str(processed_path)
 
     def _handle_download_step(
         self,

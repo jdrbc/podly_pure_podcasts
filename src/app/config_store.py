@@ -156,6 +156,7 @@ def ensure_defaults() -> None:
             "post_cleanup_retention_days": DEFAULTS.APP_POST_CLEANUP_RETENTION_DAYS,
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
             "enable_public_landing_page": DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
+            "user_limit_total": DEFAULTS.APP_USER_LIMIT_TOTAL,
         },
     )
 
@@ -464,6 +465,7 @@ def read_combined() -> Dict[str, Any]:
             "post_cleanup_retention_days": app_s.post_cleanup_retention_days,
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": app_s.number_of_episodes_to_whitelist_from_archive_of_new_feed,
             "enable_public_landing_page": app_s.enable_public_landing_page,
+            "user_limit_total": app_s.user_limit_total,
         },
     }
 
@@ -594,6 +596,7 @@ def _update_section_app(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[i
         "post_cleanup_retention_days",
         "number_of_episodes_to_whitelist_from_archive_of_new_feed",
         "enable_public_landing_page",
+        "user_limit_total",
     ]:
         if key in data:
             setattr(row, key, data[key])
@@ -761,6 +764,9 @@ def to_pydantic_config() -> PydanticConfig:
                 "enable_public_landing_page",
                 DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
             )
+        ),
+        user_limit_total=data["app"].get(
+            "user_limit_total", DEFAULTS.APP_USER_LIMIT_TOTAL
         ),
     )
 

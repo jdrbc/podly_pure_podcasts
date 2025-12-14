@@ -25,6 +25,7 @@ _PUBLIC_PATHS: set[str] = {
     "/api/auth/discord/status",
     "/api/auth/discord/login",
     "/api/auth/discord/callback",
+    "/api/landing/status",
 }
 
 _PUBLIC_PREFIXES: tuple[str, ...] = (
@@ -60,7 +61,7 @@ _TOKEN_PROTECTED_PATTERNS: tuple[re.Pattern[str], ...] = (
 def init_auth_middleware(app: Any) -> None:
     """Attach the authentication guard to the Flask app."""
 
-    @app.before_request  # type: ignore[misc]
+    @app.before_request  # type: ignore[untyped-decorator]
     def enforce_authentication() -> Response | None:
         # pylint: disable=too-many-return-statements
         if request.method == "OPTIONS":

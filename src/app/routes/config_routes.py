@@ -202,6 +202,9 @@ def _hydrate_app_config(data: Dict[str, Any]) -> None:
         "enable_public_landing_page",
         app_cfg.get("enable_public_landing_page"),
     )
+    app_cfg["user_limit_total"] = getattr(
+        runtime_config, "user_limit_total", app_cfg.get("user_limit_total")
+    )
 
 
 def _first_env(env_names: list[str]) -> tuple[str | None, str | None]:

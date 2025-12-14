@@ -12,6 +12,7 @@ import type {
   PodcastSearchResult,
   ConfigResponse,
   BillingSummary,
+  LandingStatus,
 } from '../types';
 
 const API_BASE_URL = '';
@@ -423,6 +424,13 @@ export const authApi = {
 
   deleteUser: async (username: string): Promise<{ status: string }> => {
     const response = await api.delete(`/api/auth/users/${username}`);
+    return response.data;
+  },
+};
+
+export const landingApi = {
+  getStatus: async (): Promise<LandingStatus> => {
+    const response = await api.get('/api/landing/status');
     return response.data;
   },
 };
