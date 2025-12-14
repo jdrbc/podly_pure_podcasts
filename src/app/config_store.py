@@ -689,7 +689,8 @@ def to_pydantic_config() -> PydanticConfig:
     elif wtype == "remote":
         whisper_obj = RemoteWhisperConfig(
             model=w.get("model", "whisper-1"),
-            api_key=w.get("api_key"),
+            # Allow boot without a remote API key so the UI can be used to set it
+            api_key=w.get("api_key") or "",
             base_url=w.get("base_url", "https://api.openai.com/v1"),
             language=w.get("language", "en"),
             timeout_sec=w.get("timeout_sec", 600),
@@ -697,7 +698,8 @@ def to_pydantic_config() -> PydanticConfig:
         )
     elif wtype == "groq":
         whisper_obj = GroqWhisperConfig(
-            api_key=w.get("api_key"),
+            # Allow boot without a Groq API key so the UI can be used to set it
+            api_key=w.get("api_key") or "",
             model=w.get("model", DEFAULTS.WHISPER_GROQ_MODEL),
             language=w.get("language", "en"),
             max_retries=w.get("max_retries", 3),
