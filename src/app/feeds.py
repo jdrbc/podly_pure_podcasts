@@ -10,7 +10,7 @@ import PyRSS2Gen  # type: ignore[import-untyped]
 from flask import current_app, g, request
 
 from app.extensions import db
-from app.models import Feed, Post, User
+from app.models import Feed, Post, User, UserFeed
 from app.runtime_config import config
 from app.writer.client import writer_client
 from podcast_processor.podcast_downloader import find_audio_link
@@ -251,7 +251,7 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
         raise e
 
 
-def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
+def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem:
     """
     Given a post, return the corresponding RSS item. Reference:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
@@ -267,8 +267,12 @@ def feed_item(post: Post) -> PyRSS2Gen.RSSItem:
         f'{post.description}\n<p><a href="{post_details_url}">Podly Post Page</a></p>'
     )
 
+    title = post.title
+    if prepend_feed_title and post.feed:
+        title = f"[{post.feed.title}] {title}"
+
     item = PyRSS2Gen.RSSItem(
-        title=post.title,
+        title=title,
         enclosure=PyRSS2Gen.Enclosure(
             url=audio_url,
             type="audio/mpeg",
@@ -301,6 +305,58 @@ def generate_feed_xml(feed: Feed) -> Any:
     )
     logger.info(f"XML generated for feed with ID: {feed.id}")
     return rss_feed.to_xml("utf-8")
+
+
+def generate_aggregate_feed_xml(user: User) -> Any:
+    """Generate RSS XML for a user's aggregate feed (last 3 processed posts per feed)."""
+    logger.info(f"Generating aggregate feed XML for user: {user.username}")
+
+    posts = get_user_aggregate_posts(user.id)
+    items = [feed_item(post, prepend_feed_title=True) for post in posts]
+
+    base_url = _get_base_url()
+    link = _append_feed_token_params(f"{base_url}/feed/user/{user.id}")
+
+    last_build_date = format_datetime(datetime.datetime.now(datetime.timezone.utc))
+
+    rss_feed = PyRSS2Gen.RSS2(
+        title=f"[podly] Aggregate - {user.username}",
+        link=link,
+        description=f"Aggregate feed for {user.username} - Last 3 processed episodes from each subscribed feed.",
+        lastBuildDate=last_build_date,
+        items=items,
+    )
+    logger.info(f"Aggregate XML generated for user: {user.username}")
+    return rss_feed.to_xml("utf-8")
+
+
+def get_user_aggregate_posts(user_id: int, limit_per_feed: int = 3) -> list[Post]:
+    """Fetch last N processed posts from each of the user's subscribed feeds."""
+    if not current_app.config.get("REQUIRE_AUTH"):
+        feed_ids = [r[0] for r in Feed.query.with_entities(Feed.id).all()]
+    else:
+        user_feeds = UserFeed.query.filter_by(user_id=user_id).all()
+        feed_ids = [uf.feed_id for uf in user_feeds]
+
+    all_posts = []
+    for feed_id in feed_ids:
+        # Fetch last N processed posts for this feed
+        posts = (
+            Post.query.filter(
+                Post.feed_id == feed_id,
+                Post.whitelisted.is_(True),
+                Post.processed_audio_path.isnot(None),
+            )
+            .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+            .limit(limit_per_feed)
+            .all()
+        )
+        all_posts.extend(posts)
+
+    # Sort all posts by release date descending
+    all_posts.sort(key=lambda p: p.release_date or datetime.datetime.min, reverse=True)
+
+    return all_posts
 
 
 def _append_feed_token_params(url: str) -> str:

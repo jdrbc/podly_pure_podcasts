@@ -264,6 +264,19 @@ function UserManagementSection({ currentUser, refreshUser, logout, managedUsers,
     }
   };
 
+  const handleAllowanceChange = async (username: string, allowance: string) => {
+    const val = allowance === '' ? null : parseInt(allowance, 10);
+    if (val !== null && isNaN(val)) return;
+
+    try {
+      await authApi.updateUser(username, { manual_feed_allowance: val });
+      toast.success(`Updated allowance for ${username}.`);
+      await refetchUsers();
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update allowance.'));
+    }
+  };
+
   const handleResetPassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!activeResetUser) {
@@ -388,6 +401,28 @@ function UserManagementSection({ currentUser, refreshUser, logout, managedUsers,
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1" title="Override feed allowance">
+                          <span className="text-xs text-gray-500">Feed Allowance Override:</span>
+                          <input
+                            className="input text-sm w-20 py-1"
+                            type="number"
+                            min="0"
+                            placeholder="None"
+                            defaultValue={managed.manual_feed_allowance ?? ''}
+                            onBlur={(e) => {
+                              const val = e.target.value;
+                              const current = managed.manual_feed_allowance?.toString() ?? '';
+                              if (val !== current) {
+                                void handleAllowanceChange(managed.username, val);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.currentTarget.blur();
+                              }
+                            }}
+                          />
+                        </div>
                         <select
                           className="input text-sm"
                           value={managed.role}

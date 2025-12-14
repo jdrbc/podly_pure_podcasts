@@ -17,6 +17,7 @@ from app.auth.service import (
     create_user,
     delete_user,
     list_users,
+    set_manual_feed_allowance,
     set_role,
     update_password,
 )
@@ -126,13 +127,18 @@ def auth_me() -> RouteResult:
     if user is None:
         return _unauthorized_response()
 
+    # Calculate effective allowance for frontend display
+    allowance = getattr(user, "manual_feed_allowance", None)
+    if allowance is None:
+        allowance = getattr(user, "feed_allowance", 0)
+
     return jsonify(
         {
             "user": {
                 "id": user.id,
                 "username": user.username,
                 "role": user.role,
-                "feed_allowance": getattr(user, "feed_allowance", 0),
+                "feed_allowance": allowance,
                 "feed_subscription_status": getattr(
                     user, "feed_subscription_status", "inactive"
                 ),
@@ -196,6 +202,7 @@ def list_users_route() -> RouteResult:
                     "created_at": u.created_at.isoformat(),
                     "updated_at": u.updated_at.isoformat(),
                     "feed_allowance": getattr(u, "feed_allowance", 0),
+                    "manual_feed_allowance": getattr(u, "manual_feed_allowance", None),
                     "feed_subscription_status": getattr(
                         u, "feed_subscription_status", "inactive"
                     ),
@@ -271,12 +278,15 @@ def update_user_route(username: str) -> RouteResult:
     payload = request.get_json(silent=True) or {}
     role = payload.get("role")
     new_password = payload.get("password")
+    manual_feed_allowance = payload.get("manual_feed_allowance")
 
     try:
         if role is not None:
             set_role(target, role)
         if new_password:
             update_password(target, new_password)
+        if "manual_feed_allowance" in payload:
+            set_manual_feed_allowance(target, manual_feed_allowance)
         return jsonify({"status": "ok"})
     except (PasswordValidationError, LastAdminRemovalError, AuthServiceError) as exc:
         status_code = 400

@@ -68,6 +68,29 @@ def set_user_role_action(params: Dict[str, Any]) -> Dict[str, Any]:
     return {"user_id": user.id}
 
 
+def set_manual_feed_allowance_action(params: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = params.get("user_id")
+    allowance = params.get("allowance")
+
+    if not user_id:
+        raise ValueError("user_id is required")
+
+    user = db.session.get(User, int(user_id))
+    if not user:
+        raise ValueError(f"User {user_id} not found")
+
+    if allowance is None:
+        user.manual_feed_allowance = None
+    else:
+        try:
+            user.manual_feed_allowance = int(allowance)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("allowance must be an integer or None") from exc
+
+    db.session.flush()
+    return {"user_id": user.id}
+
+
 def upsert_discord_user_action(params: Dict[str, Any]) -> Dict[str, Any]:
     discord_id = params.get("discord_id")
     discord_username = params.get("discord_username")

@@ -317,12 +317,21 @@ def _hash_token(secret_value: str) -> str:
 def create_feed_access_token_action(params: Dict[str, Any]) -> Dict[str, Any]:
     user_id = params.get("user_id")
     feed_id = params.get("feed_id")
-    if not user_id or not feed_id:
-        raise ValueError("user_id and feed_id are required")
 
-    existing = FeedAccessToken.query.filter_by(
-        user_id=int(user_id), feed_id=int(feed_id), revoked=False
-    ).first()
+    if not user_id:
+        raise ValueError("user_id is required")
+
+    # feed_id can be None for aggregate tokens
+
+    query = FeedAccessToken.query.filter_by(user_id=int(user_id), revoked=False)
+
+    if feed_id is not None:
+        query = query.filter_by(feed_id=int(feed_id))
+    else:
+        query = query.filter(FeedAccessToken.feed_id.is_(None))
+
+    existing = query.first()
+
     if existing is not None:
         if existing.token_secret:
             return {"token_id": existing.token_id, "secret": existing.token_secret}
@@ -339,7 +348,7 @@ def create_feed_access_token_action(params: Dict[str, Any]) -> Dict[str, Any]:
         token_id=token_id,
         token_hash=_hash_token(secret_value),
         token_secret=secret_value,
-        feed_id=int(feed_id),
+        feed_id=int(feed_id) if feed_id is not None else None,
         user_id=int(user_id),
     )
     db.session.add(token)

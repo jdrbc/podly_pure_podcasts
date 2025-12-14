@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { feedsApi } from '../services/api';
 import type { PodcastSearchResult } from '../types';
 
@@ -26,12 +26,14 @@ export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached
   const [isSearching, setIsSearching] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const resetSearchState = () => {
     setSearchResults([]);
     setSearchError('');
     setSearchPage(1);
     setTotalResults(0);
+    setHasSearched(false);
   };
 
   const handleSubmitManual = async (e: React.FormEvent) => {
@@ -74,9 +76,12 @@ export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached
     }
   };
 
-  const performSearch = async () => {
-    if (!searchTerm.trim()) {
-      setSearchError('Enter a search term to find podcasts.');
+  const performSearch = useCallback(async (term: string) => {
+    if (!term.trim()) {
+      setSearchResults([]);
+      setTotalResults(0);
+      setHasSearched(false);
+      setSearchError('');
       return;
     }
 
@@ -84,10 +89,11 @@ export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached
     setSearchError('');
 
     try {
-      const response = await feedsApi.searchFeeds(searchTerm.trim());
+      const response = await feedsApi.searchFeeds(term.trim());
       setSearchResults(response.results);
       setTotalResults(response.total ?? response.results.length);
       setSearchPage(1);
+      setHasSearched(true);
     } catch (err) {
       console.error('Podcast search failed:', err);
       setSearchError('Failed to search podcasts. Please try again.');
@@ -95,11 +101,25 @@ export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached
     } finally {
       setIsSearching(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchTerm.trim()) {
+        performSearch(searchTerm);
+      } else {
+        setSearchResults([]);
+        setTotalResults(0);
+        setHasSearched(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, performSearch]);
 
   const handleSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await performSearch();
+    await performSearch(searchTerm);
   };
 
   const handleAddFromSearch = async (result: PodcastSearchResult) => {
@@ -244,7 +264,7 @@ export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached
             <div className="text-sm text-gray-600">Searching for podcasts...</div>
           )}
 
-          {!isSearching && searchResults.length === 0 && totalResults === 0 && searchTerm && !searchError && (
+          {!isSearching && searchResults.length === 0 && totalResults === 0 && hasSearched && !searchError && (
             <div className="text-sm text-gray-600">No podcasts found. Try a different search term.</div>
           )}
 
