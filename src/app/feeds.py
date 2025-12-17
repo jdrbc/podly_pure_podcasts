@@ -251,12 +251,29 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
         raise e
 
 
-class ItunesRSSItem(PyRSS2Gen.RSSItem):
-    def __init__(self, *args, **kwargs):
-        self.image_url = kwargs.pop("image_url", None)
-        super().__init__(*args, **kwargs)
+class ItunesRSSItem(PyRSS2Gen.RSSItem):  # type: ignore[misc]
+    def __init__(
+        self,
+        *,
+        title: str,
+        enclosure: PyRSS2Gen.Enclosure,
+        description: str,
+        guid: str,
+        pubDate: Optional[str],
+        image_url: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        self.image_url = image_url
+        super().__init__(
+            title=title,
+            enclosure=enclosure,
+            description=description,
+            guid=guid,
+            pubDate=pubDate,
+            **kwargs,
+        )
 
-    def publish_extensions(self, handler):
+    def publish_extensions(self, handler: Any) -> None:
         if self.image_url:
             handler.startElement("itunes:image", {"href": self.image_url})
             handler.endElement("itunes:image")
@@ -316,7 +333,7 @@ def generate_feed_xml(feed: Feed) -> Any:
         image=PyRSS2Gen.Image(url=feed.image_url, title=feed.title, link=link),
         items=items,
     )
-    
+
     rss_feed.rss_attrs["xmlns:itunes"] = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     rss_feed.rss_attrs["xmlns:content"] = "http://purl.org/rss/1.0/modules/content/"
 
@@ -341,7 +358,9 @@ def generate_aggregate_feed_xml(user: User) -> Any:
         feed_description = f"Aggregate feed for {user.username} - Last 3 processed episodes from each subscribed feed."
     else:
         feed_title = "Podly Podcasts"
-        feed_description = "Aggregate feed - Last 3 processed episodes from each subscribed feed."
+        feed_description = (
+            "Aggregate feed - Last 3 processed episodes from each subscribed feed."
+        )
 
     rss_feed = PyRSS2Gen.RSS2(
         title=feed_title,
