@@ -8,6 +8,7 @@ import type { Feed, ConfigResponse } from '../types';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { copyToClipboard } from '../utils/clipboard';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -116,8 +117,7 @@ export default function HomePage() {
   const handleCopyAggregateLink = async () => {
     try {
       const { url } = await feedsApi.getAggregateFeedLink();
-      await navigator.clipboard.writeText(url);
-      toast.success('Aggregate feed URL copied to clipboard!');
+      await copyToClipboard(url, 'Copy the Aggregate RSS URL:', 'Aggregate feed URL copied to clipboard!');
     } catch (err) {
       console.error('Failed to get aggregate link', err);
       toast.error('Failed to get aggregate feed link');

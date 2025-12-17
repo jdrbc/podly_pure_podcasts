@@ -8,6 +8,7 @@ import PlayButton from './PlayButton';
 import ProcessingStatsButton from './ProcessingStatsButton';
 import EpisodeProcessingStatus from './EpisodeProcessingStatus';
 import { useAuth } from '../contexts/AuthContext';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface FeedDetailProps {
   feed: Feed;
@@ -276,28 +277,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
         rssUrl = new URL(`/feed/${currentFeed.id}`, window.location.origin).toString();
       }
 
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(rssUrl);
-      } else {
-        const textArea = document.createElement('textarea');
-        textArea.value = rssUrl;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        if (!successful) {
-          throw new Error('Copy command failed');
-        }
-      }
-
-      if (requireAuth) {
-        toast.success('Feed URL copied to clipboard');
-      } else {
-        toast.success('Feed URL copied to clipboard!');
-      }
+      await copyToClipboard(rssUrl, 'Copy the Feed RSS URL:', 'Feed URL copied to clipboard!');
     } catch (err) {
       console.error('Failed to copy feed URL', err);
       toast.error('Failed to copy feed URL');
@@ -309,23 +289,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
       const rssUrl = currentFeed.rss_url || '';
       if (!rssUrl) throw new Error('No RSS URL');
 
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(rssUrl);
-      } else {
-        const textArea = document.createElement('textarea');
-        textArea.value = rssUrl;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        if (!successful) {
-          throw new Error('Copy command failed');
-        }
-      }
-      toast.success('Original RSS URL copied to clipboard');
+      await copyToClipboard(rssUrl, 'Copy the Original RSS URL:', 'Original RSS URL copied to clipboard');
     } catch (err) {
       console.error('Failed to copy original RSS URL', err);
       toast.error('Failed to copy original RSS URL');
