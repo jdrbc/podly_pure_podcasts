@@ -9,6 +9,8 @@ import ProcessingStatsButton from './ProcessingStatsButton';
 import EpisodeProcessingStatus from './EpisodeProcessingStatus';
 import { useAuth } from '../contexts/AuthContext';
 import { copyToClipboard } from '../utils/clipboard';
+import { emitDiagnosticError } from '../utils/diagnostics';
+import { getHttpErrorInfo } from '../utils/httpError';
 
 interface FeedDetailProps {
   feed: Feed;
@@ -54,8 +56,16 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
       queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
     },
     onError: (err) => {
-      const message = (err as any)?.response?.data?.message;
-      toast.error(message ?? 'Failed to update whitelist status');
+      const { status, data, message } = getHttpErrorInfo(err);
+      emitDiagnosticError({
+        title: 'Failed to update whitelist status',
+        message,
+        kind: status ? 'http' : 'network',
+        details: {
+          status,
+          response: data,
+        },
+      });
     },
   });
 
@@ -75,7 +85,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     },
     onError: (err) => {
       console.error('Failed to refresh feed', err);
-      toast.error('Failed to refresh feed');
+      const { status, data, message } = getHttpErrorInfo(err);
+      emitDiagnosticError({
+        title: 'Failed to refresh feed',
+        message,
+        kind: status ? 'http' : 'network',
+        details: {
+          status,
+          response: data,
+          feedId: currentFeed.id,
+        },
+      });
     },
   });
 
@@ -89,8 +109,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     },
     onError: (err) => {
       console.error('Failed to delete feed', err);
-      const message = (err as any)?.response?.data?.error;
-      toast.error(message ?? 'Failed to delete feed');
+      const { status, data, message } = getHttpErrorInfo(err);
+      emitDiagnosticError({
+        title: 'Failed to delete feed',
+        message,
+        kind: status ? 'http' : 'network',
+        details: {
+          status,
+          response: data,
+          feedId: currentFeed.id,
+        },
+      });
     },
   });
 
@@ -103,8 +132,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     },
     onError: (err) => {
       console.error('Failed to join feed', err);
-      const message = (err as any)?.response?.data?.message ?? (err as any)?.response?.data?.error;
-      toast.error(message ?? 'Unable to join this feed');
+      const { status, data, message } = getHttpErrorInfo(err);
+      emitDiagnosticError({
+        title: 'Failed to join feed',
+        message,
+        kind: status ? 'http' : 'network',
+        details: {
+          status,
+          response: data,
+          feedId: currentFeed.id,
+        },
+      });
     },
   });
 
@@ -120,8 +158,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     },
     onError: (err) => {
       console.error('Failed to leave feed', err);
-      const message = (err as any)?.response?.data?.error;
-      toast.error(message ?? 'Unable to remove this feed');
+      const { status, data, message } = getHttpErrorInfo(err);
+      emitDiagnosticError({
+        title: 'Failed to remove feed',
+        message,
+        kind: status ? 'http' : 'network',
+        details: {
+          status,
+          response: data,
+          feedId: currentFeed.id,
+        },
+      });
     },
   });
 
@@ -174,7 +221,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
         })
         .catch((err) => {
           console.error('Failed to load processing estimate', err);
-          const message = (err as any)?.response?.data?.error;
+          const { status, data, message } = getHttpErrorInfo(err);
+          emitDiagnosticError({
+            title: 'Failed to load processing estimate',
+            message,
+            kind: status ? 'http' : 'network',
+            details: {
+              status,
+              response: data,
+              postGuid: episode.guid,
+            },
+          });
           setEstimateError(message ?? 'Unable to estimate processing time');
         })
         .finally(() => setIsEstimating(false));

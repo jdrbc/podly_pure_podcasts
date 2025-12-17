@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { feedsApi } from '../services/api';
 import type { PodcastSearchResult } from '../types';
+import { diagnostics, emitDiagnosticError } from '../utils/diagnostics';
+import { getHttpErrorInfo } from '../utils/httpError';
 
 interface AddFeedFormProps {
   onSuccess: () => void;
@@ -40,6 +42,7 @@ export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached
     e.preventDefault();
     if (!url.trim()) return;
 
+    diagnostics.add('info', 'Add feed (manual) submitted', { via: 'url', hasUrl: true });
     setError('');
     await addFeed(url.trim(), 'url');
   };
@@ -55,20 +58,35 @@ export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached
     setUpgradePrompt(null);
 
     try {
+      diagnostics.add('info', 'Add feed request', { source, hasUrl: !!feedUrl });
       await feedsApi.addFeed(feedUrl);
       if (source === 'url') {
         setUrl('');
       }
+      diagnostics.add('info', 'Add feed success', { source });
       onSuccess();
     } catch (err) {
       console.error('Failed to add feed:', err);
-      const data = (err as any)?.response?.data;
-      const code = data?.error;
-      const message = data?.message || data?.error;
-      if (code === 'FEED_LIMIT_REACHED') {
-        setUpgradePrompt(message ?? 'Plan limit reached. Increase your feeds to add more.');
+      const { status, data, message } = getHttpErrorInfo(err);
+      const code = data && typeof data === 'object' ? (data as { error?: unknown }).error : undefined;
+      const errorCode = typeof code === 'string' ? code : undefined;
+
+      emitDiagnosticError({
+        title: 'Failed to add feed',
+        message,
+        kind: status ? 'http' : 'network',
+        details: {
+          source,
+          feedUrl,
+          status,
+          response: data,
+        },
+      });
+
+      if (errorCode === 'FEED_LIMIT_REACHED') {
+        setUpgradePrompt(message || 'Plan limit reached. Increase your feeds to add more.');
       } else {
-        setError(message ?? 'Failed to add feed. Please check the URL and try again.');
+        setError(message || 'Failed to add feed. Please check the URL and try again.');
       }
     } finally {
       setIsSubmitting(false);
@@ -89,13 +107,19 @@ export default function AddFeedForm({ onSuccess, onUpgradePlan, planLimitReached
     setSearchError('');
 
     try {
+      diagnostics.add('info', 'Search podcasts request', { term: term.trim() });
       const response = await feedsApi.searchFeeds(term.trim());
       setSearchResults(response.results);
       setTotalResults(response.total ?? response.results.length);
       setSearchPage(1);
       setHasSearched(true);
+      diagnostics.add('info', 'Search podcasts success', {
+        term: term.trim(),
+        total: response.total ?? response.results.length,
+      });
     } catch (err) {
       console.error('Podcast search failed:', err);
+      diagnostics.add('error', 'Search podcasts failed', { term: term.trim() });
       setSearchError('Failed to search podcasts. Please try again.');
       setSearchResults([]);
     } finally {

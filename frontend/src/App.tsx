@@ -13,6 +13,8 @@ import LandingPage from './pages/LandingPage';
 import BillingPage from './pages/BillingPage';
 import AudioPlayer from './components/AudioPlayer';
 import { billingApi } from './services/api';
+import { DiagnosticsProvider, useDiagnostics } from './contexts/DiagnosticsContext';
+import DiagnosticsModal from './components/DiagnosticsModal';
 import './App.css';
 
 const queryClient = new QueryClient({
@@ -29,6 +31,7 @@ const queryClient = new QueryClient({
 
 function AppShell() {
   const { status, requireAuth, isAuthenticated, user, logout, landingPageEnabled } = useAuth();
+  const { open: openDiagnostics } = useDiagnostics();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
@@ -129,6 +132,13 @@ function AppShell() {
                   Config
                 </Link>
               )}
+              <button
+                type="button"
+                onClick={() => openDiagnostics()}
+                className="text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                Report issue
+              </button>
               {requireAuth && user && (
                 <div className="flex items-center gap-3 text-sm text-gray-600 flex-shrink-0">
                   {billingSummary && !isAdmin && (
@@ -228,6 +238,16 @@ function AppShell() {
                         Config
                       </Link>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openDiagnostics();
+                        setMobileMenuOpen(false);
+                      }}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Report issue
+                    </button>
                     {requireAuth && user && (
                       <>
                         <div className="border-t border-gray-100 my-2" />
@@ -264,6 +284,7 @@ function AppShell() {
       </main>
 
       <AudioPlayer />
+      <DiagnosticsModal />
       <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
     </div>
   );
@@ -274,9 +295,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AudioPlayerProvider>
-          <Router>
-            <AppShell />
-          </Router>
+          <DiagnosticsProvider>
+            <Router>
+              <AppShell />
+            </Router>
+          </DiagnosticsProvider>
         </AudioPlayerProvider>
       </AuthProvider>
     </QueryClientProvider>

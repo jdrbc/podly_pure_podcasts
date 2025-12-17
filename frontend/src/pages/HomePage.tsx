@@ -9,6 +9,8 @@ import { toast } from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { copyToClipboard } from '../utils/clipboard';
+import { emitDiagnosticError } from '../utils/diagnostics';
+import { getHttpErrorInfo } from '../utils/httpError';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -43,7 +45,16 @@ export default function HomePage() {
     },
     onError: (err) => {
       console.error('Failed to refresh all feeds', err);
-      toast.error('Failed to refresh all feeds');
+      const { status, data, message } = getHttpErrorInfo(err);
+      emitDiagnosticError({
+        title: 'Failed to refresh all feeds',
+        message,
+        kind: status ? 'http' : 'network',
+        details: {
+          status,
+          response: data,
+        },
+      });
     },
   });
 
@@ -53,8 +64,10 @@ export default function HomePage() {
         subscriptionId: billingSummary?.stripe_subscription_id ?? null,
       }),
     onSuccess: (res) => {
-      if ((res as any).checkout_url) {
-        window.location.href = (res as any).checkout_url;
+      const resRecord = res as unknown as Record<string, unknown>;
+      const checkoutUrl = resRecord && typeof resRecord === 'object' ? resRecord.checkout_url : null;
+      if (typeof checkoutUrl === 'string' && checkoutUrl.length > 0) {
+        window.location.href = checkoutUrl;
         return;
       }
       toast.success('Plan updated');
@@ -62,7 +75,16 @@ export default function HomePage() {
     },
     onError: (err) => {
       console.error('Failed to update billing quantity', err);
-      toast.error('Could not update plan');
+      const { status, data, message } = getHttpErrorInfo(err);
+      emitDiagnosticError({
+        title: 'Failed to update plan',
+        message,
+        kind: status ? 'http' : 'network',
+        details: {
+          status,
+          response: data,
+        },
+      });
     },
   });
 
