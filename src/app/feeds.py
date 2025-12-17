@@ -251,6 +251,18 @@ def add_feed(feed_data: feedparser.FeedParserDict) -> Feed:
         raise e
 
 
+class ItunesRSSItem(PyRSS2Gen.RSSItem):
+    def __init__(self, *args, **kwargs):
+        self.image_url = kwargs.pop("image_url", None)
+        super().__init__(*args, **kwargs)
+
+    def publish_extensions(self, handler):
+        if self.image_url:
+            handler.startElement("itunes:image", {"href": self.image_url})
+            handler.endElement("itunes:image")
+        super().publish_extensions(handler)
+
+
 def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem:
     """
     Given a post, return the corresponding RSS item. Reference:
@@ -271,7 +283,7 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
     if prepend_feed_title and post.feed:
         title = f"[{post.feed.title}] {title}"
 
-    item = PyRSS2Gen.RSSItem(
+    item = ItunesRSSItem(
         title=title,
         enclosure=PyRSS2Gen.Enclosure(
             url=audio_url,
@@ -281,6 +293,7 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
         description=description,
         guid=post.guid,
         pubDate=_format_pub_date(post.release_date),
+        image_url=post.image_url,
     )
 
     return item
@@ -303,6 +316,10 @@ def generate_feed_xml(feed: Feed) -> Any:
         image=PyRSS2Gen.Image(url=feed.image_url, title=feed.title, link=link),
         items=items,
     )
+    
+    rss_feed.rss_attrs["xmlns:itunes"] = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+    rss_feed.rss_attrs["xmlns:content"] = "http://purl.org/rss/1.0/modules/content/"
+
     logger.info(f"XML generated for feed with ID: {feed.id}")
     return rss_feed.to_xml("utf-8")
 
@@ -319,13 +336,29 @@ def generate_aggregate_feed_xml(user: User) -> Any:
 
     last_build_date = format_datetime(datetime.datetime.now(datetime.timezone.utc))
 
+    if current_app.config.get("REQUIRE_AUTH"):
+        feed_title = f"Podly Podcasts - {user.username}"
+        feed_description = f"Aggregate feed for {user.username} - Last 3 processed episodes from each subscribed feed."
+    else:
+        feed_title = "Podly Podcasts"
+        feed_description = "Aggregate feed - Last 3 processed episodes from each subscribed feed."
+
     rss_feed = PyRSS2Gen.RSS2(
-        title=f"[podly] Aggregate - {user.username}",
+        title=feed_title,
         link=link,
-        description=f"Aggregate feed for {user.username} - Last 3 processed episodes from each subscribed feed.",
+        description=feed_description,
         lastBuildDate=last_build_date,
         items=items,
+        image=PyRSS2Gen.Image(
+            url=f"{base_url}/static/images/logos/manifest-icon-512.maskable.png",
+            title=feed_title,
+            link=link,
+        ),
     )
+
+    rss_feed.rss_attrs["xmlns:itunes"] = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+    rss_feed.rss_attrs["xmlns:content"] = "http://purl.org/rss/1.0/modules/content/"
+
     logger.info(f"Aggregate XML generated for user: {user.username}")
     return rss_feed.to_xml("utf-8")
 

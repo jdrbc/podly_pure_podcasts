@@ -94,12 +94,27 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     },
   });
 
+  const joinFeedMutation = useMutation({
+    mutationFn: () => feedsApi.joinFeed(currentFeed.id),
+    onSuccess: (data) => {
+      toast.success('Joined feed');
+      setCurrentFeed(data);
+      queryClient.invalidateQueries({ queryKey: ['feeds'] });
+    },
+    onError: (err) => {
+      console.error('Failed to join feed', err);
+      const message = (err as any)?.response?.data?.message ?? (err as any)?.response?.data?.error;
+      toast.error(message ?? 'Unable to join this feed');
+    },
+  });
+
   const leaveFeedMutation = useMutation({
     mutationFn: () => feedsApi.leaveFeed(currentFeed.id),
     onSuccess: () => {
       toast.success('Removed from your feeds');
+      setCurrentFeed((prev) => (prev ? { ...prev, is_member: false, is_active_subscription: false } : prev));
       queryClient.invalidateQueries({ queryKey: ['feeds'] });
-      if (onFeedDeleted) {
+      if (onFeedDeleted && !isAdmin) {
         onFeedDeleted();
       }
     },
@@ -197,11 +212,14 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     setEstimateError(null);
   };
 
+  const isMember = Boolean(currentFeed.is_member);
+  const isActiveSubscription = currentFeed.is_active_subscription !== false;
+
   // Admins can manage everything; regular users are read-only.
   const canDeleteFeed = isAdmin; // only admins can delete feeds
   const canModifyEpisodes = !requireAuth ? true : Boolean(isAdmin);
   const canBulkModifyEpisodes = !requireAuth ? true : Boolean(isAdmin);
-  const canSubscribe = true;
+  const canSubscribe = !requireAuth || isMember;
   const showWhitelistUi = canModifyEpisodes && isAdmin;
 
   const handleBulkWhitelistToggle = () => {
@@ -380,6 +398,24 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 <div className="mt-2 text-sm text-gray-500">
                   <span>{sortedEpisodes.length} episodes visible</span>
                 </div>
+                {requireAuth && isAdmin && (
+                  <div className="mt-2 flex items-center gap-2 flex-wrap text-sm">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium border ${
+                        isMember
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : 'bg-gray-100 text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      {isMember ? 'Joined' : 'Not joined'}
+                    </span>
+                    {isMember && !isActiveSubscription && (
+                      <span className="px-2 py-1 rounded-full text-xs font-medium border bg-amber-50 text-amber-700 border-amber-200">
+                        Paused
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -404,6 +440,40 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                   {canSubscribe ? 'Subscribe to Podly RSS' : 'Join feed to subscribe'}
                 </span>
               </button>
+
+              {requireAuth && isAdmin && (
+                isMember ? (
+                  <button
+                    onClick={() => leaveFeedMutation.mutate()}
+                    disabled={leaveFeedMutation.isPending}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium border transition-colors ${
+                      leaveFeedMutation.isPending
+                        ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Leave feed
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => joinFeedMutation.mutate()}
+                    disabled={joinFeedMutation.isPending}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                      joinFeedMutation.isPending
+                        ? 'bg-blue-100 text-blue-300 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Join feed
+                  </button>
+                )
+              )}
 
               {canModifyEpisodes && (
                 <button
@@ -496,7 +566,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                       Original RSS feed
                     </button>
 
-                    {!isAdmin && (
+                    {requireAuth && isAdmin && isMember && (
                       <>
                         <div className="border-t border-gray-100 my-1"></div>
                         <button
@@ -510,7 +580,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                           </svg>
-                          Remove from my feeds
+                          Leave feed
                         </button>
                       </>
                     )}

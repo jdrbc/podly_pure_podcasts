@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import type { Feed } from '../types';
 
 interface FeedListProps {
@@ -10,6 +11,8 @@ interface FeedListProps {
 
 export default function FeedList({ feeds, onFeedDeleted: _onFeedDeleted, onFeedSelected, selectedFeedId }: FeedListProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const { requireAuth, user } = useAuth();
+  const showMembership = Boolean(requireAuth && user?.role === 'admin');
 
   // Ensure feeds is an array
   const feedsArray = Array.isArray(feeds) ? feeds : [];
@@ -93,6 +96,24 @@ export default function FeedList({ feeds, onFeedDeleted: _onFeedDeleted, onFeedS
                     )}
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-xs text-gray-500">{feed.posts_count} episodes</span>
+                      {showMembership && (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                              feed.is_member
+                                ? 'bg-green-100 text-green-700 border border-green-200'
+                                : 'bg-gray-100 text-gray-600 border border-gray-200'
+                            }`}
+                          >
+                            {feed.is_member ? 'Joined' : 'Not joined'}
+                          </span>
+                          {feed.is_member && feed.is_active_subscription === false && (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                              Paused
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
