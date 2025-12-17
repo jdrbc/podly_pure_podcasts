@@ -26,6 +26,8 @@ _PUBLIC_PATHS: set[str] = {
     "/api/auth/discord/login",
     "/api/auth/discord/callback",
     "/api/landing/status",
+    # Stripe webhooks must bypass auth to allow Stripe to deliver events
+    "/api/billing/stripe-webhook",
 }
 
 _PUBLIC_PREFIXES: tuple[str, ...] = (
