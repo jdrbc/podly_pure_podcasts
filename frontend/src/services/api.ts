@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { diagnostics } from '../utils/diagnostics';
 import type {
   Feed,
   Episode,
@@ -21,6 +22,32 @@ const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    try {
+      const cfg = error?.config;
+      const method = (cfg?.method ?? 'GET').toUpperCase();
+      const url = cfg?.url ?? '(unknown url)';
+      const status = error?.response?.status as number | undefined;
+      const responseData = error?.response?.data;
+
+      const details = {
+        method,
+        url,
+        status,
+        response: responseData,
+      };
+
+      diagnostics.add('error', `HTTP error ${status ?? 'NETWORK'} ${method} ${url}`, details);
+    } catch {
+      // ignore
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 const buildAbsoluteUrl = (path: string): string => {
   if (/^https?:\/\//i.test(path)) {
