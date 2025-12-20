@@ -213,8 +213,28 @@ export PODLY_SECRET_KEY='replace-with-a-strong-64-char-secret'
 
 To stop the application:
 
+If you have launched it in the foreground by omitting the `-d` parameter:
 1. In the terminal where Podly is running, press `Ctrl+C`
 2. Wait for the container to stop gracefully
+
+If you have launched it in the background using the `-d` parameter:
+1. In the terminal where Podly is running, execute `docker compose down`
+2. Wait for the container to stop gracefully
+
+In both cases this output should appear to indicate that it has stopped:
+
+```sh
+[+] Running 2/2
+ ✔ Container podly-pure-podcasts        Removed
+ ✔ Network podly-pure-podcasts-network  Removed
+```
+
+## Upgrading Podly
+
+To upgrade the application while you are in the terminal where it is running:
+1. [Stop it](#stopping-podly)
+2. Execute `git pull`
+3. [Run it again](#running-podly)
 
 ## Getting Help
 
