@@ -439,7 +439,7 @@ export const authApi = {
     return response.data;
   },
 
-  listUsers: async (): Promise<{ users: Array<{ id: number; username: string; role: string; created_at: string; updated_at: string; feed_allowance?: number; feed_subscription_status?: string; manual_feed_allowance?: number | null }> }> => {
+  listUsers: async (): Promise<{ users: Array<{ id: number; username: string; role: string; created_at: string; updated_at: string; last_active?: string | null; feed_allowance?: number; feed_subscription_status?: string; manual_feed_allowance?: number | null }> }> => {
     const response = await api.get('/api/auth/users');
     return response.data;
   },

@@ -148,6 +148,7 @@ class User(db.Model):  # type: ignore[name-defined, misc]
     # Discord SSO fields
     discord_id = db.Column(db.String(32), unique=True, nullable=True, index=True)
     discord_username = db.Column(db.String(100), nullable=True)
+    last_active = db.Column(db.DateTime, nullable=True)
 
     # Admin override for feed allowance (if set, overrides plan-based allowance)
     manual_feed_allowance = db.Column(db.Integer, nullable=True)

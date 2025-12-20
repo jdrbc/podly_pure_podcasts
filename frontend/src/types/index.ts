@@ -182,6 +182,7 @@ export interface AuthUser {
 export interface ManagedUser extends AuthUser {
   created_at: string;
   updated_at: string;
+  last_active?: string | null;
 }
 
 export interface DiscordStatus {

@@ -25,6 +25,7 @@ from flask import (
 )
 from flask.typing import ResponseReturnValue
 
+from app.auth.service import update_user_last_active
 from app.extensions import db
 from app.feeds import (
     add_or_refresh_feed,
@@ -361,6 +362,9 @@ def search_feeds() -> ResponseReturnValue:
 
 @feed_bp.route("/feed/<int:f_id>", methods=["GET"])
 def get_feed(f_id: int) -> Response:
+    if hasattr(g, "current_user") and g.current_user:
+        update_user_last_active(g.current_user.id)
+
     feed = Feed.query.get_or_404(f_id)
 
     # Refresh the feed
@@ -434,6 +438,9 @@ def refresh_feed_endpoint(f_id: int) -> ResponseReturnValue:
     """
     Refresh the specified feed and return a JSON response indicating the result.
     """
+    if hasattr(g, "current_user") and g.current_user:
+        update_user_last_active(g.current_user.id)
+
     feed = Feed.query.get_or_404(f_id)
     feed_title = feed.title
     app = cast(Any, current_app)._get_current_object()
@@ -475,6 +482,9 @@ def _refresh_feed_background(app: Flask, feed_id: int) -> None:
 @feed_bp.route("/api/feeds/refresh-all", methods=["POST"])
 def refresh_all_feeds_endpoint() -> Response:
     """Trigger a refresh for all feeds and enqueue pending jobs."""
+    if hasattr(g, "current_user") and g.current_user:
+        update_user_last_active(g.current_user.id)
+
     result = get_jobs_manager().start_refresh_all_feeds(trigger="manual_refresh")
     feed_count = Feed.query.count()
     return jsonify(

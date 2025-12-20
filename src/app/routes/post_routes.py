@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Any, Dict
 
 import flask
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, g, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
 from app.auth.guards import require_admin
+from app.auth.service import update_user_last_active
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
 from app.models import (
@@ -772,6 +773,9 @@ def api_get_post_audio(p_guid: str) -> ResponseReturnValue:
 @post_bp.route("/api/posts/<string:p_guid>/download", methods=["GET"])
 def api_download_post(p_guid: str) -> flask.Response:
     """API endpoint to download processed audio files."""
+    if hasattr(g, "current_user") and g.current_user:
+        update_user_last_active(g.current_user.id)
+
     logger.info(f"Request to download post with GUID: {p_guid}")
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
