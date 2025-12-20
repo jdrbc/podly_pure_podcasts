@@ -58,36 +58,6 @@ export default function HomePage() {
     },
   });
 
-  const updateQuantityMutation = useMutation({
-    mutationFn: (quantity: number) =>
-      billingApi.setQuantity(quantity, {
-        subscriptionId: billingSummary?.stripe_subscription_id ?? null,
-      }),
-    onSuccess: (res) => {
-      const resRecord = res as unknown as Record<string, unknown>;
-      const checkoutUrl = resRecord && typeof resRecord === 'object' ? resRecord.checkout_url : null;
-      if (typeof checkoutUrl === 'string' && checkoutUrl.length > 0) {
-        window.location.href = checkoutUrl;
-        return;
-      }
-      toast.success('Plan updated');
-      refetchBilling();
-    },
-    onError: (err) => {
-      console.error('Failed to update billing quantity', err);
-      const { status, data, message } = getHttpErrorInfo(err);
-      emitDiagnosticError({
-        title: 'Failed to update plan',
-        message,
-        kind: status ? 'http' : 'network',
-        details: {
-          status,
-          response: data,
-        },
-      });
-    },
-  });
-
   useEffect(() => {
     if (!showAddForm || typeof document === 'undefined') {
       return;
@@ -122,17 +92,7 @@ export default function HomePage() {
     user?.role !== 'admin';
 
   const handleChangePlan = () => {
-    const current = billingSummary?.feed_allowance ?? 0;
-    const input = window.prompt('How many feeds do you want in your plan?', String(current));
-    if (input === null) return;
-    const quantity = Number(input);
-    if (Number.isNaN(quantity) || quantity < 0) {
-      toast.error('Enter a valid non-negative number of feeds.');
-      return;
-    }
-    updateQuantityMutation.mutate(quantity, {
-      onSuccess: () => {},
-    });
+    navigate('/billing');
   };
 
 

@@ -27,8 +27,8 @@ def _get_stripe_client() -> tuple[Optional[Any], Optional[str]]:
     return stripe, None
 
 
-def _price_id() -> Optional[str]:
-    return os.getenv("STRIPE_PRICE_ID_PER_FEED")
+def _product_id() -> Optional[str]:
+    return os.getenv("STRIPE_PRODUCT_ID")
 
 
 def _user_feed_usage(user: User) -> dict[str, int]:
@@ -54,20 +54,25 @@ def billing_summary() -> Any:
 
     logger.info("Billing summary requested for user %s", user.id)
     usage = _user_feed_usage(user)
-    price_id = _price_id()
+    product_id = _product_id()
     stripe_client, _ = _get_stripe_client()
+    current_amount = 0
+
     if (
         stripe_client is not None
         and user.stripe_customer_id
         and not user.stripe_subscription_id
     ):
+        # Try to find an active subscription if we don't have one linked
         subs = stripe_client.Subscription.list(
             customer=user.stripe_customer_id, limit=1, status="active"
         )
         if subs and subs.get("data"):
             sub = subs["data"][0]
             items = sub.get("items", {}).get("data", [])
-            feed_allowance = int(items[0].get("quantity") or 0) if items else 0
+            # For PWYW bundle, allowance is 10 if active
+            feed_allowance = 10 if items else 0
+
             writer_client.action(
                 "set_user_billing_fields",
                 {
@@ -80,18 +85,36 @@ def billing_summary() -> Any:
             )
             db.session.expire(user)
             usage = _user_feed_usage(user)
+
+    # Fetch current price amount if subscribed
+    if (
+        stripe_client is not None
+        and user.stripe_subscription_id
+        and user.feed_subscription_status == "active"
+    ):
+        try:
+            sub = stripe_client.Subscription.retrieve(
+                user.stripe_subscription_id, expand=["items.data.price"]
+            )
+            if sub and sub.get("items") and sub["items"]["data"]:
+                price_item = sub["items"]["data"][0].get("price")
+                if price_item:
+                    current_amount = price_item.get("unit_amount", 0)
+        except Exception as e:
+            logger.error("Error fetching subscription details: %s", e)
+
     return jsonify(
         {
             "feed_allowance": usage["feed_allowance"],
             "feeds_in_use": usage["feeds_in_use"],
             "remaining": usage["remaining"],
-            "price_per_feed": 2.0,
+            "current_amount": current_amount,
             "subscription_status": getattr(
                 user, "feed_subscription_status", "inactive"
             ),
             "stripe_subscription_id": getattr(user, "stripe_subscription_id", None),
             "stripe_customer_id": getattr(user, "stripe_customer_id", None),
-            "price_id": price_id,
+            "product_id": product_id,
         }
     )
 
@@ -103,23 +126,25 @@ def _build_return_urls() -> tuple[str, str]:
     return success, cancel
 
 
-@billing_bp.route("/api/billing/quantity", methods=["POST"])
-def set_billing_quantity() -> Any:  # pylint: disable=too-many-statements
-    """Set the desired feed quantity; create checkout if new subscription, otherwise update existing."""
+@billing_bp.route("/api/billing/subscription", methods=["POST"])
+def update_subscription() -> Any:  # pylint: disable=too-many-statements
+    """Update subscription amount or create new subscription."""
     user = _require_authenticated_user()
     if user is None:
-        logger.warning("Set billing quantity requested by unauthenticated user")
+        logger.warning("Update subscription requested by unauthenticated user")
         return jsonify({"error": "Authentication required"}), 401
 
     payload = request.get_json(silent=True) or {}
-    quantity = int(payload.get("quantity") or 0)
-    logger.info("Set billing quantity for user %s: %s", user.id, quantity)
-    if quantity < 0:
-        return jsonify({"error": "Quantity must be zero or greater"}), 400
+    amount = int(payload.get("amount") or 0)
+    logger.info("Update subscription for user %s: %s cents", user.id, amount)
+
+    # Allow 0 to cancel, otherwise min 100 cents ($1.00)
+    if 0 < amount < 100:
+        return jsonify({"error": "Minimum amount is $1.00"}), 400
 
     stripe_client, stripe_err = _get_stripe_client()
-    price_id = _price_id()
-    if stripe_client is None or not price_id:
+    product_id = _product_id()
+    if stripe_client is None or not product_id:
         logger.error("Stripe not configured. err=%s", stripe_err)
         return (
             jsonify(
@@ -163,7 +188,7 @@ def set_billing_quantity() -> Any:  # pylint: disable=too-many-statements
 
         # If subscription exists, update or cancel
         if user.stripe_subscription_id:
-            if quantity <= 0:
+            if amount <= 0:
                 logger.info("Canceling subscription for user %s", user.id)
                 stripe_client.Subscription.delete(user.stripe_subscription_id)
                 writer_client.action(
@@ -188,6 +213,8 @@ def set_billing_quantity() -> Any:  # pylint: disable=too-many-statements
                         "message": "Subscription canceled.",
                     }
                 )
+
+            # Update existing subscription with new price
             sub = stripe_client.Subscription.retrieve(
                 user.stripe_subscription_id, expand=["items"]
             )
@@ -195,26 +222,31 @@ def set_billing_quantity() -> Any:  # pylint: disable=too-many-statements
             if not items:
                 return jsonify({"error": "Subscription has no items"}), 400
             item_id = items[0]["id"]
+
             updated = stripe_client.Subscription.modify(
                 user.stripe_subscription_id,
                 items=[
                     {
                         "id": item_id,
-                        "price": price_id,
-                        "quantity": quantity,
+                        "price_data": {
+                            "currency": "usd",
+                            "product": product_id,
+                            "unit_amount": amount,
+                            "recurring": {"interval": "month"},
+                        },
                     }
                 ],
                 proration_behavior="none",
             )
             logger.info(
-                "Updated subscription for user %s to quantity %s", user.id, quantity
+                "Updated subscription for user %s to amount %s", user.id, amount
             )
             status = updated["status"]
             writer_client.action(
                 "set_user_billing_fields",
                 {
                     "user_id": user.id,
-                    "feed_allowance": quantity,
+                    "feed_allowance": 10,  # Fixed allowance for active sub
                     "feed_subscription_status": status,
                 },
                 wait=True,
@@ -228,12 +260,12 @@ def set_billing_quantity() -> Any:  # pylint: disable=too-many-statements
                     "remaining": usage["remaining"],
                     "subscription_status": status,
                     "requires_stripe_checkout": False,
-                    "message": "Subscription quantity updated.",
+                    "message": "Subscription updated.",
                 }
             )
 
         # Otherwise, create checkout session for a new subscription
-        if quantity <= 0:
+        if amount <= 0:
             writer_client.action(
                 "set_user_billing_fields",
                 {
@@ -252,17 +284,27 @@ def set_billing_quantity() -> Any:  # pylint: disable=too-many-statements
                     "remaining": usage["remaining"],
                     "subscription_status": user.feed_subscription_status,
                     "requires_stripe_checkout": False,
-                    "message": "No subscription created for zero quantity.",
+                    "message": "No subscription created for zero amount.",
                 }
             )
         logger.info(
-            "Creating checkout session for user %s with quantity %s", user.id, quantity
+            "Creating checkout session for user %s with amount %s", user.id, amount
         )
         success_url, cancel_url = _build_return_urls()
         session = stripe_client.checkout.Session.create(
             mode="subscription",
             customer=user.stripe_customer_id,
-            line_items=[{"price": price_id, "quantity": max(1, quantity or 1)}],
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "product": product_id,
+                        "unit_amount": amount,
+                        "recurring": {"interval": "month"},
+                    },
+                    "quantity": 1,
+                }
+            ],
             subscription_data={"metadata": {"user_id": user.id}},
             metadata={"user_id": user.id},
             success_url=payload.get("success_url") or success_url,
@@ -278,15 +320,10 @@ def set_billing_quantity() -> Any:  # pylint: disable=too-many-statements
             }
         )
     except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Stripe error updating quantity: %s", exc)
+        logger.error("Stripe error updating subscription: %s", exc)
         return jsonify({"error": "STRIPE_ERROR", "message": str(exc)}), 502
 
     usage = _user_feed_usage(user)
-    logger.info(
-        "Updated feed allowance for user %s to %s feeds",
-        getattr(user, "id", None),
-        quantity,
-    )
     return jsonify(
         {
             "feed_allowance": usage["feed_allowance"],
@@ -340,22 +377,17 @@ def _update_user_from_subscription(sub: Any) -> None:
     user = User.query.filter_by(stripe_customer_id=customer_id).first()
     if not user:
         return
-    items = (
-        sub.get("items", {}).get("data", [])
-        if isinstance(sub, dict)
-        else sub["items"]["data"]
-    )
-    quantity = 0
-    if items:
-        quantity = int(items[0].get("quantity") or 0)
+
     status = sub.get("status") if isinstance(sub, dict) else sub["status"]
+
+    # For PWYW bundle, allowance is 10 if active
+    feed_allowance = 10 if status in ("active", "trialing", "past_due") else 0
+
     writer_client.action(
         "set_user_billing_by_customer_id",
         {
             "stripe_customer_id": customer_id,
-            "feed_allowance": (
-                quantity if status in ("active", "trialing", "past_due") else 0
-            ),
+            "feed_allowance": feed_allowance,
             "feed_subscription_status": status,
             "stripe_subscription_id": (
                 sub.get("id") if isinstance(sub, dict) else sub["id"]

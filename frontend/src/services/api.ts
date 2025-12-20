@@ -552,8 +552,8 @@ export const billingApi = {
     const response = await api.get('/api/billing/summary');
     return response.data;
   },
-  setQuantity: async (
-    quantity: number,
+  updateSubscription: async (
+    amount: number,
     options?: { subscriptionId?: string | null }
   ): Promise<
     BillingSummary & {
@@ -562,8 +562,8 @@ export const billingApi = {
       requires_stripe_checkout?: boolean;
     }
   > => {
-    const response = await api.post('/api/billing/quantity', {
-      quantity,
+    const response = await api.post('/api/billing/subscription', {
+      amount,
       subscription_id: options?.subscriptionId,
     });
     return response.data;

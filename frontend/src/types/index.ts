@@ -192,11 +192,11 @@ export interface BillingSummary {
   feed_allowance: number;
   feeds_in_use: number;
   remaining: number;
-  price_per_feed: number;
+  current_amount?: number;
   subscription_status: string;
   stripe_subscription_id?: string | null;
   stripe_customer_id?: string | null;
-  price_id?: string | null;
+  product_id?: string | null;
   message?: string;
 }
 
