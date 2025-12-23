@@ -26,6 +26,15 @@ export interface Episode {
   download_count: number;
 } 
 
+export interface PagedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages?: number;
+  whitelisted_total?: number;
+}
+
 export interface Job {
   job_id: string;
   post_guid: string;

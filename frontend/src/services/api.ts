@@ -14,6 +14,7 @@ import type {
   ConfigResponse,
   BillingSummary,
   LandingStatus,
+  PagedResult,
 } from '../types';
 
 const API_BASE_URL = '';
@@ -67,8 +68,17 @@ export const feedsApi = {
     return response.data;
   },
 
-  getFeedPosts: async (feedId: number): Promise<Episode[]> => {
-    const response = await api.get(`/api/feeds/${feedId}/posts`);
+  getFeedPosts: async (
+    feedId: number,
+    options?: { page?: number; pageSize?: number; whitelistedOnly?: boolean }
+  ): Promise<PagedResult<Episode>> => {
+    const response = await api.get(`/api/feeds/${feedId}/posts`, {
+      params: {
+        page: options?.page,
+        page_size: options?.pageSize,
+        whitelisted_only: options?.whitelistedOnly,
+      },
+    });
     return response.data;
   },
 
@@ -297,8 +307,11 @@ export const feedsApi = {
   },
 
   // Legacy aliases for backward compatibility
-  getFeedEpisodes: async (feedId: number): Promise<Episode[]> => {
-    return feedsApi.getFeedPosts(feedId);
+  getFeedEpisodes: async (
+    feedId: number,
+    options?: { page?: number; pageSize?: number; whitelistedOnly?: boolean }
+  ): Promise<PagedResult<Episode>> => {
+    return feedsApi.getFeedPosts(feedId, options);
   },
 
   toggleEpisodeWhitelist: async (guid: string, whitelisted: boolean): Promise<{ processing_job?: { status: string; job_id?: string; message?: string } }> => {

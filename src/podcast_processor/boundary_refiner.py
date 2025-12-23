@@ -11,6 +11,11 @@ from jinja2 import Template
 from shared.config import Config
 
 
+# Internal defaults for boundary expansion; not user-configurable.
+MAX_START_EXTENSION_SECONDS = 30.0
+MAX_END_EXTENSION_SECONDS = 15.0
+
+
 @dataclass
 class BoundaryRefinement:
     refined_start: float
@@ -50,7 +55,20 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         all_segments: List[Dict[str, Any]],
     ) -> BoundaryRefinement:
         """Refine ad boundaries using LLM analysis"""
+        self.logger.debug(
+            "Refining boundaries",
+            extra={
+                "ad_start": ad_start,
+                "ad_end": ad_end,
+                "confidence": confidence,
+                "segments_count": len(all_segments),
+            },
+        )
         context = self._get_context(ad_start, ad_end, all_segments)
+        self.logger.debug(
+            "Context window selected",
+            extra={"context_size": len(context), "first_seg": context[0] if context else None},
+        )
 
         try:
             # Try LLM refinement
@@ -59,12 +77,8 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 ad_end=ad_end,
                 ad_confidence=confidence,
                 context_segments=context,
-                max_start_extension=getattr(
-                    self.config, "max_start_extension_seconds", 30.0
-                ),
-                max_end_extension=getattr(
-                    self.config, "max_end_extension_seconds", 15.0
-                ),
+                max_start_extension=MAX_START_EXTENSION_SECONDS,
+                max_end_extension=MAX_END_EXTENSION_SECONDS,
             )
 
             response = litellm.completion(
@@ -78,12 +92,16 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
             )
 
             content = response.choices[0].message.content
+            self.logger.debug(
+                "LLM response received",
+                extra={"model": self.config.llm_model, "content_preview": content[:200]},
+            )
             # Parse JSON (strip markdown fences)
             cleaned = re.sub(r"```json|```", "", content.strip())
             match = re.search(r"\{[^}]+\}", cleaned)
             if match:
                 data = json.loads(match.group(0))
-                return self._validate(
+                refined = self._validate(
                     ad_start,
                     ad_end,
                     BoundaryRefinement(
@@ -100,6 +118,15 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                         ),
                     ),
                 )
+                self.logger.info(
+                    "LLM refinement applied",
+                    extra={
+                        "refined_start": refined.refined_start,
+                        "refined_end": refined.refined_end,
+                        "confidence_adjustment": refined.confidence_adjustment,
+                    },
+                )
+                return refined
         except Exception as e:
             self.logger.warning(f"LLM refinement failed: {e}, using heuristic")
 
@@ -136,27 +163,40 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         for seg in context:
             if seg["start_time"] < ad_start:
                 if any(p in seg["text"].lower() for p in intro_patterns):
+                    self.logger.debug(
+                        "Intro pattern matched",
+                        extra={"matched_text": seg["text"], "start_time": seg["start_time"]},
+                    )
                     refined_start = seg["start_time"]
 
         # Check after ad for outros
         for seg in context:
             if seg["start_time"] > ad_end:
                 if any(p in seg["text"].lower() for p in outro_patterns):
+                    self.logger.debug(
+                        "Outro pattern matched",
+                        extra={"matched_text": seg["text"], "start_time": seg["start_time"]},
+                    )
                     refined_end = seg.get("end_time", seg["start_time"] + 5.0)
 
-        return BoundaryRefinement(
+        result = BoundaryRefinement(
             refined_start,
             refined_end,
             "heuristic",
             "heuristic",
         )
+        self.logger.info(
+            "Heuristic refinement applied",
+            extra={"refined_start": result.refined_start, "refined_end": result.refined_end},
+        )
+        return result
 
     def _validate(
         self, orig_start: float, orig_end: float, refinement: BoundaryRefinement
     ) -> BoundaryRefinement:
         """Constrain refinement to reasonable bounds"""
-        max_start_ext = getattr(self.config, "max_start_extension_seconds", 30.0)
-        max_end_ext = getattr(self.config, "max_end_extension_seconds", 15.0)
+        max_start_ext = MAX_START_EXTENSION_SECONDS
+        max_end_ext = MAX_END_EXTENSION_SECONDS
 
         refinement.refined_start = max(
             refinement.refined_start, orig_start - max_start_ext
@@ -165,5 +205,15 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         if refinement.refined_start >= refinement.refined_end:
             refinement.refined_start = orig_start
             refinement.refined_end = orig_end
+
+        self.logger.debug(
+            "Refinement validated",
+            extra={
+                "orig_start": orig_start,
+                "orig_end": orig_end,
+                "refined_start": refinement.refined_start,
+                "refined_end": refinement.refined_end,
+            },
+        )
 
         return refinement
