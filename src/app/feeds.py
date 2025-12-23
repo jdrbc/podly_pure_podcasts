@@ -318,7 +318,19 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
 
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
-    items = [feed_item(post) for post in feed.posts]  # type: ignore[attr-defined]
+
+    # Only publish processed + whitelisted episodes for this feed
+    posts = (
+        Post.query.filter(
+            Post.feed_id == feed.id,
+            Post.whitelisted.is_(True),
+            Post.processed_audio_path.isnot(None),
+        )
+        .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+        .all()
+    )
+
+    items = [feed_item(post) for post in posts]
 
     base_url = _get_base_url()
     link = _append_feed_token_params(f"{base_url}/feed/{feed.id}")
