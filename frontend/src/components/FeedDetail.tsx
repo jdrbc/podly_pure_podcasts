@@ -498,38 +498,21 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 </span>
               </button>
 
-              {requireAuth && isAdmin && (
-                isMember ? (
-                  <button
-                    onClick={() => leaveFeedMutation.mutate()}
-                    disabled={leaveFeedMutation.isPending}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium border transition-colors ${
-                      leaveFeedMutation.isPending
-                        ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed'
-                        : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    Leave feed
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => joinFeedMutation.mutate()}
-                    disabled={joinFeedMutation.isPending}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                      joinFeedMutation.isPending
-                        ? 'bg-blue-100 text-blue-300 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Join feed
-                  </button>
-                )
+              {requireAuth && isAdmin && !isMember && (
+                <button
+                  onClick={() => joinFeedMutation.mutate()}
+                  disabled={joinFeedMutation.isPending}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    joinFeedMutation.isPending
+                      ? 'bg-blue-100 text-blue-300 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Join feed
+                </button>
               )}
 
               {canModifyEpisodes && (
