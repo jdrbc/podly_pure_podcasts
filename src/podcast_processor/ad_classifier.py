@@ -109,11 +109,7 @@ class AdClassifier:
         self.cue_detector = CueDetector()
 
         # Initialize boundary refiner
-        self.boundary_refiner: Optional[BoundaryRefiner]
-        if getattr(config, "boundary_refinement_enabled", False):
-            self.boundary_refiner = BoundaryRefiner(config, self.logger)
-        else:
-            self.boundary_refiner = None
+        self.boundary_refiner = BoundaryRefiner(config, self.logger)
 
     def classify(
         self,
