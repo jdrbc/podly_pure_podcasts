@@ -10,6 +10,7 @@ const LLM_MODEL_ALIASES: string[] = [
   'openai/gpt-4o',
   'anthropic/claude-3.5-sonnet',
   'anthropic/claude-3.5-haiku',
+  'gemini/gemini-3-flash-preview',
   'gemini/gemini-2.0-flash',
   'gemini/gemini-1.5-pro',
   'gemini/gemini-1.5-flash',
@@ -199,6 +200,9 @@ function BaseUrlInfoBox() {
           <li>
             <code className="bg-white px-1 rounded">anthropic/claude-3.5-sonnet</code> → Anthropic
             API
+          </li>
+          <li>
+            <code className="bg-white px-1 rounded">gemini/gemini-3-flash-preview</code> → Google API
           </li>
           <li>
             <code className="bg-white px-1 rounded">gemini/gemini-2.0-flash</code> → Google API

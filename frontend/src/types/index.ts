@@ -137,6 +137,7 @@ export interface AppConfigUI {
   number_of_episodes_to_whitelist_from_archive_of_new_feed: number;
   enable_public_landing_page: boolean;
   user_limit_total: number | null;
+  autoprocess_on_download: boolean;
 }
 
 export interface CombinedConfig {

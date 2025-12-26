@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import flask
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, g, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
 from app.auth.guards import require_admin
@@ -18,6 +18,7 @@ from app.models import (
     TranscriptSegment,
 )
 from app.posts import clear_post_processing_data
+from app.runtime_config import config as runtime_config
 from app.writer.client import writer_client
 
 logger = logging.getLogger("global_logger")
@@ -779,11 +780,62 @@ def api_download_post(p_guid: str) -> flask.Response:
         return flask.make_response(("Post not found", 404))
 
     if not post.whitelisted:
-        logger.warning(f"Post: {post.title} is not whitelisted")
-        return flask.make_response(("Post not whitelisted", 403))
+        if getattr(runtime_config, "autoprocess_on_download", False):
+            try:
+                writer_client.action(
+                    "whitelist_post",
+                    {"post_id": post.id},
+                    wait=True,
+                )
+                post.whitelisted = True
+                logger.info("Auto-whitelisted post %s on download request", post.guid)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning(
+                    "Failed to auto-whitelist post %s on download: %s", post.guid, exc
+                )
+                return flask.make_response(("Post not whitelisted", 403))
+        else:
+            logger.warning(
+                "Post %s not whitelisted and auto-process is disabled", post.guid
+            )
+            return flask.make_response(("Post not whitelisted", 403))
 
     if not post.processed_audio_path or not Path(post.processed_audio_path).exists():
         logger.warning(f"Processed audio not found for post: {post.id}")
+        if getattr(runtime_config, "autoprocess_on_download", False):
+            logger.info(
+                "Auto-processing on download is enabled; queuing processing for %s",
+                p_guid,
+            )
+            requester = getattr(getattr(g, "current_user", None), "id", None)
+            job_response = get_jobs_manager().start_post_processing(
+                p_guid,
+                priority="download",
+                requested_by_user_id=requester,
+                billing_user_id=requester,
+            )
+            status = job_response.get("status")
+            if status in {"started", "running"}:
+                status_code = 202
+            elif status in {"completed", "skipped"}:
+                status_code = 200
+            elif status == "error":
+                status_code = 400
+            else:
+                status_code = 202
+            return flask.make_response(
+                flask.jsonify(
+                    {
+                        **job_response,
+                        "message": job_response.get(
+                            "message",
+                            "Processing queued because audio was not ready for download",
+                        ),
+                    }
+                ),
+                status_code,
+            )
+
         return flask.make_response(("Processed audio not found", 404))
 
     try:

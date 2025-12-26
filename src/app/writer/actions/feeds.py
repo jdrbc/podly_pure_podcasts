@@ -119,6 +119,17 @@ def increment_download_count_action(params: Dict[str, Any]) -> Dict[str, Any]:
     return {"post_id": post_id, "updated": updated}
 
 
+def whitelist_post_action(params: Dict[str, Any]) -> Dict[str, Any]:
+    post_id = params.get("post_id")
+    if not post_id:
+        raise ValueError("post_id is required")
+
+    updated = Post.query.filter_by(id=int(post_id)).update(
+        {Post.whitelisted: True}, synchronize_session=False
+    )
+    return {"post_id": int(post_id), "updated": int(updated)}
+
+
 def ensure_user_feed_membership_action(params: Dict[str, Any]) -> Dict[str, Any]:
     feed_id = params.get("feed_id")
     user_id = params.get("user_id")
