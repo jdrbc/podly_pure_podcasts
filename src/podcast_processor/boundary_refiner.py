@@ -11,7 +11,6 @@ from jinja2 import Template
 from app.writer.client import writer_client
 from shared.config import Config
 
-
 # Internal defaults for boundary expansion; not user-configurable.
 MAX_START_EXTENSION_SECONDS = 30.0
 MAX_END_EXTENSION_SECONDS = 15.0
@@ -72,7 +71,10 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         context = self._get_context(ad_start, ad_end, all_segments)
         self.logger.debug(
             "Context window selected",
-            extra={"context_size": len(context), "first_seg": context[0] if context else None},
+            extra={
+                "context_size": len(context),
+                "first_seg": context[0] if context else None,
+            },
         )
 
         prompt = self.template.render(
@@ -88,7 +90,11 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         raw_response: Optional[str] = None
 
         # Record the intent to call the LLM when we have enough context to do so
-        if post_id is not None and first_seq_num is not None and last_seq_num is not None:
+        if (
+            post_id is not None
+            and first_seq_num is not None
+            and last_seq_num is not None
+        ):
             try:
                 res = writer_client.action(
                     "upsert_model_call",
@@ -104,7 +110,9 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 if res and res.success:
                     model_call_id = (res.data or {}).get("model_call_id")
             except Exception as e:  # best-effort; do not block refinement
-                self.logger.warning("Boundary refine: failed to upsert ModelCall: %s", e)
+                self.logger.warning(
+                    "Boundary refine: failed to upsert ModelCall: %s", e
+                )
 
         try:
             response = litellm.completion(
@@ -121,13 +129,18 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
             content = ""
             if choice:
                 # Prefer chat content; fall back to text for completion-style responses
-                content = getattr(getattr(choice, "message", None), "content", None) or ""
+                content = (
+                    getattr(getattr(choice, "message", None), "content", None) or ""
+                )
                 if not content:
                     content = getattr(choice, "text", "") or ""
             raw_response = content
             self.logger.debug(
                 "LLM response received",
-                extra={"model": self.config.llm_model, "content_preview": content[:200]},
+                extra={
+                    "model": self.config.llm_model,
+                    "content_preview": content[:200],
+                },
             )
             # Full response for debugging parse issues; remove or redact if noisy.
             raw_preview = content[:1000]
@@ -139,9 +152,14 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
             )
             # Log the full response object so provider quirks are visible.
             try:
-                response_payload = response.model_dump() if hasattr(response, "model_dump") else response
+                response_payload = (
+                    response.model_dump()
+                    if hasattr(response, "model_dump")
+                    else response
+                )
                 self.logger.debug(
-                    "LLM full response object", extra={"response_payload": response_payload}
+                    "LLM full response object",
+                    extra={"response_payload": response_payload},
                 )
             except Exception:
                 self.logger.debug("LLM full response object unavailable", exc_info=True)
@@ -207,7 +225,9 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                     "ad_end": ad_end,
                     "json_candidate_count": len(json_candidates),
                     "parse_error": parse_error,
-                    "first_candidate_preview": json_candidates[0][:200] if json_candidates else None,
+                    "first_candidate_preview": (
+                        json_candidates[0][:200] if json_candidates else None
+                    ),
                     "content_preview": (content or "")[:200],
                     "raw_response": raw_response,
                     "raw_response_len": len(content),
@@ -300,7 +320,10 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 if any(p in seg["text"].lower() for p in intro_patterns):
                     self.logger.debug(
                         "Intro pattern matched",
-                        extra={"matched_text": seg["text"], "start_time": seg["start_time"]},
+                        extra={
+                            "matched_text": seg["text"],
+                            "start_time": seg["start_time"],
+                        },
                     )
                     refined_start = seg["start_time"]
 
@@ -310,7 +333,10 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 if any(p in seg["text"].lower() for p in outro_patterns):
                     self.logger.debug(
                         "Outro pattern matched",
-                        extra={"matched_text": seg["text"], "start_time": seg["start_time"]},
+                        extra={
+                            "matched_text": seg["text"],
+                            "start_time": seg["start_time"],
+                        },
                     )
                     refined_end = seg.get("end_time", seg["start_time"] + 5.0)
 
@@ -322,7 +348,10 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         )
         self.logger.info(
             "Heuristic refinement applied",
-            extra={"refined_start": result.refined_start, "refined_end": result.refined_end},
+            extra={
+                "refined_start": result.refined_start,
+                "refined_end": result.refined_end,
+            },
         )
         return result
 

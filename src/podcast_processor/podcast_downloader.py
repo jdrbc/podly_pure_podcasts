@@ -125,7 +125,7 @@ def find_audio_link(entry: Any) -> str:
         "audio/wav",
         "audio/flac",
     ]
-    
+
     # First pass: look for exact audio type matches
     for link in entry.links:
         link_type = getattr(link, "type", "") or ""
@@ -133,7 +133,7 @@ def find_audio_link(entry: Any) -> str:
             href = link.href
             assert isinstance(href, str)
             return href
-    
+
     # Second pass: look for any audio/* type
     for link in entry.links:
         link_type = getattr(link, "type", "") or ""
@@ -141,11 +141,14 @@ def find_audio_link(entry: Any) -> str:
             href = link.href
             assert isinstance(href, str)
             return href
-    
+
     # Third pass: look for enclosure with audio file extension
     for link in entry.links:
         href = getattr(link, "href", "") or ""
-        if any(href.lower().endswith(ext) for ext in [".mp3", ".ogg", ".m4a", ".mp4", ".aac", ".wav", ".flac"]):
+        if any(
+            href.lower().endswith(ext)
+            for ext in [".mp3", ".ogg", ".m4a", ".mp4", ".aac", ".wav", ".flac"]
+        ):
             assert isinstance(href, str)
             return href
 

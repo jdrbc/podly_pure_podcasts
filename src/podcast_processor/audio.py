@@ -41,7 +41,9 @@ def clip_segments_with_fade(
     # Try the complex filter approach first, fall back to simple if it fails
     # Catch both ffmpeg.Error (runtime) and broader exceptions (filter graph construction)
     try:
-        _clip_segments_complex(ad_segments_ms, fade_ms, in_path, out_path, audio_duration_ms)
+        _clip_segments_complex(
+            ad_segments_ms, fade_ms, in_path, out_path, audio_duration_ms
+        )
     except ffmpeg.Error as e:
         err_msg = e.stderr.decode() if getattr(e, "stderr", None) else str(e)
         logger.warning(
@@ -50,7 +52,9 @@ def clip_segments_with_fade(
         _clip_segments_simple(ad_segments_ms, in_path, out_path, audio_duration_ms)
     except Exception as e:  # pylint: disable=broad-except
         # Catches filter graph construction errors like "multiple outgoing edges"
-        logger.warning("Complex filter failed (graph error), trying simple approach: %s", e)
+        logger.warning(
+            "Complex filter failed (graph error), trying simple approach: %s", e
+        )
         _clip_segments_simple(ad_segments_ms, in_path, out_path, audio_duration_ms)
 
 
@@ -141,7 +145,9 @@ def _clip_segments_simple(
 
             (
                 ffmpeg.input(in_path)
-                .output(segment_path, ss=start_sec, t=duration_sec, acodec="libmp3lame", q=2)
+                .output(
+                    segment_path, ss=start_sec, t=duration_sec, acodec="libmp3lame", q=2
+                )
                 .overwrite_output()
                 .run(quiet=True)
             )

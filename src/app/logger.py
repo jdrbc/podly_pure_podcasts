@@ -36,12 +36,10 @@ class ExtraFormatter(logging.Formatter):
         "asctime",
     }
 
-    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+    def format(self, record: logging.LogRecord) -> str:
         base = super().format(record)
         extras = {
-            k: v
-            for k, v in record.__dict__.items()
-            if k not in self._standard_attrs
+            k: v for k, v in record.__dict__.items() if k not in self._standard_attrs
         }
         if extras:
             try:
