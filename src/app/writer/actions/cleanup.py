@@ -35,7 +35,22 @@ def cleanup_missing_audio_paths_action(params: Dict[str, Any]) -> int:
         ):
             post.unprocessed_audio_path = None
             changed = True
+
         if changed:
+            latest_job = (
+                ProcessingJob.query.filter_by(post_guid=post.guid)
+                .order_by(ProcessingJob.created_at.desc())
+                .first()
+            )
+            if latest_job and latest_job.status not in {"pending", "running"}:
+                latest_job.status = "pending"
+                latest_job.current_step = 0
+                latest_job.progress_percentage = 0.0
+                latest_job.step_name = "Not started"
+                latest_job.error_message = None
+                latest_job.started_at = None
+                latest_job.completed_at = None
+
             count += 1
 
     return count
