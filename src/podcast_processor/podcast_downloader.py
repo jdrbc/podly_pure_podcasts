@@ -114,9 +114,38 @@ def sanitize_title(title: str) -> str:
 
 def find_audio_link(entry: Any) -> str:
     """Find the audio link in a feed entry."""
+    # Check for common audio types in order of preference
+    audio_types = [
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/ogg",
+        "audio/x-m4a",
+        "audio/mp4",
+        "audio/aac",
+        "audio/wav",
+        "audio/flac",
+    ]
+    
+    # First pass: look for exact audio type matches
     for link in entry.links:
-        if link.type == "audio/mpeg":
+        link_type = getattr(link, "type", "") or ""
+        if link_type in audio_types:
             href = link.href
+            assert isinstance(href, str)
+            return href
+    
+    # Second pass: look for any audio/* type
+    for link in entry.links:
+        link_type = getattr(link, "type", "") or ""
+        if link_type.startswith("audio/"):
+            href = link.href
+            assert isinstance(href, str)
+            return href
+    
+    # Third pass: look for enclosure with audio file extension
+    for link in entry.links:
+        href = getattr(link, "href", "") or ""
+        if any(href.lower().endswith(ext) for ext in [".mp3", ".ogg", ".m4a", ".mp4", ".aac", ".wav", ".flac"]):
             assert isinstance(href, str)
             return href
 
