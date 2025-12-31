@@ -109,11 +109,7 @@ class AdClassifier:
         self.cue_detector = CueDetector()
 
         # Initialize boundary refiner
-        self.boundary_refiner: Optional[BoundaryRefiner]
-        if getattr(config, "boundary_refinement_enabled", False):
-            self.boundary_refiner = BoundaryRefiner(config, self.logger)
-        else:
-            self.boundary_refiner = None
+        self.boundary_refiner = BoundaryRefiner(config, self.logger)
 
     def classify(
         self,
@@ -1343,6 +1339,12 @@ class AdClassifier:
                 continue
 
             # Refine
+            seq_nums = [
+                ident.transcript_segment.sequence_num
+                for ident in block["identifications"]
+                if ident.transcript_segment is not None
+            ]
+
             refinement = self.boundary_refiner.refine(
                 ad_start=block["start"],
                 ad_end=block["end"],
@@ -1351,6 +1353,9 @@ class AdClassifier:
                     {"start_time": s.start_time, "text": s.text, "end_time": s.end_time}
                     for s in transcript_segments
                 ],
+                post_id=post.id,
+                first_seq_num=min(seq_nums) if seq_nums else None,
+                last_seq_num=max(seq_nums) if seq_nums else None,
             )
 
             # Apply refinement: delete old identifications, create new ones

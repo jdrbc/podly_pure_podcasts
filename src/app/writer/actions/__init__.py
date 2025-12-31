@@ -58,5 +58,6 @@ from .users import (
 )
 from .users import set_user_billing_fields_action as set_user_billing_fields_action
 from .users import set_user_role_action as set_user_role_action
+from .users import update_user_last_active_action as update_user_last_active_action
 from .users import update_user_password_action as update_user_password_action
 from .users import upsert_discord_user_action as upsert_discord_user_action

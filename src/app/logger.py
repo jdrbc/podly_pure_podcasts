@@ -1,5 +1,55 @@
+import json
 import logging
 import os
+
+
+class ExtraFormatter(logging.Formatter):
+    """Formatter that appends structured extras to log lines.
+
+    Any LogRecord attributes not in the standard set are captured into a JSON
+    object and appended as ``extra={...}`` so contextual fields are visible in
+    plain-text logs.
+    """
+
+    _standard_attrs = {
+        "name",
+        "msg",
+        "args",
+        "levelname",
+        "levelno",
+        "pathname",
+        "filename",
+        "module",
+        "exc_info",
+        "exc_text",
+        "stack_info",
+        "lineno",
+        "funcName",
+        "created",
+        "msecs",
+        "relativeCreated",
+        "thread",
+        "threadName",
+        "processName",
+        "process",
+        "message",
+        "asctime",
+    }
+
+    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+        base = super().format(record)
+        extras = {
+            k: v
+            for k, v in record.__dict__.items()
+            if k not in self._standard_attrs
+        }
+        if extras:
+            try:
+                extras_json = json.dumps(extras, ensure_ascii=True, default=str)
+            except Exception:
+                extras_json = str(extras)
+            return f"{base} | extra={extras_json}"
+        return base
 
 
 def setup_logger(
@@ -12,8 +62,8 @@ def setup_logger(
     - Disables propagation to avoid duplicate root handling
     - Guards against adding duplicate handlers across repeated calls
     """
-    file_formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    console_formatter = logging.Formatter("%(levelname)s  [%(name)s] %(message)s")
+    file_formatter = ExtraFormatter("%(asctime)s %(levelname)s %(message)s")
+    console_formatter = ExtraFormatter("%(levelname)s  [%(name)s] %(message)s")
 
     logger = logging.getLogger(name)
     logger.setLevel(level)

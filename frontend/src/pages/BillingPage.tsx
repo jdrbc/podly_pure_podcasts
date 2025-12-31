@@ -14,17 +14,19 @@ export default function BillingPage() {
     queryKey: ['billing', 'summary'],
     queryFn: billingApi.getSummary,
   });
-  const [quantity, setQuantity] = useState<number>(data?.feed_allowance ?? 1);
+  
+  // Amount in dollars
+  const [amount, setAmount] = useState<number>(5);
 
   useEffect(() => {
-    if (data) {
-      setQuantity(data.feed_allowance);
+    if (data?.current_amount) {
+      setAmount(data.current_amount / 100);
     }
   }, [data]);
 
-  const updateQuantity = useMutation({
-    mutationFn: (qty: number) =>
-      billingApi.setQuantity(qty, {
+  const updateSubscription = useMutation({
+    mutationFn: (amt: number) =>
+      billingApi.updateSubscription(Math.round(amt * 100), {
         subscriptionId: data?.stripe_subscription_id ?? null,
       }),
     onSuccess: (res) => {
@@ -33,7 +35,9 @@ export default function BillingPage() {
         return;
       }
       toast.success('Plan updated');
-      setQuantity(res.feed_allowance);
+      if (res.current_amount) {
+          setAmount(res.current_amount / 100);
+      }
       refetch();
     },
     onError: (err) => {
@@ -63,8 +67,9 @@ export default function BillingPage() {
     );
   }
 
-  const monthlyTotal = (quantity || 0) * 2;
-  const atCurrentQuantity = quantity === data.feed_allowance;
+  const isSubscribed = data.subscription_status === 'active' || data.subscription_status === 'trialing';
+  const currentAmountDollars = data.current_amount ? data.current_amount / 100 : 0;
+  const atCurrentAmount = amount === currentAmountDollars && isSubscribed;
   const planLimitInfo = `${data.feeds_in_use}/${data.feed_allowance} feeds active`;
 
   return (
@@ -72,7 +77,7 @@ export default function BillingPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
         <p className="text-sm text-gray-600 mt-1">
-          $1 per feed per month. Use checkout to start a subscription or the portal to manage billing.
+          Pay what you want for the Starter Bundle (10 feeds).
         </p>
       </div>
 
@@ -81,95 +86,99 @@ export default function BillingPage() {
           <div>
             <div className="text-sm text-gray-600">Current plan</div>
             <div className="text-lg font-semibold text-gray-900">
+              {isSubscribed ? 'Starter Bundle (10 Feeds)' : 'Free Tier'}
+            </div>
+            <div className="text-xs text-gray-500">
               {planLimitInfo}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-sm text-gray-600">Monthly payment</div>
+            <div className="text-2xl font-bold text-gray-900">
+                {isSubscribed ? `$${currentAmountDollars.toFixed(2)}` : '$0.00'}
             </div>
             <div className="text-xs text-gray-500">
               Subscription status: {data.subscription_status || 'inactive'}
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-sm text-gray-600">Estimated monthly</div>
-            <div className="text-2xl font-bold text-gray-900">${monthlyTotal}</div>
-            <div className="text-xs text-gray-500">{quantity} feeds × 1</div>
-          </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="text-sm text-gray-700 font-medium">Feeds in plan</div>
+        <div className="space-y-3 pt-4 border-t border-gray-100">
+          <div className="text-sm text-gray-700 font-medium">
+            {isSubscribed ? 'Update your price' : 'Subscribe to Starter Bundle'}
+          </div>
+          <p className="text-sm text-gray-600">
+            Get 10 feeds for a monthly price of your choice (min $1.00).
+          </p>
+          
+          <div className="text-xs text-amber-800 bg-amber-50 p-3 rounded-md border border-amber-200">
+            <strong>Note:</strong> We suggest paying ~$1 per feed you use. If revenue doesn't cover server costs, we may have to shut down the service.
+          </div>
+          
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setQuantity((q) => Math.max(0, q - 1))}
-                className="px-3 py-2 rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                disabled={quantity <= 0 || updateQuantity.isPending}
-              >
-                −
-              </button>
+            <div className="relative rounded-md shadow-sm w-32">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <span className="text-gray-500 sm:text-sm">$</span>
+              </div>
               <input
                 type="number"
-                min={0}
-                value={quantity}
-                onChange={(e) => setQuantity(Math.max(0, Number(e.target.value)))}
-                className="w-24 text-center border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min={1}
+                step={0.5}
+                value={amount}
+                onChange={(e) => setAmount(Math.max(0, Number(e.target.value)))}
+                className="block w-full rounded-md border-gray-300 pl-7 pr-3 py-2 focus:border-blue-500 focus:ring-blue-500 sm:text-sm border"
+                placeholder="5.00"
               />
-              <button
-                type="button"
-                onClick={() => setQuantity((q) => q + 1)}
-                className="px-3 py-2 rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                disabled={updateQuantity.isPending}
-              >
-                +
-              </button>
             </div>
+            
             <div className="flex items-center gap-2 text-xs text-gray-600">
-              <span>Quick set:</span>
-              {[1, 3, 5, 10].map((preset) => (
+              <span>Suggested:</span>
+              {[3, 5, 10, 15].map((preset) => (
                 <button
                   key={preset}
                   type="button"
-                  onClick={() => setQuantity(preset)}
+                  onClick={() => setAmount(preset)}
                   className={`px-2 py-1 rounded-md border text-xs transition-colors ${
-                    quantity === preset
+                    amount === preset
                       ? 'border-blue-200 bg-blue-50 text-blue-700'
                       : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                   }`}
-                  disabled={updateQuantity.isPending}
+                  disabled={updateSubscription.isPending}
                 >
-                  {preset}
+                  ${preset}
                 </button>
               ))}
             </div>
-            <div className="flex-1 text-right text-xs text-gray-500">
-              {planLimitInfo}
-            </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center pt-2">
             <button
-              onClick={() => updateQuantity.mutate(quantity)}
-              disabled={updateQuantity.isPending || atCurrentQuantity}
-              className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              onClick={() => updateSubscription.mutate(amount)}
+              disabled={updateSubscription.isPending || atCurrentAmount || amount < 1}
+              className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {updateQuantity.isPending ? 'Saving…' : atCurrentQuantity ? 'No changes' : 'Update plan'}
+              {updateSubscription.isPending 
+                ? 'Processing…' 
+                : isSubscribed 
+                  ? (atCurrentAmount ? 'Current Price' : 'Update Price') 
+                  : 'Subscribe'}
             </button>
-            <div className="text-xs text-gray-500">
-              Updating an existing subscription keeps your Stripe subscription ID and prorates quantity.
-            </div>
+            {amount < 1 && (
+                <span className="text-xs text-red-500">Minimum amount is $1.00</span>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
-          <div className="text-gray-600">
-            {data.subscription_status && data.subscription_status !== 'inactive'
-              ? `Subscription status: ${data.subscription_status}`
-              : 'No active subscription'}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm pt-4 border-t border-gray-100">
+          <div className="text-gray-500 text-xs">
+             Payments are securely processed by Stripe. You can cancel anytime.
           </div>
           <button
             onClick={() => portalSession.mutate()}
             disabled={portalSession.isPending || !data.stripe_customer_id}
             className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-gray-200 text-gray-700 hover:bg-gray-100 disabled:opacity-50 text-sm"
           >
-            {portalSession.isPending ? 'Opening…' : 'Open billing portal'}
+            {portalSession.isPending ? 'Opening…' : 'Manage Billing'}
           </button>
         </div>
       </div>

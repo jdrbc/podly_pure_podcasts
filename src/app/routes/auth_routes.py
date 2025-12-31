@@ -20,6 +20,7 @@ from app.auth.service import (
     set_manual_feed_allowance,
     set_role,
     update_password,
+    update_user_last_active,
 )
 from app.auth.state import failure_rate_limiter
 from app.extensions import db
@@ -85,6 +86,8 @@ def login() -> RouteResult:
     session.clear()
     session[SESSION_USER_KEY] = authenticated.id
     session.permanent = True
+    update_user_last_active(authenticated.id)
+
     # Calculate effective allowance for frontend display
     allowance = getattr(authenticated, "manual_feed_allowance", None)
     if allowance is None:
@@ -201,6 +204,7 @@ def list_users_route() -> RouteResult:
                     "role": u.role,
                     "created_at": u.created_at.isoformat(),
                     "updated_at": u.updated_at.isoformat(),
+                    "last_active": u.last_active.isoformat() if u.last_active else None,
                     "feed_allowance": getattr(u, "feed_allowance", 0),
                     "manual_feed_allowance": getattr(u, "manual_feed_allowance", None),
                     "feed_subscription_status": getattr(

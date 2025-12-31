@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
-import type { Feed, Episode } from '../types';
+import type { Feed, Episode, PagedResult } from '../types';
 import { feedsApi } from '../services/api';
 import DownloadButton from './DownloadButton';
 import PlayButton from './PlayButton';
@@ -27,6 +27,8 @@ interface ProcessingEstimate {
   reason: string | null;
 }
 
+const EPISODES_PAGE_SIZE = 25;
+
 export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailProps) {
   const { requireAuth, isAuthenticated, user } = useAuth();
   const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -42,12 +44,26 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const [processingEstimate, setProcessingEstimate] = useState<ProcessingEstimate | null>(null);
   const [isEstimating, setIsEstimating] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
-  const { data: episodes, isLoading, error } = useQuery({
-    queryKey: ['episodes', currentFeed.id],
-    queryFn: () => feedsApi.getFeedPosts(currentFeed.id),
-  });
   const isAdmin = !requireAuth || user?.role === 'admin';
+  const whitelistedOnly = requireAuth && !isAdmin;
+
+  const {
+    data: episodesPage,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery<PagedResult<Episode>, Error, PagedResult<Episode>, [string, number, number, boolean]>({
+    queryKey: ['episodes', currentFeed.id, page, whitelistedOnly],
+    queryFn: () =>
+      feedsApi.getFeedPosts(currentFeed.id, {
+        page,
+        pageSize: EPISODES_PAGE_SIZE,
+        whitelistedOnly,
+      }),
+    placeholderData: (previousData) => previousData,
+  });
 
   const whitelistMutation = useMutation({
     mutationFn: ({ guid, whitelisted, triggerProcessing }: { guid: string; whitelisted: boolean; triggerProcessing?: boolean }) =>
@@ -176,6 +192,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     setCurrentFeed(feed);
   }, [feed]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [feed.id, whitelistedOnly]);
+
   // Handle scroll to show/hide sticky header
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -277,7 +297,26 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const canModifyEpisodes = !requireAuth ? true : Boolean(isAdmin);
   const canBulkModifyEpisodes = !requireAuth ? true : Boolean(isAdmin);
   const canSubscribe = !requireAuth || isMember;
+  const showPodlyRssButton = !(requireAuth && isAdmin && !isMember);
   const showWhitelistUi = canModifyEpisodes && isAdmin;
+
+  const episodes = episodesPage?.items ?? [];
+  const totalCount = episodesPage?.total ?? 0;
+  const whitelistedCount =
+    episodesPage?.whitelisted_total ?? episodes.filter((ep: Episode) => ep.whitelisted).length;
+  const totalPages = Math.max(
+    1,
+    episodesPage?.total_pages ?? Math.ceil(totalCount / EPISODES_PAGE_SIZE)
+  );
+  const hasEpisodes = totalCount > 0;
+  const visibleStart = hasEpisodes ? (page - 1) * EPISODES_PAGE_SIZE + 1 : 0;
+  const visibleEnd = hasEpisodes ? Math.min(totalCount, page * EPISODES_PAGE_SIZE) : 0;
+
+  useEffect(() => {
+    if (page > totalPages && totalPages > 0) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const handleBulkWhitelistToggle = () => {
     if (requireAuth && !isAdmin) {
@@ -293,29 +332,25 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     }
   };
 
-  const episodesToShow = useMemo(() => {
-    if (!episodes) return [];
-    if (isAdmin) return episodes;
+  const episodesToShow = useMemo(() => episodes, [episodes]);
 
-    return episodes.filter((ep) => ep.whitelisted);
-  }, [episodes, isAdmin]);
-
-  const sortedEpisodes = episodesToShow.sort((a, b) => {
-    switch (sortBy) {
-      case 'newest':
-        return new Date(b.release_date || 0).getTime() - new Date(a.release_date || 0).getTime();
-      case 'oldest':
-        return new Date(a.release_date || 0).getTime() - new Date(b.release_date || 0).getTime();
-      case 'title':
-        return a.title.localeCompare(b.title);
-      default:
-        return 0;
-    }
-  });
+  const sortedEpisodes = useMemo(() => {
+    const list = [...episodesToShow];
+    return list.sort((a, b) => {
+      switch (sortBy) {
+        case 'newest':
+          return new Date(b.release_date || 0).getTime() - new Date(a.release_date || 0).getTime();
+        case 'oldest':
+          return new Date(a.release_date || 0).getTime() - new Date(b.release_date || 0).getTime();
+        case 'title':
+          return a.title.localeCompare(b.title);
+        default:
+          return 0;
+      }
+    });
+  }, [episodesToShow, sortBy]);
 
   // Calculate whitelist status for bulk button
-  const whitelistedCount = episodes ? episodes.filter(ep => ep.whitelisted).length : 0;
-  const totalCount = episodes ? episodes.length : 0;
   const allWhitelisted = totalCount > 0 && whitelistedCount === totalCount;
 
   const formatDate = (dateString: string | null) => {
@@ -453,7 +488,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                   <p className="text-lg text-gray-600">by {currentFeed.author}</p>
                 )}
                 <div className="mt-2 text-sm text-gray-500">
-                  <span>{sortedEpisodes.length} episodes visible</span>
+                  <span>{totalCount} episodes visible</span>
                 </div>
                 {requireAuth && isAdmin && (
                   <div className="mt-2 flex items-center gap-2 flex-wrap text-sm">
@@ -479,57 +514,42 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             {/* RSS Button and Menu */}
             <div className="flex items-center gap-3">
               {/* Podly RSS Subscribe Button */}
-              <button
-                onClick={handleCopyRssToClipboard}
-                title="Copy Podly RSS feed URL"
-                className={`flex items-center gap-3 px-5 py-2 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition-colors ${
-                  !canSubscribe ? 'opacity-60 cursor-not-allowed' : ''
-                }`}
-                disabled={!canSubscribe}
-              >
-                <img
-                  src="/rss-round-color-icon.svg"
-                  alt="Podly RSS"
-                  className="w-6 h-6"
-                  aria-hidden="true"
-                />
-                <span className="text-white">
-                  {canSubscribe ? 'Subscribe to Podly RSS' : 'Join feed to subscribe'}
-                </span>
-              </button>
+              {showPodlyRssButton && (
+                <button
+                  onClick={handleCopyRssToClipboard}
+                  title="Copy Podly RSS feed URL"
+                  className={`flex items-center gap-3 px-5 py-2 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition-colors ${
+                    !canSubscribe ? 'opacity-60 cursor-not-allowed' : ''
+                  }`}
+                  disabled={!canSubscribe}
+                >
+                  <img
+                    src="/rss-round-color-icon.svg"
+                    alt="Podly RSS"
+                    className="w-6 h-6"
+                    aria-hidden="true"
+                  />
+                  <span className="text-white">
+                    {canSubscribe ? 'Subscribe to Podly RSS' : 'Join feed to subscribe'}
+                  </span>
+                </button>
+              )}
 
-              {requireAuth && isAdmin && (
-                isMember ? (
-                  <button
-                    onClick={() => leaveFeedMutation.mutate()}
-                    disabled={leaveFeedMutation.isPending}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium border transition-colors ${
-                      leaveFeedMutation.isPending
-                        ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed'
-                        : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    Leave feed
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => joinFeedMutation.mutate()}
-                    disabled={joinFeedMutation.isPending}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                      joinFeedMutation.isPending
-                        ? 'bg-blue-100 text-blue-300 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Join feed
-                  </button>
-                )
+              {requireAuth && isAdmin && !isMember && (
+                <button
+                  onClick={() => joinFeedMutation.mutate()}
+                  disabled={joinFeedMutation.isPending}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    joinFeedMutation.isPending
+                      ? 'bg-blue-100 text-blue-300 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Join feed
+                </button>
               )}
 
               {canModifyEpisodes && (
@@ -891,6 +911,41 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             </div>
           )}
         </div>
+
+        {totalCount > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t bg-white">
+            <div className="text-sm text-gray-600">
+              Showing {visibleStart}-{visibleEnd} of {totalCount} episodes
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page === 1 || isLoading || isFetching}
+                className={`px-3 py-1 text-sm rounded-md border transition-colors ${
+                  page === 1 || isLoading || isFetching
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Previous
+              </button>
+              <span className="text-sm text-gray-700">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={page >= totalPages || isLoading || isFetching}
+                className={`px-3 py-1 text-sm rounded-md border transition-colors ${
+                  page >= totalPages || isLoading || isFetching
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {showProcessingModal && pendingEpisode && (

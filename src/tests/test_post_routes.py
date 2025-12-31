@@ -1,3 +1,4 @@
+import datetime
 from types import SimpleNamespace
 from unittest import mock
 
@@ -110,3 +111,74 @@ def test_toggle_whitelist_all_requires_admin(app):
     with app.app_context():
         whitelisted = Post.query.filter_by(feed_id=feed_id, whitelisted=True).count()
         assert whitelisted == 2
+
+
+def test_feed_posts_pagination_and_filtering(app):
+    """Feed posts endpoint should paginate and support whitelisted filter."""
+
+    app.testing = True
+    app.register_blueprint(post_bp)
+
+    with app.app_context():
+        feed = Feed(title="Paged Feed", rss_url="https://example.com/feed.xml")
+        db.session.add(feed)
+        db.session.commit()
+
+        base_date = datetime.date(2024, 1, 1)
+        posts = []
+        # Create 30 posts with descending dates; even ones whitelisted.
+        for idx in range(30):
+            post = Post(
+                feed_id=feed.id,
+                guid=f"guid-{idx}",
+                download_url=f"https://example.com/{idx}.mp3",
+                title=f"Episode {idx}",
+                release_date=base_date + datetime.timedelta(days=idx),
+                whitelisted=(idx % 2 == 0),
+            )
+            posts.append(post)
+
+        db.session.add_all(posts)
+        db.session.commit()
+
+        client = app.test_client()
+
+        # Default page (1) should return 25 items ordered newest-first
+        response = client.get(f"/api/feeds/{feed.id}/posts")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["page"] == 1
+        assert data["page_size"] == 25
+        assert data["total"] == 30
+        assert data["total_pages"] == 2
+        assert len(data["items"]) == 25
+        # First item should be newest (idx 29)
+        assert data["items"][0]["guid"] == "guid-29"
+        # Last item on page 1 should be idx 5 (25 items: 29..5)
+        assert data["items"][-1]["guid"] == "guid-5"
+
+        # Page 2 should return remaining 5
+        response = client.get(f"/api/feeds/{feed.id}/posts", query_string={"page": 2})
+        assert response.status_code == 200
+        data_page_2 = response.get_json()
+        assert data_page_2["page"] == 2
+        assert len(data_page_2["items"]) == 5
+        # Items should be 4..0
+        assert {item["guid"] for item in data_page_2["items"]} == {
+            "guid-4",
+            "guid-3",
+            "guid-2",
+            "guid-1",
+            "guid-0",
+        }
+
+        # Whitelisted filter should only return whitelisted posts (15 total)
+        response = client.get(
+            f"/api/feeds/{feed.id}/posts",
+            query_string={"whitelisted_only": "true"},
+        )
+        assert response.status_code == 200
+        filtered = response.get_json()
+        assert filtered["total"] == 15
+        assert filtered["whitelisted_total"] == 15
+        assert all(item["whitelisted"] for item in filtered["items"])
