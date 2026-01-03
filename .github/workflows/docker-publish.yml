@@ -66,7 +66,7 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.event.pull_request.base.ref }}"
             echo "Fetching base branch origin/$BASE_REF"
-            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            git fetch --no-tags origin "$BASE_REF"
             BASE_SHA=$(git rev-parse "origin/$BASE_REF")
             HEAD_SHA=$(git rev-parse "${{ github.sha }}")
             echo "Comparing PR commits: $BASE_SHA...$HEAD_SHA"
@@ -75,7 +75,7 @@ jobs:
             echo "Release event detected; building images for release tag"
             TARGET_REF="${{ github.event.release.target_commitish }}"
             echo "Fetching release target origin/$TARGET_REF"
-            git fetch --no-tags --depth=1 origin "$TARGET_REF" || true
+            git fetch --no-tags origin "$TARGET_REF" || true
             HEAD_SHA=$(git rev-parse "${{ github.sha }}")
             BASE_SHA=$(git rev-parse "origin/$TARGET_REF" 2>/dev/null || git rev-parse "$TARGET_REF" 2>/dev/null || echo "$HEAD_SHA")
             files_changed=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" 2>/dev/null || echo "release-trigger")
