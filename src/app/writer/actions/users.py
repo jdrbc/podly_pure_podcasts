@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict
 
 from app.extensions import db
@@ -169,3 +170,17 @@ def set_user_billing_by_customer_id_action(params: Dict[str, Any]) -> Dict[str, 
 
     db.session.flush()
     return {"updated": True, "user_id": user.id}
+
+
+def update_user_last_active_action(params: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = params.get("user_id")
+    if not user_id:
+        raise ValueError("user_id is required")
+
+    user = db.session.get(User, int(user_id))
+    if not user:
+        raise ValueError(f"User {user_id} not found")
+
+    user.last_active = datetime.utcnow()
+    db.session.flush()
+    return {"user_id": user.id, "last_active": user.last_active.isoformat()}

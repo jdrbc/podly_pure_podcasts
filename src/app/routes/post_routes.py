@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Any, Dict
@@ -8,6 +9,7 @@ from flask import Blueprint, g, jsonify, request, send_file
 from flask.typing import ResponseReturnValue
 
 from app.auth.guards import require_admin
+from app.auth.service import update_user_last_active
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
 from app.models import (
@@ -49,17 +51,46 @@ def _increment_download_count(post: Post) -> None:
 
 @post_bp.route("/api/feeds/<int:feed_id>/posts", methods=["GET"])
 def api_feed_posts(feed_id: int) -> flask.Response:
-    """Returns a JSON list of posts for a specific feed."""
+    """Return a paginated JSON list of posts for a specific feed."""
 
     # Ensure we have fresh data
     db.session.expire_all()
 
     feed = Feed.query.get_or_404(feed_id)
 
+    # Pagination and filtering
+    try:
+        page = int(request.args.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    page = max(page, 1)
+
+    try:
+        page_size = int(request.args.get("page_size", 25))
+    except (TypeError, ValueError):
+        page_size = 25
+    page_size = max(1, min(page_size, 200))
+
+    whitelisted_only = str(request.args.get("whitelisted_only", "false")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
     # Query posts directly to avoid stale relationship cache
-    db_posts = (
-        Post.query.filter_by(feed_id=feed.id).order_by(Post.release_date.desc()).all()
+    base_query = Post.query.filter_by(feed_id=feed.id)
+    if whitelisted_only:
+        base_query = base_query.filter_by(whitelisted=True)
+
+    ordered_query = base_query.order_by(
+        Post.release_date.desc().nullslast(), Post.id.desc()
     )
+
+    total_posts = ordered_query.count()
+    whitelisted_total = Post.query.filter_by(feed_id=feed.id, whitelisted=True).count()
+
+    db_posts = ordered_query.offset((page - 1) * page_size).limit(page_size).all()
 
     posts = [
         {
@@ -80,7 +111,19 @@ def api_feed_posts(feed_id: int) -> flask.Response:
         }
         for post in db_posts
     ]
-    return flask.jsonify(posts)
+
+    total_pages = math.ceil(total_posts / page_size) if total_posts else 0
+
+    return flask.jsonify(
+        {
+            "items": posts,
+            "page": page,
+            "page_size": page_size,
+            "total": total_posts,
+            "total_pages": total_pages,
+            "whitelisted_total": whitelisted_total,
+        }
+    )
 
 
 @post_bp.route("/api/posts/<string:p_guid>/processing-estimate", methods=["GET"])
@@ -773,6 +816,9 @@ def api_get_post_audio(p_guid: str) -> ResponseReturnValue:
 @post_bp.route("/api/posts/<string:p_guid>/download", methods=["GET"])
 def api_download_post(p_guid: str) -> flask.Response:
     """API endpoint to download processed audio files."""
+    if hasattr(g, "current_user") and g.current_user:
+        update_user_last_active(g.current_user.id)
+
     logger.info(f"Request to download post with GUID: {p_guid}")
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:

@@ -147,6 +147,15 @@ def set_manual_feed_allowance(user: User, allowance: int | None) -> None:
     db.session.expire(user)
 
 
+def update_user_last_active(user_id: int) -> None:
+    """Update the last_active timestamp for a user."""
+    writer_client.action(
+        "update_user_last_active",
+        {"user_id": user_id},
+        wait=False,
+    )
+
+
 def _count_admins() -> int:
     return cast(int, User.query.filter_by(role="admin").count())
 

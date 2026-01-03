@@ -398,6 +398,9 @@ function UserManagementSection({ currentUser, refreshUser, logout, managedUsers,
                         <div className="text-sm font-semibold text-gray-900">{managed.username}</div>
                         <div className="text-xs text-gray-500">
                           Added {new Date(managed.created_at).toLocaleString()} • Role {managed.role} • Feeds {allowance} • Status {subscriptionStatus}
+                          {managed.last_active && (
+                            <> • Last Active {new Date(managed.last_active).toLocaleString()}</>
+                          )}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">

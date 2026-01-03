@@ -8,7 +8,13 @@ from typing import Any, Dict, List, Optional
 import litellm
 from jinja2 import Template
 
+from app.writer.client import writer_client
 from shared.config import Config
+
+
+# Internal defaults for boundary expansion; not user-configurable.
+MAX_START_EXTENSION_SECONDS = 30.0
+MAX_END_EXTENSION_SECONDS = 15.0
 
 
 @dataclass
@@ -48,63 +54,219 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         ad_end: float,
         confidence: float,
         all_segments: List[Dict[str, Any]],
+        *,
+        post_id: Optional[int] = None,
+        first_seq_num: Optional[int] = None,
+        last_seq_num: Optional[int] = None,
     ) -> BoundaryRefinement:
-        """Refine ad boundaries using LLM analysis"""
+        """Refine ad boundaries using LLM analysis and record the call in ModelCall."""
+        self.logger.debug(
+            "Refining boundaries",
+            extra={
+                "ad_start": ad_start,
+                "ad_end": ad_end,
+                "confidence": confidence,
+                "segments_count": len(all_segments),
+            },
+        )
         context = self._get_context(ad_start, ad_end, all_segments)
+        self.logger.debug(
+            "Context window selected",
+            extra={"context_size": len(context), "first_seg": context[0] if context else None},
+        )
+
+        prompt = self.template.render(
+            ad_start=ad_start,
+            ad_end=ad_end,
+            ad_confidence=confidence,
+            context_segments=context,
+            max_start_extension=MAX_START_EXTENSION_SECONDS,
+            max_end_extension=MAX_END_EXTENSION_SECONDS,
+        )
+
+        model_call_id: Optional[int] = None
+        raw_response: Optional[str] = None
+
+        # Record the intent to call the LLM when we have enough context to do so
+        if post_id is not None and first_seq_num is not None and last_seq_num is not None:
+            try:
+                res = writer_client.action(
+                    "upsert_model_call",
+                    {
+                        "post_id": post_id,
+                        "model_name": self.config.llm_model,
+                        "first_segment_sequence_num": first_seq_num,
+                        "last_segment_sequence_num": last_seq_num,
+                        "prompt": prompt,
+                    },
+                    wait=True,
+                )
+                if res and res.success:
+                    model_call_id = (res.data or {}).get("model_call_id")
+            except Exception as e:  # best-effort; do not block refinement
+                self.logger.warning("Boundary refine: failed to upsert ModelCall: %s", e)
 
         try:
-            # Try LLM refinement
-            prompt = self.template.render(
-                ad_start=ad_start,
-                ad_end=ad_end,
-                ad_confidence=confidence,
-                context_segments=context,
-                max_start_extension=getattr(
-                    self.config, "max_start_extension_seconds", 30.0
-                ),
-                max_end_extension=getattr(
-                    self.config, "max_end_extension_seconds", 15.0
-                ),
-            )
-
             response = litellm.completion(
                 model=self.config.llm_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=500,
+                max_tokens=4096,
                 timeout=self.config.openai_timeout,
                 api_key=self.config.llm_api_key,
                 base_url=self.config.openai_base_url,
             )
 
-            content = response.choices[0].message.content
-            # Parse JSON (strip markdown fences)
+            choice = response.choices[0] if response.choices else None
+            content = ""
+            if choice:
+                # Prefer chat content; fall back to text for completion-style responses
+                content = getattr(getattr(choice, "message", None), "content", None) or ""
+                if not content:
+                    content = getattr(choice, "text", "") or ""
+            raw_response = content
+            self.logger.debug(
+                "LLM response received",
+                extra={"model": self.config.llm_model, "content_preview": content[:200]},
+            )
+            # Full response for debugging parse issues; remove or redact if noisy.
+            raw_preview = content[:1000]
+            self.logger.debug(
+                "LLM response raw (%s chars, preview up to 1000): %r",
+                len(content),
+                raw_preview,
+                extra={"model": self.config.llm_model},
+            )
+            # Log the full response object so provider quirks are visible.
+            try:
+                response_payload = response.model_dump() if hasattr(response, "model_dump") else response
+                self.logger.debug(
+                    "LLM full response object", extra={"response_payload": response_payload}
+                )
+            except Exception:
+                self.logger.debug("LLM full response object unavailable", exc_info=True)
+            # Persist the raw response immediately so it's available even if parsing fails.
+            self._update_model_call(
+                model_call_id,
+                status="received_response",
+                response=raw_response,
+                error_message=None,
+            )
+            # Parse JSON (strip markdown fences). Log parse diagnostics so failures are actionable.
             cleaned = re.sub(r"```json|```", "", content.strip())
-            match = re.search(r"\{[^}]+\}", cleaned)
-            if match:
-                data = json.loads(match.group(0))
-                return self._validate(
+            json_candidates = re.findall(r"\{.*?\}", cleaned, re.DOTALL)
+            parse_error: Optional[str] = None
+            parsed: Optional[Dict[str, Any]] = None
+
+            for candidate in json_candidates:
+                try:
+                    parsed = json.loads(candidate)
+                    break
+                except Exception as exc:  # capture the last parse error for logging
+                    parse_error = str(exc)
+
+            if parsed:
+                refined = self._validate(
                     ad_start,
                     ad_end,
                     BoundaryRefinement(
-                        refined_start=float(data["refined_start"]),
-                        refined_end=float(data["refined_end"]),
-                        start_adjustment_reason=data.get(
-                            "start_adjustment_reason", data.get("start_reason", "")
+                        refined_start=float(parsed["refined_start"]),
+                        refined_end=float(parsed["refined_end"]),
+                        start_adjustment_reason=parsed.get(
+                            "start_adjustment_reason", parsed.get("start_reason", "")
                         ),
-                        end_adjustment_reason=data.get(
-                            "end_adjustment_reason", data.get("end_reason", "")
+                        end_adjustment_reason=parsed.get(
+                            "end_adjustment_reason", parsed.get("end_reason", "")
                         ),
                         confidence_adjustment=float(
-                            data.get("confidence_adjustment", 0.0)
+                            parsed.get("confidence_adjustment", 0.0)
                         ),
                     ),
                 )
+                self._update_model_call(
+                    model_call_id,
+                    status="success",
+                    response=raw_response,
+                    error_message=None,
+                )
+                self.logger.info(
+                    "LLM refinement applied",
+                    extra={
+                        "refined_start": refined.refined_start,
+                        "refined_end": refined.refined_end,
+                        "confidence_adjustment": refined.confidence_adjustment,
+                    },
+                )
+                return refined
+
+            self.logger.warning(
+                "Boundary refinement LLM response had no parseable JSON; falling back to heuristic",
+                extra={
+                    "model_call_id": model_call_id,
+                    "ad_start": ad_start,
+                    "ad_end": ad_end,
+                    "json_candidate_count": len(json_candidates),
+                    "parse_error": parse_error,
+                    "first_candidate_preview": json_candidates[0][:200] if json_candidates else None,
+                    "content_preview": (content or "")[:200],
+                    "raw_response": raw_response,
+                    "raw_response_len": len(content),
+                },
+            )
+            # Also emit the raw response in-band so it shows up in plain-text logs.
+            self.logger.debug(
+                "Boundary refinement raw response (len=%s): %r",
+                len(content),
+                raw_preview,
+                extra={"model_call_id": model_call_id},
+            )
+            self._update_model_call(
+                model_call_id,
+                status="success_heuristic",
+                response=raw_response,
+                error_message=parse_error or "parse_failed",
+            )
         except Exception as e:
+            self._update_model_call(
+                model_call_id,
+                status="failed_permanent",
+                response=raw_response,
+                error_message=str(e),
+            )
             self.logger.warning(f"LLM refinement failed: {e}, using heuristic")
 
         # Fallback: heuristic refinement
         return self._heuristic_refine(ad_start, ad_end, context)
+
+    def _update_model_call(
+        self,
+        model_call_id: Optional[int],
+        *,
+        status: str,
+        response: Optional[str],
+        error_message: Optional[str],
+    ) -> None:
+        """Best-effort ModelCall updater; no-op if call creation failed."""
+        if model_call_id is None:
+            return
+        try:
+            writer_client.update(
+                "ModelCall",
+                int(model_call_id),
+                {
+                    "status": status,
+                    "response": response,
+                    "error_message": error_message,
+                    "retry_attempts": 1,
+                },
+                wait=True,
+            )
+        except Exception as exc:  # best-effort; do not block refinement
+            self.logger.warning(
+                "Boundary refine: failed to update ModelCall %s: %s",
+                model_call_id,
+                exc,
+            )
 
     def _get_context(
         self, ad_start: float, ad_end: float, all_segments: List[Dict[str, Any]]
@@ -136,27 +298,40 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         for seg in context:
             if seg["start_time"] < ad_start:
                 if any(p in seg["text"].lower() for p in intro_patterns):
+                    self.logger.debug(
+                        "Intro pattern matched",
+                        extra={"matched_text": seg["text"], "start_time": seg["start_time"]},
+                    )
                     refined_start = seg["start_time"]
 
         # Check after ad for outros
         for seg in context:
             if seg["start_time"] > ad_end:
                 if any(p in seg["text"].lower() for p in outro_patterns):
+                    self.logger.debug(
+                        "Outro pattern matched",
+                        extra={"matched_text": seg["text"], "start_time": seg["start_time"]},
+                    )
                     refined_end = seg.get("end_time", seg["start_time"] + 5.0)
 
-        return BoundaryRefinement(
+        result = BoundaryRefinement(
             refined_start,
             refined_end,
             "heuristic",
             "heuristic",
         )
+        self.logger.info(
+            "Heuristic refinement applied",
+            extra={"refined_start": result.refined_start, "refined_end": result.refined_end},
+        )
+        return result
 
     def _validate(
         self, orig_start: float, orig_end: float, refinement: BoundaryRefinement
     ) -> BoundaryRefinement:
         """Constrain refinement to reasonable bounds"""
-        max_start_ext = getattr(self.config, "max_start_extension_seconds", 30.0)
-        max_end_ext = getattr(self.config, "max_end_extension_seconds", 15.0)
+        max_start_ext = MAX_START_EXTENSION_SECONDS
+        max_end_ext = MAX_END_EXTENSION_SECONDS
 
         refinement.refined_start = max(
             refinement.refined_start, orig_start - max_start_ext
@@ -165,5 +340,15 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         if refinement.refined_start >= refinement.refined_end:
             refinement.refined_start = orig_start
             refinement.refined_end = orig_end
+
+        self.logger.debug(
+            "Refinement validated",
+            extra={
+                "orig_start": orig_start,
+                "orig_end": orig_end,
+                "refined_start": refinement.refined_start,
+                "refined_end": refinement.refined_end,
+            },
+        )
 
         return refinement

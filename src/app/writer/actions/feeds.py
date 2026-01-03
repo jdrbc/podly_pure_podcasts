@@ -215,7 +215,8 @@ def create_dev_test_feed_action(params: Dict[str, Any]) -> Dict[str, Any]:
     db.session.flush()
 
     now = datetime.utcnow()
-    post_count = int(params.get("post_count") or 5)
+    # Use a larger default so dev/test feeds exercise paging in the UI
+    post_count = int(params.get("post_count") or 30)
     for i in range(1, post_count + 1):
         guid = f"{params.get('guid_prefix') or 'test-guid'}-{feed.id}-{i}"
         post = Post(

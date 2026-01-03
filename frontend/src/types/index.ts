@@ -26,6 +26,15 @@ export interface Episode {
   download_count: number;
 } 
 
+export interface PagedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages?: number;
+  whitelisted_total?: number;
+}
+
 export interface Job {
   job_id: string;
   post_guid: string;
@@ -183,6 +192,7 @@ export interface AuthUser {
 export interface ManagedUser extends AuthUser {
   created_at: string;
   updated_at: string;
+  last_active?: string | null;
 }
 
 export interface DiscordStatus {
@@ -193,11 +203,11 @@ export interface BillingSummary {
   feed_allowance: number;
   feeds_in_use: number;
   remaining: number;
-  price_per_feed: number;
+  current_amount?: number;
   subscription_status: string;
   stripe_subscription_id?: string | null;
   stripe_customer_id?: string | null;
-  price_id?: string | null;
+  product_id?: string | null;
   message?: string;
 }
 
