@@ -1,7 +1,7 @@
 """add autoprocess_on_download
 
 Revision ID: e1325294473b
-Revises: 73a6b9f9b643
+Revises: 58b4eedd4c61
 Create Date: 2025-12-25 20:45:12.595954
 
 """
@@ -11,7 +11,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "e1325294473b"
-down_revision = "73a6b9f9b643"
+down_revision = "58b4eedd4c61"
 branch_labels = None
 depends_on = None
 
