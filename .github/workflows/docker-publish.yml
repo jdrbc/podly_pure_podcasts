@@ -175,7 +175,7 @@ jobs:
 
   build-arm64:
     needs: changes
-    if: needs.changes.outputs.skip == 'false' && (github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')))
+    if: ${{ needs.changes.outputs.skip == 'false' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -263,7 +263,7 @@ jobs:
 
   manifest:
     needs: [changes, build-amd64, build-arm64]
-    if: needs.changes.outputs.skip == 'false' && (github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) && needs.build-arm64.result == 'success'
+    if: ${{ needs.changes.outputs.skip == 'false' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -297,10 +297,12 @@ jobs:
       - name: Create and push manifest
         run: |
           set -euo pipefail
-          for tag in ${{ steps.meta.outputs.tags }}; do
+          tags="${{ steps.meta.outputs.tags }}"
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
             echo "Creating manifest for ${tag}"
             docker buildx imagetools create \
               -t "${tag}" \
               "${tag}-amd64" \
               "${tag}-arm64"
-          done
+          done <<< "$tags"
