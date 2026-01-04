@@ -1,5 +1,7 @@
 import logging
 import math
+import os
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -35,6 +37,35 @@ def clip_segments_with_fade(
 
     audio_duration_ms = get_audio_duration_ms(in_path)
     assert audio_duration_ms is not None
+
+    # Try the complex filter approach first, fall back to simple if it fails
+    # Catch both ffmpeg.Error (runtime) and broader exceptions (filter graph construction)
+    try:
+        _clip_segments_complex(
+            ad_segments_ms, fade_ms, in_path, out_path, audio_duration_ms
+        )
+    except ffmpeg.Error as e:
+        err_msg = e.stderr.decode() if getattr(e, "stderr", None) else str(e)
+        logger.warning(
+            "Complex filter failed (ffmpeg error), trying simple approach: %s", err_msg
+        )
+        _clip_segments_simple(ad_segments_ms, in_path, out_path, audio_duration_ms)
+    except Exception as e:  # pylint: disable=broad-except
+        # Catches filter graph construction errors like "multiple outgoing edges"
+        logger.warning(
+            "Complex filter failed (graph error), trying simple approach: %s", e
+        )
+        _clip_segments_simple(ad_segments_ms, in_path, out_path, audio_duration_ms)
+
+
+def _clip_segments_complex(
+    ad_segments_ms: List[Tuple[int, int]],
+    fade_ms: int,
+    in_path: str,
+    out_path: str,
+    audio_duration_ms: int,
+) -> None:
+    """Original complex approach with fades."""
 
     trimmed_list = []
 
@@ -73,6 +104,71 @@ def clip_segments_with_fade(
     )
     ffmpeg.concat(*trimmed_list, v=0, a=1).output(out_path).overwrite_output().run()
     logger.info("[FFMPEG_CONCAT] Completed audio concatenation: %s", out_path)
+
+
+def _clip_segments_simple(
+    ad_segments_ms: List[Tuple[int, int]],
+    in_path: str,
+    out_path: str,
+    audio_duration_ms: int,
+) -> None:
+    """Simpler approach without fades - more reliable for many segments."""
+
+    # Build list of segments to keep (inverse of ad segments)
+    keep_segments: List[Tuple[int, int]] = []
+    last_end = 0
+
+    for start_ms, end_ms in ad_segments_ms:
+        if start_ms > last_end:
+            keep_segments.append((last_end, start_ms))
+        last_end = end_ms
+
+    if last_end < audio_duration_ms:
+        keep_segments.append((last_end, audio_duration_ms))
+
+    if not keep_segments:
+        raise ValueError("No audio segments to keep after ad removal")
+
+    logger.info(
+        "[FFMPEG_SIMPLE] Starting simple concat with %d segments", len(keep_segments)
+    )
+
+    # Create temp directory for intermediate files
+    with tempfile.TemporaryDirectory() as temp_dir:
+        segment_files = []
+
+        # Extract each segment to keep
+        for i, (start_ms, end_ms) in enumerate(keep_segments):
+            segment_path = os.path.join(temp_dir, f"segment_{i}.mp3")
+            start_sec = start_ms / 1000.0
+            duration_sec = (end_ms - start_ms) / 1000.0
+
+            (
+                ffmpeg.input(in_path)
+                .output(
+                    segment_path, ss=start_sec, t=duration_sec, acodec="libmp3lame", q=2
+                )
+                .overwrite_output()
+                .run(quiet=True)
+            )
+
+            segment_files.append(segment_path)
+
+        # Create concat file list
+        concat_list_path = os.path.join(temp_dir, "concat_list.txt")
+        with open(concat_list_path, "w", encoding="utf-8") as file_list:
+            for seg_file in segment_files:
+                file_list.write(f"file '{seg_file}'\n")
+
+        # Concatenate all segments
+        (
+            ffmpeg.input(concat_list_path, format="concat", safe=0)
+            .output(out_path, acodec="libmp3lame", q=2)
+            .overwrite_output()
+            .run(quiet=True)
+        )
+
+    logger.info("[FFMPEG_SIMPLE] Completed simple audio concatenation: %s", out_path)
 
 
 def trim_file(in_path: Path, out_path: Path, start_ms: int, end_ms: int) -> None:
