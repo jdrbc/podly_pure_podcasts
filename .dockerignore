@@ -50,6 +50,11 @@ src/instance/
 .env.*
 !.env.example
 
+# Node / JS
+node_modules/
+.DS_Store
+*.DS_Store
+
 # Frontend specific
 frontend/node_modules/
 frontend/dist/
@@ -61,4 +66,10 @@ frontend/.eslintcache
 # Documentation
 docs/
 *.md
-!README.md 
+!README.md
+
+# Coverage / lint caches
+.coverage
+coverage.xml
+htmlcov/
+.ruff_cache/

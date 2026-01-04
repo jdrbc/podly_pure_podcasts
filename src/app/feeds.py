@@ -2,7 +2,7 @@ import datetime
 import logging
 import uuid
 from email.utils import format_datetime, parsedate_to_datetime
-from typing import Any, Optional
+from typing import Any, Iterable, Optional, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import feedparser  # type: ignore[import-untyped]
@@ -319,16 +319,20 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
 
-    # Only publish processed + whitelisted episodes for this feed
-    posts = (
-        Post.query.filter(
-            Post.feed_id == feed.id,
-            Post.whitelisted.is_(True),
-            Post.processed_audio_path.isnot(None),
+    include_unprocessed = getattr(config, "autoprocess_on_download", True)
+
+    if include_unprocessed:
+        posts = list(cast(Iterable[Post], feed.posts))
+    else:
+        posts = (
+            Post.query.filter(
+                Post.feed_id == feed.id,
+                Post.whitelisted.is_(True),
+                Post.processed_audio_path.isnot(None),
+            )
+            .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+            .all()
         )
-        .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
-        .all()
-    )
 
     items = [feed_item(post) for post in posts]
 

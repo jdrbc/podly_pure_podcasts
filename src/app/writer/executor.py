@@ -79,6 +79,10 @@ class CommandExecutor:
             writer_actions.toggle_whitelist_all_for_feed_action,
         )
         self.register_action(
+            "whitelist_post",
+            writer_actions.whitelist_post_action,
+        )
+        self.register_action(
             "create_dev_test_feed", writer_actions.create_dev_test_feed_action
         )
         self.register_action(

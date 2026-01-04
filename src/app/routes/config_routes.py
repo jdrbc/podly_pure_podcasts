@@ -205,6 +205,11 @@ def _hydrate_app_config(data: Dict[str, Any]) -> None:
     app_cfg["user_limit_total"] = getattr(
         runtime_config, "user_limit_total", app_cfg.get("user_limit_total")
     )
+    app_cfg["autoprocess_on_download"] = getattr(
+        runtime_config,
+        "autoprocess_on_download",
+        app_cfg.get("autoprocess_on_download"),
+    )
 
 
 def _first_env(env_names: list[str]) -> tuple[str | None, str | None]:
