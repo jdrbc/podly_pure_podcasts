@@ -114,12 +114,27 @@ def sanitize_title(title: str) -> str:
 
 def find_audio_link(entry: Any) -> str:
     """Find the audio link in a feed entry."""
-    for link in entry.links:
-        if link.type == "audio/mpeg":
-            href = link.href
-            assert isinstance(href, str)
-            return href
-
+    audio_mime_types = {
+        "audio/mpeg", "audio/mp3", "audio/x-mp3", "audio/mpeg3",
+        "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/aac",
+        "audio/wav", "audio/x-wav", "audio/ogg", "audio/opus"
+    }
+    
+    # First check RSS enclosure tags (standard for podcast media)
+    if hasattr(entry, 'enclosures') and entry.enclosures:
+        for enclosure in entry.enclosures:
+            if hasattr(enclosure, 'type') and enclosure.type.lower() in audio_mime_types:
+                if hasattr(enclosure, 'href') and enclosure.href:
+                    return str(enclosure.href)
+                elif hasattr(enclosure, 'url') and enclosure.url:
+                    return str(enclosure.url)
+    
+    # Fallback to entry.links for feeds that use links instead of enclosures
+    if hasattr(entry, 'links') and entry.links:
+        for link in entry.links:
+            if hasattr(link, 'type') and link.type.lower() in audio_mime_types:
+                if hasattr(link, 'href') and link.href:
+                    return str(link.href)
     return str(entry.id)
 
 
