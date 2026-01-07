@@ -97,6 +97,10 @@ class Config(BaseModel):
         default=DEFAULTS.LLM_MAX_INPUT_TOKENS_PER_MINUTE,
         description="Override default tokens per minute limit for the model",
     )
+    enable_boundary_refinement: bool = Field(
+        default=DEFAULTS.ENABLE_BOUNDARY_REFINEMENT,
+        description="Enable LLM-based ad boundary refinement for improved precision",
+    )
     developer_mode: bool = Field(
         default=False,
         description="Enable developer mode features like test feeds",

@@ -112,6 +112,7 @@ def ensure_defaults() -> None:
             "llm_max_concurrent_calls": DEFAULTS.LLM_DEFAULT_MAX_CONCURRENT_CALLS,
             "llm_max_retry_attempts": DEFAULTS.LLM_DEFAULT_MAX_RETRY_ATTEMPTS,
             "llm_enable_token_rate_limiting": DEFAULTS.LLM_ENABLE_TOKEN_RATE_LIMITING,
+            "enable_boundary_refinement": DEFAULTS.ENABLE_BOUNDARY_REFINEMENT,
         },
     )
 
@@ -449,6 +450,7 @@ def read_combined() -> Dict[str, Any]:
             "llm_max_input_tokens_per_call": llm.llm_max_input_tokens_per_call,
             "llm_enable_token_rate_limiting": llm.llm_enable_token_rate_limiting,
             "llm_max_input_tokens_per_minute": llm.llm_max_input_tokens_per_minute,
+            "enable_boundary_refinement": llm.enable_boundary_refinement,
         },
         "whisper": whisper_payload,
         "processing": {
@@ -486,6 +488,7 @@ def _update_section_llm(data: Dict[str, Any]) -> None:
         "llm_max_input_tokens_per_call",
         "llm_enable_token_rate_limiting",
         "llm_max_input_tokens_per_minute",
+        "enable_boundary_refinement",
     ]:
         if key in data:
             new_val = data[key]
@@ -743,6 +746,12 @@ def to_pydantic_config() -> PydanticConfig:
         ),
         llm_max_input_tokens_per_minute=data["llm"].get(
             "llm_max_input_tokens_per_minute"
+        ),
+        enable_boundary_refinement=bool(
+            data["llm"].get(
+                "enable_boundary_refinement",
+                DEFAULTS.ENABLE_BOUNDARY_REFINEMENT,
+            )
         ),
         output=data["output"],
         processing=data["processing"],

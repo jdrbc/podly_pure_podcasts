@@ -364,6 +364,9 @@ class LLMSettings(db.Model):  # type: ignore[name-defined, misc]
         db.Boolean, nullable=False, default=DEFAULTS.LLM_ENABLE_TOKEN_RATE_LIMITING
     )
     llm_max_input_tokens_per_minute = db.Column(db.Integer, nullable=True)
+    enable_boundary_refinement = db.Column(
+        db.Boolean, nullable=False, default=DEFAULTS.ENABLE_BOUNDARY_REFINEMENT
+    )
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

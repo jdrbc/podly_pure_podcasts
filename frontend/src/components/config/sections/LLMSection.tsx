@@ -138,6 +138,13 @@ export default function LLMSection() {
               onChange={(e) => setField(['llm', 'llm_enable_token_rate_limiting'], e.target.checked)}
             />
           </Field>
+          <Field label="Enable Boundary Refinement" hint="LLM-based ad boundary refinement for improved precision">
+            <input
+              type="checkbox"
+              checked={pending?.llm?.enable_boundary_refinement ?? true}
+              onChange={(e) => setField(['llm', 'enable_boundary_refinement'], e.target.checked)}
+            />
+          </Field>
           <Field label="Max Input Tokens Per Call (optional)">
             <input
               className="input"
