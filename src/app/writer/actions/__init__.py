@@ -31,6 +31,7 @@ from .feeds import touch_feed_access_token_action as touch_feed_access_token_act
 from .feeds import (
     whitelist_latest_post_for_feed_action as whitelist_latest_post_for_feed_action,
 )
+from .feeds import whitelist_post_action as whitelist_post_action
 from .jobs import cancel_existing_jobs_action as cancel_existing_jobs_action
 from .jobs import cleanup_stale_jobs_action as cleanup_stale_jobs_action
 from .jobs import clear_all_jobs_action as clear_all_jobs_action

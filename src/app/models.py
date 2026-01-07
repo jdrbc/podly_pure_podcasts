@@ -486,6 +486,11 @@ class AppSettings(db.Model):  # type: ignore[name-defined, misc]
         default=DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
     )
     user_limit_total = db.Column(db.Integer, nullable=True)
+    autoprocess_on_download = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=DEFAULTS.APP_AUTOPROCESS_ON_DOWNLOAD,
+    )
 
     # Hash of the environment variables used to seed configuration.
     # Used to detect changes in environment variables between restarts.
