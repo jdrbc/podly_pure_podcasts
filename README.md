@@ -29,7 +29,7 @@ You have a few options to get started:
    - see our [beginner's guide for running locally](docs/how_to_run_beginners.md). 
    - Use this for the most cost-optimal & private setup.
 - **[Join The Preview Server](https://podly.up.railway.app/)**: 
-   - $1 / pod / month (limited sign ups available)
+   - pay what you want (limited sign ups available)
 
 
 ## How it works:
