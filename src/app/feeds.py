@@ -50,8 +50,18 @@ def _should_auto_whitelist_new_posts(feed: Feed, post: Optional[Post] = None) ->
     if not getattr(config, "automatically_whitelist_new_episodes", False):
         return False
 
+    from app.auth import is_auth_enabled
+
+    # If auth is disabled, we should auto-whitelist if the global setting is on.
+    if not is_auth_enabled():
+        return True
+
     memberships = getattr(feed, "user_feeds", None) or []
     if not memberships:
+        # No memberships for this feed. If there are no users in the database at all,
+        # still whitelist. This handles fresh installs where no account exists yet.
+        if db.session.query(User.id).first() is None:
+            return True
         return False
 
     # Check if at least one member has this feed in their "active" list (within allowance)
