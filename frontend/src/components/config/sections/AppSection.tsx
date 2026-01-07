@@ -46,6 +46,15 @@ export default function AppSection() {
               }
             />
           </Field>
+          <Field label="List all episodes in RSS and queue processing on download attempt if not previously whitelisted">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={!!pending?.app?.autoprocess_on_download}
+                onChange={(e) => setField(['app', 'autoprocess_on_download'], e.target.checked)}
+              />
+            </label>
+          </Field>
           <Field label="Number of episodes to whitelist from new feed archive">
             <input
               className="input"

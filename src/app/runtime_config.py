@@ -48,4 +48,5 @@ else:
         enable_public_landing_page=DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
         user_limit_total=DEFAULTS.APP_USER_LIMIT_TOTAL,
         developer_mode=os.environ.get("DEVELOPER_MODE", "false").lower() == "true",
+        autoprocess_on_download=DEFAULTS.APP_AUTOPROCESS_ON_DOWNLOAD,
     )

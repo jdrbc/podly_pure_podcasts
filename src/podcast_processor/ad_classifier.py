@@ -108,8 +108,13 @@ class AdClassifier:
         # Initialize cue detector for neighbor expansion
         self.cue_detector = CueDetector()
 
-        # Initialize boundary refiner
-        self.boundary_refiner = BoundaryRefiner(config, self.logger)
+        # Initialize boundary refiner (conditionally based on config)
+        self.boundary_refiner: Optional[BoundaryRefiner] = None
+        if config.enable_boundary_refinement:
+            self.boundary_refiner = BoundaryRefiner(config, self.logger)
+            self.logger.info("Boundary refinement enabled")
+        else:
+            self.logger.info("Boundary refinement disabled via config")
 
     def classify(
         self,
@@ -1286,9 +1291,17 @@ class AdClassifier:
                     - (ident.transcript_segment.start_time or 0.0)
                 )
 
-                if not (has_strong_cue or is_transition):
-                    if gap_seconds > 10.0:
+                # When boundary refinement is disabled, be stricter:
+                # only expand to neighbors with strong ad cues
+                if not self.config.enable_boundary_refinement:
+                    if not has_strong_cue:
                         continue
+                else:
+                    # With refinement enabled, allow proximity-based expansion
+                    # (the refiner will correct over-expansion)
+                    if not (has_strong_cue or is_transition):
+                        if gap_seconds > 10.0:
+                            continue
 
                 confidence = 0.72 if is_transition else 0.75
                 if has_strong_cue:

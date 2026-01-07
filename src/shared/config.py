@@ -97,6 +97,10 @@ class Config(BaseModel):
         default=DEFAULTS.LLM_MAX_INPUT_TOKENS_PER_MINUTE,
         description="Override default tokens per minute limit for the model",
     )
+    enable_boundary_refinement: bool = Field(
+        default=DEFAULTS.ENABLE_BOUNDARY_REFINEMENT,
+        description="Enable LLM-based ad boundary refinement for improved precision",
+    )
     developer_mode: bool = Field(
         default=False,
         description="Enable developer mode features like test feeds",
@@ -140,6 +144,7 @@ class Config(BaseModel):
     )
     enable_public_landing_page: bool = DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE
     user_limit_total: int | None = DEFAULTS.APP_USER_LIMIT_TOTAL
+    autoprocess_on_download: bool = DEFAULTS.APP_AUTOPROCESS_ON_DOWNLOAD
 
     def redacted(self) -> Config:
         return self.model_copy(
