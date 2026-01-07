@@ -50,8 +50,18 @@ def _should_auto_whitelist_new_posts(feed: Feed, post: Optional[Post] = None) ->
     if not getattr(config, "automatically_whitelist_new_episodes", False):
         return False
 
+    from app.auth import is_auth_enabled
+
+    # If auth is disabled, we should auto-whitelist if the global setting is on.
+    if not is_auth_enabled():
+        return True
+
     memberships = getattr(feed, "user_feeds", None) or []
     if not memberships:
+        # No memberships for this feed. If there are no users in the database at all,
+        # still whitelist. This handles fresh installs where no account exists yet.
+        if db.session.query(User.id).first() is None:
+            return True
         return False
 
     # Check if at least one member has this feed in their "active" list (within allowance)
@@ -357,19 +367,21 @@ def generate_feed_xml(feed: Feed) -> Any:
     return rss_feed.to_xml("utf-8")
 
 
-def generate_aggregate_feed_xml(user: User) -> Any:
+def generate_aggregate_feed_xml(user: Optional[User]) -> Any:
     """Generate RSS XML for a user's aggregate feed (last 3 processed posts per feed)."""
-    logger.info(f"Generating aggregate feed XML for user: {user.username}")
+    username = user.username if user else "Public"
+    user_id = user.id if user else 0
+    logger.info(f"Generating aggregate feed XML for: {username}")
 
-    posts = get_user_aggregate_posts(user.id)
+    posts = get_user_aggregate_posts(user_id)
     items = [feed_item(post, prepend_feed_title=True) for post in posts]
 
     base_url = _get_base_url()
-    link = _append_feed_token_params(f"{base_url}/feed/user/{user.id}")
+    link = _append_feed_token_params(f"{base_url}/feed/user/{user_id}")
 
     last_build_date = format_datetime(datetime.datetime.now(datetime.timezone.utc))
 
-    if current_app.config.get("REQUIRE_AUTH"):
+    if current_app.config.get("REQUIRE_AUTH") and user:
         feed_title = f"Podly Podcasts - {user.username}"
         feed_description = f"Aggregate feed for {user.username} - Last 3 processed episodes from each subscribed feed."
     else:
@@ -394,13 +406,13 @@ def generate_aggregate_feed_xml(user: User) -> Any:
     rss_feed.rss_attrs["xmlns:itunes"] = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     rss_feed.rss_attrs["xmlns:content"] = "http://purl.org/rss/1.0/modules/content/"
 
-    logger.info(f"Aggregate XML generated for user: {user.username}")
+    logger.info(f"Aggregate XML generated for: {username}")
     return rss_feed.to_xml("utf-8")
 
 
 def get_user_aggregate_posts(user_id: int, limit_per_feed: int = 3) -> list[Post]:
     """Fetch last N processed posts from each of the user's subscribed feeds."""
-    if not current_app.config.get("REQUIRE_AUTH"):
+    if not current_app.config.get("REQUIRE_AUTH") or user_id == 0:
         feed_ids = [r[0] for r in Feed.query.with_entities(Feed.id).all()]
     else:
         user_feeds = UserFeed.query.filter_by(user_id=user_id).all()

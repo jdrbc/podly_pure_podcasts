@@ -25,6 +25,7 @@ from flask import (
 )
 from flask.typing import ResponseReturnValue
 
+from app.auth import is_auth_enabled
 from app.auth.service import update_user_last_active
 from app.extensions import db
 from app.feeds import (
@@ -218,6 +219,10 @@ def add_feed() -> ResponseReturnValue:
             created, previous_count = _ensure_user_feed_membership(feed, user.id)
             if created and previous_count == 0:
                 _whitelist_latest_for_first_member(feed, getattr(user, "id", None))
+        elif not is_auth_enabled():
+            # In no-auth mode, if this feed has no members, trigger whitelisting for the latest post.
+            if UserFeed.query.filter_by(feed_id=feed.id).count() == 0:
+                _whitelist_latest_for_first_member(feed, None)
 
         app = cast(Any, current_app)._get_current_object()
         Thread(
@@ -700,8 +705,7 @@ def get_user_aggregate_feed(user_id: int) -> Response:
     # If auth is disabled, this is public.
     # If auth is enabled, middleware ensures we have a valid token for this user_id.
 
-    settings = current_app.config.get("AUTH_SETTINGS")
-    if settings and settings.require_auth:
+    if is_auth_enabled():
         current = getattr(g, "current_user", None)
         if current is None:
             return make_response(("Authentication required", 401))
@@ -710,6 +714,12 @@ def get_user_aggregate_feed(user_id: int) -> Response:
 
     user = db.session.get(User, user_id)
     if not user:
+        if user_id == 0 and not is_auth_enabled():
+            # Support anonymous aggregate feed when auth is disabled
+            xml_content = generate_aggregate_feed_xml(None)
+            response = make_response(xml_content)
+            response.headers["Content-Type"] = "application/rss+xml"
+            return response
         return make_response(("User not found", 404))
 
     xml_content = generate_aggregate_feed_xml(user)
@@ -723,12 +733,11 @@ def get_aggregate_feed_redirect() -> ResponseReturnValue:
     """Convenience endpoint to redirect to the user's aggregate feed."""
     settings = current_app.config.get("AUTH_SETTINGS")
 
-    # Case 1: Auth Disabled -> Redirect to Admin User (Single User Mode)
+    # Case 1: Auth Disabled -> Redirect to Admin User (or ID 0 if none exist)
     if not settings or not settings.require_auth:
         admin = User.query.filter_by(role="admin").first()
-        if not admin:
-            return make_response(("No admin user found to serve aggregate feed", 404))
-        return redirect(url_for("feed.get_user_aggregate_feed", user_id=admin.id))
+        user_id = admin.id if admin else 0
+        return redirect(url_for("feed.get_user_aggregate_feed", user_id=user_id))
 
     # Case 2: Auth Enabled -> Require explicit user link
     # We cannot easily determine "current user" for a podcast player without a token.
@@ -859,16 +868,24 @@ def _serialize_feed(
     *,
     current_user: Optional[User] = None,
 ) -> dict[str, Any]:
+    auth_enabled = is_auth_enabled()
     member_ids = [membership.user_id for membership in getattr(feed, "user_feeds", [])]
-    is_member = bool(current_user and getattr(current_user, "id", None) in member_ids)
+
+    # In no-auth mode, everyone is functionally a member.
+    is_member = not auth_enabled or bool(
+        current_user and getattr(current_user, "id", None) in member_ids
+    )
 
     # Hack: Always treat Feed 1 as a member
-    if feed.id == 1 and current_user:
+    if feed.id == 1 and (current_user or not auth_enabled):
         is_member = True
 
     is_active_subscription = False
-    if is_member and current_user:
-        is_active_subscription = is_feed_active_for_user(feed.id, current_user)
+    if is_member:
+        if current_user:
+            is_active_subscription = is_feed_active_for_user(feed.id, current_user)
+        elif not auth_enabled:
+            is_active_subscription = True
 
     feed_payload = {
         "id": feed.id,

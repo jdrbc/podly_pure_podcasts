@@ -15,7 +15,7 @@ Paste one of the prompts below into the chat box.
 If you don't have the repo downloaded:
 
 ```
-Help me install docker and run Podly https://github.com/jdrbc/podly_pure_podcasts
+Help me install docker and run Podly https://github.com/podly-pure-podcasts/podly-pure-podcasts
 After the project is cloned, help me:
 - install docker & docker compose
 - run `./run_podly_docker.sh --build` then `./run_podly_docker.sh -d`

@@ -29,7 +29,7 @@ You have a few options to get started:
    - see our [beginner's guide for running locally](docs/how_to_run_beginners.md). 
    - Use this for the most cost-optimal & private setup.
 - **[Join The Preview Server](https://podly.up.railway.app/)**: 
-   - $1 / pod / month (limited sign ups available)
+   - pay what you want (limited sign ups available)
 
 
 ## How it works:
@@ -50,7 +50,7 @@ You have a few options to get started:
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
 | **$10** | public (railway)  | remote        | remote |
-| **$1/mo/feed** | [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
+| **Pay What You Want** | [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
 | **$5.99/mo** | https://zeroads.ai/ | production fork of podly | |
 
 

@@ -28,7 +28,7 @@ export default function LandingPage() {
                 How it works
               </a>
               <a
-                href="https://github.com/jdrbc/podly_pure_podcasts"
+                href="https://github.com/podly-pure-podcasts/podly-pure-podcasts"
                 target="_blank"
                 rel="noreferrer"
                 className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
@@ -182,7 +182,7 @@ export default function LandingPage() {
             </p>
             <div className="flex items-center gap-4">
               <a
-                href="https://github.com/jdrbc/podly_pure_podcasts"
+                href="https://github.com/podly-pure-podcasts/podly-pure-podcasts"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-400 hover:text-gray-600 transition-colors"

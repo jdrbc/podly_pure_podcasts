@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useDiagnostics } from '../contexts/DiagnosticsContext';
 import { DIAGNOSTIC_UPDATED_EVENT, diagnostics, type DiagnosticsEntry } from '../utils/diagnostics';
 
-const GITHUB_NEW_ISSUE_URL = 'https://github.com/jdrbc/podly_pure_podcasts/issues/new';
+const GITHUB_NEW_ISSUE_URL = 'https://github.com/podly-pure-podcasts/podly-pure-podcasts/issues/new';
 
 const buildIssueUrl = (title: string, body: string) => {
   const url = new URL(GITHUB_NEW_ISSUE_URL);
