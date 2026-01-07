@@ -50,7 +50,7 @@ You have a few options to get started:
 | **$2**  | local    | local         | remote |
 | **$5**  | local    | remote        | remote |
 | **$10** | public (railway)  | remote        | remote |
-| **$1/mo/feed** | [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
+| **Pay What You Want** | [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
 | **$5.99/mo** | https://zeroads.ai/ | production fork of podly | |
 
 
