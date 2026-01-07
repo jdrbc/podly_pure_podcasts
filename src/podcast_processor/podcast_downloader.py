@@ -114,27 +114,39 @@ def sanitize_title(title: str) -> str:
 
 def find_audio_link(entry: Any) -> str:
     """Find the audio link in a feed entry."""
-  # Check for common audio types in order of preference  
-  audio_mime_types = {
-        "audio/mpeg", "audio/mp3", "audio/x-mp3", "audio/mpeg3",
-        "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/aac",
-        "audio/wav", "audio/x-wav", "audio/ogg", "audio/opus",
-        "audio/flac"
+    # Check for common audio types in order of preference
+    audio_mime_types = {
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/x-mp3",
+        "audio/mpeg3",
+        "audio/mp4",
+        "audio/m4a",
+        "audio/x-m4a",
+        "audio/aac",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/ogg",
+        "audio/opus",
+        "audio/flac",
     }
-  
+
     # First check RSS enclosure tags (standard for podcast media)
-    if hasattr(entry, 'enclosures') and entry.enclosures:
+    if hasattr(entry, "enclosures") and entry.enclosures:
         for enclosure in entry.enclosures:
-            if hasattr(enclosure, 'type') and enclosure.type.lower() in audio_mime_types:
-                if hasattr(enclosure, 'href') and enclosure.href:
+            if (
+                hasattr(enclosure, "type")
+                and enclosure.type.lower() in audio_mime_types
+            ):
+                if hasattr(enclosure, "href") and enclosure.href:
                     return str(enclosure.href)
-                elif hasattr(enclosure, 'url') and enclosure.url:
+                elif hasattr(enclosure, "url") and enclosure.url:
                     return str(enclosure.url)
-    
+
     # look for exact audio type matches
     for link in entry.links:
         link_type = getattr(link, "type", "") or ""
-        if link_type in audio_types:
+        if link_type in audio_mime_types:
             href = link.href
             assert isinstance(href, str)
             return href
@@ -146,12 +158,12 @@ def find_audio_link(entry: Any) -> str:
             href = link.href
             assert isinstance(href, str)
             return href
-          
+
     # Fallback to entry.links for feeds that use links instead of enclosures
-    if hasattr(entry, 'links') and entry.links:
+    if hasattr(entry, "links") and entry.links:
         for link in entry.links:
-            if hasattr(link, 'type') and link.type.lower() in audio_mime_types:
-                if hasattr(link, 'href') and link.href:
+            if hasattr(link, "type") and link.type.lower() in audio_mime_types:
+                if hasattr(link, "href") and link.href:
                     return str(link.href)
     return str(entry.id)
 
