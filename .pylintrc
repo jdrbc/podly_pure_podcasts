@@ -14,6 +14,10 @@ disable=
     C0301, # line-too-long
     R0911, # too-many-return-statements
 
+[DESIGN]
+# Allow more statements per function to accommodate complex processing routines
+max-statements=100
+
 [MASTER:src/tests/*.py]
 disable=
     W0621, # redefined-outer-name
