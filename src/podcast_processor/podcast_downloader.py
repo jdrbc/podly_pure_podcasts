@@ -140,7 +140,7 @@ def find_audio_link(entry: Any) -> str:
             ):
                 if hasattr(enclosure, "href") and enclosure.href:
                     return str(enclosure.href)
-                elif hasattr(enclosure, "url") and enclosure.url:
+                if hasattr(enclosure, "url") and enclosure.url:
                     return str(enclosure.url)
 
     # look for exact audio type matches
