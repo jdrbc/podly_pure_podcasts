@@ -7,9 +7,8 @@
 ```bash
 chmod +x run_podly_docker.sh
 ./run_podly_docker.sh --build
-./run_podly_docker.sh # foreground with logs
-# or detached
-./run_podly_docker.sh -d
+./run_podly_docker.sh # foreground with logs 
+./run_podly_docker.sh -d # or detached
 ```
 
 This automatically detects NVIDIA GPUs and uses them if available.
@@ -217,6 +216,7 @@ We welcome contributions to Podly! Here's how you can help:
    ```bash
    git checkout -b feature/your-feature-name
    ```
+4. Create a pull request with a target branch of Preview
 
 #### Application Ports
 
