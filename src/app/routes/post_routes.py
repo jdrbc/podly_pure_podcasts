@@ -282,12 +282,73 @@ def post_debug(p_guid: str) -> flask.Response:
     )
 
 
+def _get_chapter_stats(post: Post, feed: Feed) -> Dict[str, Any]:
+    """Get chapter statistics for chapter-based processing."""
+    import json
+
+    from podcast_processor.chapter_filter import parse_filter_strings
+    from shared import defaults as DEFAULTS
+
+    # Try to read stored chapter data first (set during processing)
+    if post.chapter_data:
+        try:
+            data = json.loads(post.chapter_data)
+            chapters_kept = [
+                {**ch, "label": "content"} for ch in data.get("chapters_kept", [])
+            ]
+            chapters_removed = [
+                {**ch, "label": "ad"} for ch in data.get("chapters_removed", [])
+            ]
+            # Sort by original start time to maintain order from the file
+            all_chapters = sorted(
+                chapters_kept + chapters_removed, key=lambda c: c["start_time"]
+            )
+            return {
+                "total_chapters": len(chapters_kept) + len(chapters_removed),
+                "chapters_kept": len(chapters_kept),
+                "chapters_removed": len(chapters_removed),
+                "filter_strings": data.get("filter_strings", []),
+                "chapters": all_chapters,
+            }
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Fallback: read from processed audio (only shows kept chapters)
+    from podcast_processor.chapter_reader import read_chapters
+
+    chapters = read_chapters(post.processed_audio_path or "")
+    filter_csv = feed.chapter_filter_strings or DEFAULTS.CHAPTER_FILTER_DEFAULT_STRINGS
+    filter_strings = parse_filter_strings(filter_csv)
+
+    chapters_kept = [
+        {
+            "title": ch.title,
+            "start_time": round(ch.start_time_ms / 1000.0, 1),
+            "end_time": round(ch.end_time_ms / 1000.0, 1),
+            "label": "content",
+        }
+        for ch in chapters
+    ]
+
+    return {
+        "total_chapters": len(chapters_kept),
+        "chapters_kept": len(chapters_kept),
+        "chapters_removed": 0,
+        "filter_strings": filter_strings,
+        "chapters": chapters_kept,
+        "note": "Removed chapters not available (processed before this feature)",
+    }
+
+
 @post_bp.route("/api/posts/<string:p_guid>/stats", methods=["GET"])
 def api_post_stats(p_guid: str) -> flask.Response:
     """Get processing statistics for a post in JSON format."""
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(flask.jsonify({"error": "Post not found"}), 404)
+
+    feed = db.session.get(Feed, post.feed_id)
+    ad_detection_strategy = feed.ad_detection_strategy if feed else "llm"
 
     model_calls = (
         ModelCall.query.filter_by(post_id=post.id)
@@ -389,6 +450,11 @@ def api_post_stats(p_guid: str) -> flask.Response:
             }
         )
 
+    # Build chapter data for chapter-based processing
+    chapters_data = None
+    if ad_detection_strategy == "chapter" and post.processed_audio_path:
+        chapters_data = _get_chapter_stats(post, feed)
+
     stats_data = {
         "post": {
             "guid": post.guid,
@@ -401,6 +467,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
             "has_processed_audio": post.processed_audio_path is not None,
             "download_count": post.download_count,
         },
+        "ad_detection_strategy": ad_detection_strategy,
         "processing_stats": {
             "total_segments": len(transcript_segments),
             "total_model_calls": len(model_calls),
@@ -413,6 +480,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
         "model_calls": model_call_details,
         "transcript_segments": transcript_segments_data,
         "identifications": identifications_data,
+        "chapters": chapters_data,
     }
 
     return flask.jsonify(stats_data)

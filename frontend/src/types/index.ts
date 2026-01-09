@@ -9,6 +9,13 @@ export interface Feed {
   member_count?: number;
   is_member?: boolean;
   is_active_subscription?: boolean;
+  ad_detection_strategy?: 'llm' | 'chapter';
+  chapter_filter_strings?: string | null;
+}
+
+export interface FeedSettingsUpdate {
+  ad_detection_strategy?: 'llm' | 'chapter';
+  chapter_filter_strings?: string | null;
 }
 
 export interface Episode {

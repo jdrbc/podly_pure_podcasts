@@ -8,13 +8,15 @@ interface ProcessingStatsButtonProps {
   className?: string;
 }
 
+type TabId = 'overview' | 'model-calls' | 'transcript' | 'identifications' | 'chapters';
+
 export default function ProcessingStatsButton({
   episodeGuid,
   hasProcessedAudio,
   className = ''
 }: ProcessingStatsButtonProps) {
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'model-calls' | 'transcript' | 'identifications'>('overview');
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [expandedModelCalls, setExpandedModelCalls] = useState<Set<number>>(new Set());
 
   const { data: stats, isLoading, error } = useQuery({
@@ -82,15 +84,18 @@ export default function ProcessingStatsButton({
             {/* Tabs */}
             <div className="border-b">
               <nav className="flex space-x-8 px-6">
-                {[
+                {(stats?.ad_detection_strategy === 'chapter' ? [
+                  { id: 'overview', label: 'Overview' },
+                  { id: 'chapters', label: 'Chapters' }
+                ] : [
                   { id: 'overview', label: 'Overview' },
                   { id: 'model-calls', label: 'Model Calls' },
                   { id: 'transcript', label: 'Transcript Segments' },
                   { id: 'identifications', label: 'Identifications' }
-                ].map((tab) => (
+                ]).map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as 'overview' | 'model-calls' | 'transcript' | 'identifications')}
+                    onClick={() => setActiveTab(tab.id as TabId)}
                     className={`py-4 px-1 border-b-2 font-medium text-sm ${
                       activeTab === tab.id
                         ? 'border-blue-500 text-blue-600'
@@ -101,6 +106,7 @@ export default function ProcessingStatsButton({
                     {stats && tab.id === 'model-calls' && stats.model_calls && ` (${stats.model_calls.length})`}
                     {stats && tab.id === 'transcript' && stats.transcript_segments && ` (${stats.transcript_segments.length})`}
                     {stats && tab.id === 'identifications' && stats.identifications && ` (${stats.identifications.length})`}
+                    {stats && tab.id === 'chapters' && stats.chapters && ` (${stats.chapters.chapters?.length || 0})`}
                   </button>
                 ))}
               </nav>
@@ -136,75 +142,128 @@ export default function ProcessingStatsButton({
                               {stats.post?.duration ? formatDuration(stats.post.duration) : 'Unknown'}
                             </span>
                           </div>
+                          <div className="text-left">
+                            <span className="font-medium text-gray-700">Detection Method:</span>
+                            <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                              stats.ad_detection_strategy === 'chapter'
+                                ? 'bg-purple-100 text-purple-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {stats.ad_detection_strategy === 'chapter' ? 'Chapter-based' : 'LLM Transcription'}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Key Metrics */}
+                      {/* Key Metrics - Different display for chapter vs LLM */}
                       <div>
                         <h3 className="font-semibold text-gray-900 mb-4 text-left">Key Metrics</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 text-center">
-                            <div className="text-2xl font-bold text-blue-600">
-                              {stats.processing_stats?.total_segments || 0}
+                        {stats.ad_detection_strategy === 'chapter' ? (
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 text-center">
+                              <div className="text-2xl font-bold text-purple-600">
+                                {stats.chapters?.total_chapters || 0}
+                              </div>
+                              <div className="text-sm text-purple-800">Total Chapters</div>
                             </div>
-                            <div className="text-sm text-blue-800">Transcript Segments</div>
-                          </div>
 
-                          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center">
-                            <div className="text-2xl font-bold text-green-600">
-                              {stats.processing_stats?.content_segments || 0}
+                            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center">
+                              <div className="text-2xl font-bold text-green-600">
+                                {stats.chapters?.chapters_kept || 0}
+                              </div>
+                              <div className="text-sm text-green-800">Chapters Kept</div>
                             </div>
-                            <div className="text-sm text-green-800">Content Segments</div>
-                          </div>
 
-                          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 text-center">
-                            <div className="text-2xl font-bold text-red-600">
-                              {stats.processing_stats?.ad_segments_count || 0}
+                            <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 text-center">
+                              <div className="text-2xl font-bold text-red-600">
+                                {stats.chapters?.chapters_removed || 0}
+                              </div>
+                              <div className="text-sm text-red-800">Chapters Removed</div>
                             </div>
-                            <div className="text-sm text-red-800">Ad Segments Removed</div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 text-center">
+                              <div className="text-2xl font-bold text-blue-600">
+                                {stats.processing_stats?.total_segments || 0}
+                              </div>
+                              <div className="text-sm text-blue-800">Transcript Segments</div>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 text-center">
+                              <div className="text-2xl font-bold text-green-600">
+                                {stats.processing_stats?.content_segments || 0}
+                              </div>
+                              <div className="text-sm text-green-800">Content Segments</div>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 text-center">
+                              <div className="text-2xl font-bold text-red-600">
+                                {stats.processing_stats?.ad_segments_count || 0}
+                              </div>
+                              <div className="text-sm text-red-800">Ad Segments Removed</div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Model Performance */}
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-4 text-left">AI Model Performance</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {/* Model Call Status */}
+                      {/* Chapter Filter Strings - Only for chapter strategy */}
+                      {stats.ad_detection_strategy === 'chapter' && stats.chapters?.filter_strings && (
+                        <div>
+                          <h3 className="font-semibold text-gray-900 mb-4 text-left">Filter Strings</h3>
                           <div className="bg-white border rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 mb-3 text-left">Processing Status</h4>
-                            <div className="space-y-2">
-                              {Object.entries(stats.processing_stats?.model_call_statuses || {}).map(([status, count]) => (
-                                <div key={status} className="flex justify-between items-center">
-                                  <span className="text-sm text-gray-600 capitalize">{status}</span>
-                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                    status === 'success' ? 'bg-green-100 text-green-800' :
-                                    status === 'failed' ? 'bg-red-100 text-red-800' :
-                                    'bg-gray-100 text-gray-800'
-                                  }`}>
-                                    {count}
-                                  </span>
-                                </div>
+                            <div className="flex flex-wrap gap-2">
+                              {stats.chapters.filter_strings.map((filter: string, idx: number) => (
+                                <span key={idx} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+                                  {filter}
+                                </span>
                               ))}
                             </div>
                           </div>
+                        </div>
+                      )}
 
-                          {/* Model Types */}
-                          <div className="bg-white border rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 mb-3 text-left">Models Used</h4>
-                            <div className="space-y-2">
-                              {Object.entries(stats.processing_stats?.model_types || {}).map(([model, count]) => (
-                                <div key={model} className="flex justify-between items-center">
-                                  <span className="text-sm text-gray-600">{model}</span>
-                                  <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                                    {count} calls
-                                  </span>
-                                </div>
-                              ))}
+                      {/* Model Performance - Only for LLM strategy */}
+                      {stats.ad_detection_strategy !== 'chapter' && (
+                        <div>
+                          <h3 className="font-semibold text-gray-900 mb-4 text-left">AI Model Performance</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Model Call Status */}
+                            <div className="bg-white border rounded-lg p-4">
+                              <h4 className="font-medium text-gray-900 mb-3 text-left">Processing Status</h4>
+                              <div className="space-y-2">
+                                {Object.entries(stats.processing_stats?.model_call_statuses || {}).map(([status, count]) => (
+                                  <div key={status} className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600 capitalize">{status}</span>
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                      status === 'success' ? 'bg-green-100 text-green-800' :
+                                      status === 'failed' ? 'bg-red-100 text-red-800' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      {count}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Model Types */}
+                            <div className="bg-white border rounded-lg p-4">
+                              <h4 className="font-medium text-gray-900 mb-3 text-left">Models Used</h4>
+                              <div className="space-y-2">
+                                {Object.entries(stats.processing_stats?.model_types || {}).map(([model, count]) => (
+                                  <div key={model} className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600">{model}</span>
+                                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                                      {count} calls
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
 
@@ -393,6 +452,63 @@ export default function ProcessingStatsButton({
                           </table>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Chapters Tab */}
+                  {activeTab === 'chapters' && (
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-4 text-left">Chapters ({stats.chapters?.chapters?.length || 0})</h3>
+                      <div className="bg-white border rounded-lg overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time Range</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {(stats.chapters?.chapters || []).map((chapter: { title: string; start_time: number; end_time: number; label: string }, idx: number) => (
+                                <tr key={idx} className={`hover:bg-gray-50 ${
+                                  chapter.label === 'ad' ? 'bg-red-50' : ''
+                                }`}>
+                                  <td className="px-4 py-3 text-sm text-gray-900">{idx + 1}</td>
+                                  <td className="px-4 py-3 text-sm text-gray-900 font-medium">{chapter.title}</td>
+                                  <td className="px-4 py-3 text-sm text-gray-600">
+                                    {chapter.start_time}s - {chapter.end_time}s
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-600">
+                                    {Math.round(chapter.end_time - chapter.start_time)}s
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                      chapter.label === 'ad'
+                                        ? 'bg-red-100 text-red-800'
+                                        : 'bg-green-100 text-green-800'
+                                    }`}>
+                                      {chapter.label === 'ad' ? 'Removed' : 'Kept'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      {stats.chapters?.note && (
+                        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                          Note: {stats.chapters.note}
+                        </div>
+                      )}
+                      {(!stats.chapters?.chapters || stats.chapters.chapters.length === 0) && (
+                        <div className="text-center py-8 text-gray-500">
+                          No chapter data available.
+                        </div>
+                      )}
                     </div>
                   )}
                 </>

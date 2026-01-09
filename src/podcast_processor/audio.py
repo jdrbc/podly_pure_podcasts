@@ -106,6 +106,17 @@ def _clip_segments_complex(
     logger.info("[FFMPEG_CONCAT] Completed audio concatenation: %s", out_path)
 
 
+def clip_segments_exact(
+    ad_segments_ms: List[Tuple[int, int]],
+    in_path: str,
+    out_path: str,
+) -> None:
+    """Remove segments with exact cuts at boundaries, no fades."""
+    audio_duration_ms = get_audio_duration_ms(in_path)
+    assert audio_duration_ms is not None
+    _clip_segments_simple(ad_segments_ms, in_path, out_path, audio_duration_ms)
+
+
 def _clip_segments_simple(
     ad_segments_ms: List[Tuple[int, int]],
     in_path: str,

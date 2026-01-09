@@ -2,6 +2,7 @@ import axios from 'axios';
 import { diagnostics } from '../utils/diagnostics';
 import type {
   Feed,
+  FeedSettingsUpdate,
   Episode,
   Job,
   JobManagerStatus,
@@ -140,6 +141,11 @@ export const feedsApi = {
     return response.data;
   },
 
+  updateFeedSettings: async (feedId: number, settings: FeedSettingsUpdate): Promise<Feed> => {
+    const response = await api.patch(`/api/feeds/${feedId}/settings`, settings);
+    return response.data;
+  },
+
   getProcessingEstimate: async (guid: string): Promise<{
     post_guid: string;
     estimated_minutes: number;
@@ -252,6 +258,7 @@ export const feedsApi = {
       whitelisted: boolean;
       has_processed_audio: boolean;
     };
+    ad_detection_strategy: 'llm' | 'chapter';
     processing_stats: {
       total_segments: number;
       total_model_calls: number;
@@ -301,6 +308,19 @@ export const feedsApi = {
       segment_end_time: number;
       segment_text: string;
     }>;
+    chapters: {
+      total_chapters: number;
+      chapters_kept: number;
+      chapters_removed: number;
+      filter_strings: string[];
+      chapters: Array<{
+        title: string;
+        start_time: number;
+        end_time: number;
+        label: 'content' | 'ad';
+      }>;
+      note?: string;
+    } | null;
   }> => {
     const response = await api.get(`/api/posts/${guid}/stats`);
     return response.data;

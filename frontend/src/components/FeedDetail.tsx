@@ -7,6 +7,7 @@ import DownloadButton from './DownloadButton';
 import PlayButton from './PlayButton';
 import ProcessingStatsButton from './ProcessingStatsButton';
 import EpisodeProcessingStatus from './EpisodeProcessingStatus';
+import FeedSettingsModal from './FeedSettingsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { copyToClipboard } from '../utils/clipboard';
 import { emitDiagnosticError } from '../utils/diagnostics';
@@ -45,6 +46,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const [isEstimating, setIsEstimating] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   const isAdmin = !requireAuth || user?.role === 'admin';
   const whitelistedOnly = requireAuth && !isAdmin;
@@ -632,6 +634,22 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                         </button>
                       )}
 
+                      {isAdmin && (
+                        <button
+                          onClick={() => {
+                            setShowSettingsModal(true);
+                            setShowMenu(false);
+                          }}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                        >
+                          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          Feed settings
+                        </button>
+                      )}
+
                     <button
                       onClick={() => {
                         handleCopyOriginalRssToClipboard();
@@ -999,6 +1017,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
           </div>
         </div>
       )}
+
+      <FeedSettingsModal
+        feed={currentFeed}
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+      />
     </div>
   );
 }

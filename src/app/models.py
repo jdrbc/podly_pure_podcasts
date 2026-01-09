@@ -7,6 +7,7 @@ from sqlalchemy.orm import validates
 from app.auth.passwords import hash_password, verify_password
 from app.extensions import db
 from shared import defaults as DEFAULTS
+from typing import Literal
 
 
 def generate_uuid() -> str:
@@ -30,6 +31,12 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     author = db.Column(db.Text)
     rss_url = db.Column(db.Text, unique=True, nullable=False)
     image_url = db.Column(db.Text)
+    # Ad detection strategy: "llm" (default), "chapter"
+    ad_detection_strategy = db.Column(
+        db.String(20), nullable=False, default=DEFAULTS.AD_DETECTION_DEFAULT_STRATEGY
+    )
+    # Per-feed filter strings override (comma-separated), null = use global defaults
+    chapter_filter_strings = db.Column(db.Text, nullable=True)
 
     posts = db.relationship(
         "Post", backref="feed", lazy=True, order_by="Post.release_date.desc()"
@@ -85,6 +92,8 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     whitelisted = db.Column(db.Boolean, default=False, nullable=False)
     image_url = db.Column(db.Text)  # Episode thumbnail URL
     download_count = db.Column(db.Integer, nullable=True, default=0)
+    # JSON data for chapter-based processing results
+    chapter_data = db.Column(db.Text, nullable=True)
 
     segments = db.relationship(
         "TranscriptSegment",
@@ -504,6 +513,18 @@ class DiscordSettings(db.Model):  # type: ignore[name-defined, misc]
     redirect_uri = db.Column(db.Text, nullable=True)
     guild_ids = db.Column(db.Text, nullable=True)  # Comma-separated list
     allow_registration = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ChapterFilterSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "chapter_filter_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    default_filter_strings = db.Column(
+        db.Text, nullable=False, default=DEFAULTS.CHAPTER_FILTER_DEFAULT_STRINGS
+    )
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

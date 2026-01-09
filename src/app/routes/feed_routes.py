@@ -863,6 +863,52 @@ def _require_user_or_error(
     return user, None
 
 
+@feed_bp.route("/api/feeds/<int:feed_id>/settings", methods=["PATCH"])
+def update_feed_settings(feed_id: int) -> ResponseReturnValue:
+    """Update feed settings (ad detection strategy, chapter filter strings)."""
+    user, error = _require_user_or_error(allow_missing_auth=True)
+    if error:
+        return error
+
+    # Only admins can change feed settings
+    if user is not None and user.role != "admin":
+        return jsonify({"error": "Only administrators can modify feed settings."}), 403
+
+    feed = Feed.query.get_or_404(feed_id)
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    updates = {}
+
+    # Validate and extract ad_detection_strategy
+    if "ad_detection_strategy" in data:
+        strategy = data["ad_detection_strategy"]
+        if strategy not in ("llm", "chapter"):
+            return jsonify({"error": "Invalid ad_detection_strategy. Must be 'llm' or 'chapter'"}), 400
+        updates["ad_detection_strategy"] = strategy
+
+    # Validate and extract chapter_filter_strings
+    if "chapter_filter_strings" in data:
+        filter_strings = data["chapter_filter_strings"]
+        if filter_strings is not None and not isinstance(filter_strings, str):
+            return jsonify({"error": "chapter_filter_strings must be a string or null"}), 400
+        updates["chapter_filter_strings"] = filter_strings
+
+    if not updates:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    result = writer_client.update("Feed", feed.id, updates, wait=True)
+    if not result or not result.success:
+        return jsonify({"error": getattr(result, "error", "Failed to update feed settings")}), 500
+
+    # Refresh and return updated feed
+    refreshed = Feed.query.get(feed_id)
+    current_user = getattr(g, "current_user", None)
+    return jsonify(_serialize_feed(refreshed or feed, current_user=current_user)), 200
+
+
 def _serialize_feed(
     feed: Feed,
     *,
@@ -898,5 +944,7 @@ def _serialize_feed(
         "member_count": len(member_ids),
         "is_member": is_member,
         "is_active_subscription": is_active_subscription,
+        "ad_detection_strategy": getattr(feed, "ad_detection_strategy", "llm"),
+        "chapter_filter_strings": getattr(feed, "chapter_filter_strings", None),
     }
     return feed_payload
