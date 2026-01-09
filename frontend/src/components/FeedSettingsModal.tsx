@@ -85,7 +85,7 @@ export default function FeedSettingsModal({ feed, isOpen, onClose }: FeedSetting
             <p className="text-xs text-gray-500 mt-1">
               {strategy === 'llm'
                 ? 'Uses AI transcription and classification to detect ads'
-                : 'Removes chapters matching filter strings (requires chapter metadata)'}
+                : 'Removes chapters matching filter strings (requires chapter metadata). Uses CBR encoding for accurate chapter seeking, instead of the default VBR.'}
             </p>
           </div>
 

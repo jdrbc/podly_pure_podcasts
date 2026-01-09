@@ -31,7 +31,9 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     author = db.Column(db.Text)
     rss_url = db.Column(db.Text, unique=True, nullable=False)
     image_url = db.Column(db.Text)
-    # Ad detection strategy: "llm" (default), "chapter"
+    # Ad detection strategy: "llm" (default) or "chapter".
+    # Note: "chapter" strategy requires CBR audio encoding for accurate chapter marker
+    # seeking. "llm" uses VBR for smaller files.
     ad_detection_strategy = db.Column(
         db.String(20), nullable=False, default=DEFAULTS.AD_DETECTION_DEFAULT_STRATEGY
     )
