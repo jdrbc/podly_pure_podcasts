@@ -120,32 +120,55 @@ class AudioProcessor:
         return ad_segments_times
 
     def _apply_refined_boundaries(self, post: Post, ad_groups: Any) -> None:
-        try:
-            post_row = self.db_session.get(Post, post.id)
-        except Exception:  # pylint: disable=broad-except
-            post_row = None
-
+        post_row = self._safe_get_post_row(post)
         refined = getattr(post_row, "refined_ad_boundaries", None) if post_row else None
-        if not refined or not isinstance(refined, list):
+        parsed = self._parse_refined_boundaries(refined)
+        if not parsed:
             return
+
+        for group in ad_groups:
+            overlap_window = self._refined_overlap_window_for_group(group, parsed)
+            if overlap_window is None:
+                continue
+            refined_start_min, refined_end_max = overlap_window
+
+            new_start = max(group.start_time, refined_start_min)
+            new_end = min(group.end_time, refined_end_max)
+            if new_end > new_start:
+                group.start_time = new_start
+                group.end_time = new_end
+
+    def _safe_get_post_row(self, post: Post) -> Optional[Post]:
+        try:
+            return self.db_session.get(Post, post.id)
+        except Exception:  # pylint: disable=broad-except
+            return None
+
+    @staticmethod
+    def _parse_refined_boundaries(
+        refined: Any,
+    ) -> List[Tuple[float, float, float, float]]:
+        if not refined or not isinstance(refined, list):
+            return []
 
         parsed: List[Tuple[float, float, float, float]] = []
         for item in refined:
             if not isinstance(item, dict):
                 continue
-            try:
-                orig_start_raw = item.get("orig_start")
-                orig_end_raw = item.get("orig_end")
-                refined_start_raw = item.get("refined_start")
-                refined_end_raw = item.get("refined_end")
-                if (
-                    orig_start_raw is None
-                    or orig_end_raw is None
-                    or refined_start_raw is None
-                    or refined_end_raw is None
-                ):
-                    continue
 
+            orig_start_raw = item.get("orig_start")
+            orig_end_raw = item.get("orig_end")
+            refined_start_raw = item.get("refined_start")
+            refined_end_raw = item.get("refined_end")
+            if (
+                orig_start_raw is None
+                or orig_end_raw is None
+                or refined_start_raw is None
+                or refined_end_raw is None
+            ):
+                continue
+
+            try:
                 orig_start = float(orig_start_raw)
                 orig_end = float(orig_end_raw)
                 refined_start = float(refined_start_raw)
@@ -155,32 +178,31 @@ class AudioProcessor:
 
             if refined_end <= refined_start:
                 continue
+
             parsed.append((orig_start, orig_end, refined_start, refined_end))
 
-        if not parsed:
-            return
+        return parsed
 
-        for group in ad_groups:
-            overlaps: List[Tuple[float, float]] = []
-            for orig_start, orig_end, refined_start, refined_end in parsed:
-                overlap = max(
-                    0.0,
-                    min(group.end_time, orig_end) - max(group.start_time, orig_start),
-                )
-                if overlap > 0.0:
-                    overlaps.append((refined_start, refined_end))
+    @staticmethod
+    def _refined_overlap_window_for_group(
+        group: Any,
+        parsed: List[Tuple[float, float, float, float]],
+    ) -> Optional[Tuple[float, float]]:
+        overlaps: List[Tuple[float, float]] = []
+        for orig_start, orig_end, refined_start, refined_end in parsed:
+            overlap = max(
+                0.0,
+                min(group.end_time, orig_end) - max(group.start_time, orig_start),
+            )
+            if overlap > 0.0:
+                overlaps.append((refined_start, refined_end))
 
-            if not overlaps:
-                continue
+        if not overlaps:
+            return None
 
-            refined_start_min = min(s for s, _ in overlaps)
-            refined_end_max = max(e for _, e in overlaps)
-
-            new_start = max(group.start_time, refined_start_min)
-            new_end = min(group.end_time, refined_end_max)
-            if new_end > new_start:
-                group.start_time = new_start
-                group.end_time = new_end
+        refined_start_min = min(s for s, _ in overlaps)
+        refined_end_max = max(e for _, e in overlaps)
+        return refined_start_min, refined_end_max
 
     def merge_ad_segments(
         self,
@@ -207,66 +229,93 @@ class AudioProcessor:
         self.logger.info(
             f"Creating new audio with ads segments removed between: {ad_segments}"
         )
-        # if no segments provided, return empty list
         if not ad_segments:
             return []
 
-        # if any two ad segments overlap by fade_ms, join them into a single segment
         ad_segments = sorted(ad_segments)
-        i = 0
 
-        # Initialize variable for storing the last segment
-        last_segment = None
-        has_segment_near_end = False
+        last_segment = self._get_last_segment_if_near_end(
+            ad_segments,
+            audio_duration_seconds=audio_duration_seconds,
+            min_separation=min_ad_segment_separation_seconds,
+        )
 
-        # Check for segments near the end before merging
-        if len(ad_segments) > 0 and (
-            audio_duration_seconds - ad_segments[-1][1]
-            < min_ad_segment_separation_seconds
-        ):
-            # Save the last segment before filtering
-            last_segment = ad_segments[-1]
-            has_segment_near_end = True
-
-        # Merge overlapping segments
-        while i < len(ad_segments) - 1:
-            if (
-                ad_segments[i][1] + min_ad_segment_separation_seconds
-                >= ad_segments[i + 1][0]
-            ):
-                ad_segments[i] = (ad_segments[i][0], ad_segments[i + 1][1])
-                ad_segments.pop(i + 1)
-            else:
-                i += 1
-
-        # remove any isolated ad segments that are too short, possibly misidentified
-        ad_segments = [
-            segment
-            for segment in ad_segments
-            if segment[1] - segment[0] >= min_ad_segment_length_seconds
-        ]
-
-        # Restore the last segment if it was near the end but got filtered out
-        if (
-            has_segment_near_end
-            and last_segment is not None
-            and (not ad_segments or ad_segments[-1] != last_segment)
-        ):
-            ad_segments.append(last_segment)
-
-        # Extend the last segment to the end if it's near the end
-        if len(ad_segments) > 0 and (
-            audio_duration_seconds - ad_segments[-1][1]
-            < min_ad_segment_separation_seconds
-        ):
-            ad_segments[-1] = (ad_segments[-1][0], audio_duration_seconds)
+        ad_segments = self._merge_close_segments(
+            ad_segments, min_separation=min_ad_segment_separation_seconds
+        )
+        ad_segments = self._filter_short_segments(
+            ad_segments, min_length=min_ad_segment_length_seconds
+        )
+        ad_segments = self._restore_last_segment_if_needed(ad_segments, last_segment)
+        ad_segments = self._extend_last_segment_to_end_if_needed(
+            ad_segments,
+            audio_duration_seconds=audio_duration_seconds,
+            min_separation=min_ad_segment_separation_seconds,
+        )
 
         self.logger.info(f"Joined ad segments into: {ad_segments}")
+        return [(int(start * 1000), int(end * 1000)) for start, end in ad_segments]
 
-        ad_segments_ms = [
-            (int(start * 1000), int(end * 1000)) for start, end in ad_segments
-        ]
-        return ad_segments_ms
+    def _get_last_segment_if_near_end(
+        self,
+        ad_segments: List[Tuple[float, float]],
+        *,
+        audio_duration_seconds: float,
+        min_separation: float,
+    ) -> Optional[Tuple[float, float]]:
+        if not ad_segments:
+            return None
+        if (audio_duration_seconds - ad_segments[-1][1]) < min_separation:
+            return ad_segments[-1]
+        return None
+
+    def _merge_close_segments(
+        self,
+        ad_segments: List[Tuple[float, float]],
+        *,
+        min_separation: float,
+    ) -> List[Tuple[float, float]]:
+        merged = list(ad_segments)
+        i = 0
+        while i < len(merged) - 1:
+            if merged[i][1] + min_separation >= merged[i + 1][0]:
+                merged[i] = (merged[i][0], merged[i + 1][1])
+                merged.pop(i + 1)
+            else:
+                i += 1
+        return merged
+
+    def _filter_short_segments(
+        self,
+        ad_segments: List[Tuple[float, float]],
+        *,
+        min_length: float,
+    ) -> List[Tuple[float, float]]:
+        return [s for s in ad_segments if (s[1] - s[0]) >= min_length]
+
+    def _restore_last_segment_if_needed(
+        self,
+        ad_segments: List[Tuple[float, float]],
+        last_segment: Optional[Tuple[float, float]],
+    ) -> List[Tuple[float, float]]:
+        if last_segment is None:
+            return ad_segments
+        if not ad_segments or ad_segments[-1] != last_segment:
+            return [*ad_segments, last_segment]
+        return ad_segments
+
+    def _extend_last_segment_to_end_if_needed(
+        self,
+        ad_segments: List[Tuple[float, float]],
+        *,
+        audio_duration_seconds: float,
+        min_separation: float,
+    ) -> List[Tuple[float, float]]:
+        if not ad_segments:
+            return ad_segments
+        if (audio_duration_seconds - ad_segments[-1][1]) < min_separation:
+            return [*ad_segments[:-1], (ad_segments[-1][0], audio_duration_seconds)]
+        return ad_segments
 
     def process_audio(self, post: Post, output_path: str) -> None:
         """

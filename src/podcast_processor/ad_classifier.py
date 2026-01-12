@@ -1298,23 +1298,19 @@ class AdClassifier:
                     - (ident.transcript_segment.start_time or 0.0)
                 )
 
-                # When boundary refinement is disabled, be stricter:
-                # only expand to neighbors with strong ad cues
-                if not self.config.enable_boundary_refinement:
-                    if not has_strong_cue:
-                        continue
-                else:
-                    # With refinement enabled, allow proximity-based expansion
-                    # (the refiner will correct over-expansion)
-                    if not (has_strong_cue or is_transition):
-                        if gap_seconds > 10.0:
-                            continue
+                if not self._should_expand_neighbor(
+                    has_strong_cue=has_strong_cue,
+                    is_transition=is_transition,
+                    gap_seconds=gap_seconds,
+                ):
+                    continue
 
-                confidence = 0.72 if is_transition else 0.75
-                if has_strong_cue:
-                    confidence = 0.85 if gap_seconds <= 10.0 else 0.8
-                if is_self_promo:
-                    confidence = max(0.5, confidence - 0.25)
+                confidence = self._neighbor_confidence(
+                    has_strong_cue=has_strong_cue,
+                    is_transition=is_transition,
+                    is_self_promo=is_self_promo,
+                    gap_seconds=gap_seconds,
+                )
 
                 to_create.append(
                     {
@@ -1331,6 +1327,36 @@ class AdClassifier:
         if to_create:
             return self._create_identifications_bulk(to_create)
         return 0
+
+    def _should_expand_neighbor(
+        self,
+        *,
+        has_strong_cue: bool,
+        is_transition: bool,
+        gap_seconds: float,
+    ) -> bool:
+        if not self.config.enable_boundary_refinement:
+            return has_strong_cue
+
+        if has_strong_cue or is_transition:
+            return True
+
+        return gap_seconds <= 10.0
+
+    @staticmethod
+    def _neighbor_confidence(
+        *,
+        has_strong_cue: bool,
+        is_transition: bool,
+        is_self_promo: bool,
+        gap_seconds: float,
+    ) -> float:
+        confidence = 0.72 if is_transition else 0.75
+        if has_strong_cue:
+            confidence = 0.85 if gap_seconds <= 10.0 else 0.8
+        if is_self_promo:
+            confidence = max(0.5, confidence - 0.25)
+        return confidence
 
     def _refine_boundaries(
         self, transcript_segments: List[TranscriptSegment], post: Post

@@ -2,7 +2,7 @@ import logging
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, Optional, cast
 
 import flask
 from flask import Blueprint, g, jsonify, request, send_file
@@ -20,6 +20,11 @@ from app.models import (
     TranscriptSegment,
 )
 from app.posts import clear_post_processing_data
+from app.routes.post_stats_utils import (
+    count_model_calls,
+    is_mixed_segment,
+    parse_refined_windows,
+)
 from app.runtime_config import config as runtime_config
 from app.writer.client import writer_client
 
@@ -308,17 +313,7 @@ def post_debug(p_guid: str) -> flask.Response:
         .all()
     )
 
-    model_call_statuses: Dict[str, int] = {}
-    model_types: Dict[str, int] = {}
-
-    for call in model_calls:
-        if call.status not in model_call_statuses:
-            model_call_statuses[call.status] = 0
-        model_call_statuses[call.status] += 1
-
-        if call.model_name not in model_types:
-            model_types[call.model_name] = 0
-        model_types[call.model_name] += 1
+    model_call_statuses, model_types = count_model_calls(model_calls)
 
     content_segments = sum(1 for i in identifications if i.label == "content")
     ad_segments = sum(1 for i in identifications if i.label == "ad")
@@ -389,34 +384,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
     # refined ad window but are not fully contained by it (i.e., segment contains
     # both content and ad).
     raw_refined = getattr(post, "refined_ad_boundaries", None) or []
-    refined_windows: List[Tuple[float, float]] = []
-    if isinstance(raw_refined, list):
-        for item in raw_refined:
-            if not isinstance(item, dict):
-                continue
-
-            start_raw = item.get("refined_start")
-            end_raw = item.get("refined_end")
-            if start_raw is None or end_raw is None:
-                continue
-
-            try:
-                start_v = float(start_raw)
-                end_v = float(end_raw)
-            except Exception:
-                continue
-            if end_v > start_v:
-                refined_windows.append((start_v, end_v))
-
-    def _is_mixed_segment(*, seg_start: float, seg_end: float) -> bool:
-        for win_start, win_end in refined_windows:
-            overlaps = seg_start <= win_end and seg_end >= win_start
-            if not overlaps:
-                continue
-            fully_contained = seg_start >= win_start and seg_end <= win_end
-            if not fully_contained:
-                return True
-        return False
+    refined_windows = parse_refined_windows(raw_refined)
 
     model_call_details = []
     for call in model_calls:
@@ -448,8 +416,8 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
         seg_start = float(segment.start_time)
         seg_end = float(segment.end_time)
-        mixed = bool(has_ad_label) and _is_mixed_segment(
-            seg_start=seg_start, seg_end=seg_end
+        mixed = bool(has_ad_label) and is_mixed_segment(
+            seg_start=seg_start, seg_end=seg_end, refined_windows=refined_windows
         )
         segment_mixed_by_id[int(segment.id)] = mixed
 

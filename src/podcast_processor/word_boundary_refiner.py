@@ -1,3 +1,11 @@
+"""LLM-based word-boundary refiner.
+
+Note: We intentionally share some call-setup patterns with BoundaryRefiner.
+Pylint may flag these as R0801 (duplicate-code); we ignore that for this module.
+"""
+
+# pylint: disable=duplicate-code
+
 import json
 import logging
 import re
@@ -8,7 +16,11 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 import litellm
 from jinja2 import Template
 
-from app.writer.client import writer_client
+from podcast_processor.llm_model_call_utils import (
+    extract_litellm_content,
+    render_prompt_and_upsert_model_call,
+    try_update_model_call,
+)
 from shared.config import Config
 
 # Keep the same internal bounds as the existing BoundaryRefiner.
@@ -71,39 +83,21 @@ Ad: {{ad_start}}s-{{ad_end}}s
             last_seq_num=last_seq_num,
         )
 
-        prompt = self.template.render(
+        prompt, model_call_id = render_prompt_and_upsert_model_call(
+            template=self.template,
             ad_start=ad_start,
             ad_end=ad_end,
-            ad_confidence=confidence,
+            confidence=confidence,
             context_segments=context,
+            post_id=post_id,
+            first_seq_num=first_seq_num,
+            last_seq_num=last_seq_num,
+            model_name=self.config.llm_model,
+            logger=self.logger,
+            log_prefix="Word boundary refine",
         )
 
-        model_call_id: Optional[int] = None
         raw_response: Optional[str] = None
-
-        if (
-            post_id is not None
-            and first_seq_num is not None
-            and last_seq_num is not None
-        ):
-            try:
-                res = writer_client.action(
-                    "upsert_model_call",
-                    {
-                        "post_id": post_id,
-                        "model_name": self.config.llm_model,
-                        "first_segment_sequence_num": first_seq_num,
-                        "last_segment_sequence_num": last_seq_num,
-                        "prompt": prompt,
-                    },
-                    wait=True,
-                )
-                if res and res.success:
-                    model_call_id = (res.data or {}).get("model_call_id")
-            except Exception as exc:  # best-effort
-                self.logger.warning(
-                    "Word boundary refine: failed to upsert ModelCall: %s", exc
-                )
 
         try:
             response = litellm.completion(
@@ -116,15 +110,7 @@ Ad: {{ad_start}}s-{{ad_end}}s
                 base_url=self.config.openai_base_url,
             )
 
-            choice = response.choices[0] if response.choices else None
-            content = ""
-            if choice:
-                content = (
-                    getattr(getattr(choice, "message", None), "content", None) or ""
-                )
-                if not content:
-                    content = getattr(choice, "text", "") or ""
-
+            content = extract_litellm_content(response)
             raw_response = content
             self._update_model_call(
                 model_call_id,
@@ -147,91 +133,33 @@ Ad: {{ad_start}}s-{{ad_end}}s
                 )
                 return self._fallback(ad_start, ad_end)
 
-            seg_seq = parsed.get("refined_start_segment_seq")
-            start_phrase = parsed.get("refined_start_phrase")
-            end_seg_seq = parsed.get("refined_end_segment_seq")
-            end_phrase = parsed.get("refined_end_phrase")
+            payload = self._extract_payload(parsed)
 
-            # Backwards-compatible: older schema used a single word + occurrence.
-            word = parsed.get("refined_start_word")
-            occurrence = parsed.get("occurrence")
-            if occurrence is None:
-                # Backwards-compatible: accept misspelled key if some models emit it.
-                occurrence = parsed.get("occurance")
-            # Backwards-compatible: support older key if some models still emit it.
-            word_index = parsed.get("refined_start_word_index")
+            refined_start, start_changed, start_reason, start_err = self._refine_start(
+                ad_start=ad_start,
+                all_segments=all_segments,
+                context_segments=context,
+                start_segment_seq=payload["start_segment_seq"],
+                start_phrase=payload["start_phrase"],
+                start_word=payload["start_word"],
+                start_occurrence=payload["start_occurrence"],
+                start_word_index=payload["start_word_index"],
+                start_reason=payload["start_reason"],
+            )
+            refined_end, end_changed, end_reason, end_err = self._refine_end(
+                ad_end=ad_end,
+                all_segments=all_segments,
+                context_segments=context,
+                end_segment_seq=payload["end_segment_seq"],
+                end_phrase=payload["end_phrase"],
+                end_reason=payload["end_reason"],
+            )
 
-            def _has_text(value: Any) -> bool:
-                if value is None:
-                    return False
-                try:
-                    return bool(str(value).strip())
-                except Exception:
-                    return False
-
-            start_reason = str(parsed.get("start_adjustment_reason") or "")
-            end_reason = str(parsed.get("end_adjustment_reason") or "")
-
-            refined_start = float(ad_start)
-            refined_end = float(ad_end)
-
-            start_changed = False
-            end_changed = False
-            partial_errors: List[str] = []
-
-            # START refinement (prefer phrase, fall back to legacy word-indexing)
-            if _has_text(start_phrase):
-                estimated_start = self._estimate_phrase_time(
-                    all_segments=all_segments,
-                    context_segments=context,
-                    preferred_segment_seq=seg_seq,
-                    phrase=start_phrase,
-                    direction="start",
-                )
-                if estimated_start is not None:
-                    refined_start = self._constrain_start(
-                        float(estimated_start), ad_start
-                    )
-                    start_changed = True
-                else:
-                    partial_errors.append("start_phrase_not_found")
-            elif _has_text(word) or word_index is not None:
-                estimated_start = self._estimate_word_time(
-                    all_segments=all_segments,
-                    segment_seq=seg_seq,
-                    word=word,
-                    occurrence=occurrence,
-                    word_index=word_index,
-                )
-                refined_start = self._constrain_start(float(estimated_start), ad_start)
-                start_changed = True
-            else:
-                if not start_reason:
-                    start_reason = "unchanged"
-
-            # END refinement (phrase-based only)
-            if _has_text(end_phrase):
-                estimated_end = self._estimate_phrase_time(
-                    all_segments=all_segments,
-                    context_segments=context,
-                    preferred_segment_seq=end_seg_seq,
-                    phrase=end_phrase,
-                    direction="end",
-                )
-                if estimated_end is not None:
-                    refined_end = self._constrain_end(float(estimated_end), ad_end)
-                    end_changed = True
-                else:
-                    partial_errors.append("end_phrase_not_found")
-            else:
-                if not end_reason:
-                    end_reason = "unchanged"
+            partial_errors = [e for e in [start_err, end_err] if e]
 
             # If caller didn't provide reasons, default to unchanged for untouched sides.
-            if not start_reason:
-                start_reason = "refined" if start_changed else "unchanged"
-            if not end_reason:
-                end_reason = "refined" if end_changed else "unchanged"
+            start_reason = self._default_reason(start_reason, changed=start_changed)
+            end_reason = self._default_reason(end_reason, changed=end_changed)
 
             # Guardrail: never return an invalid window.
             if refined_end <= refined_start:
@@ -243,21 +171,12 @@ Ad: {{ad_start}}s-{{ad_end}}s
                 )
                 return self._fallback(ad_start, ad_end)
 
-            # If LLM JSON parsed but nothing could be applied, treat as heuristic success.
-            if not start_changed and not end_changed and partial_errors:
-                self._update_model_call(
-                    model_call_id,
-                    status="success_heuristic",
-                    response=raw_response,
-                    error_message=",".join(partial_errors),
-                )
-            elif partial_errors:
-                self._update_model_call(
-                    model_call_id,
-                    status="success",
-                    response=raw_response,
-                    error_message=",".join(partial_errors),
-                )
+            self._update_model_call(
+                model_call_id,
+                status=self._result_status(start_changed, end_changed, partial_errors),
+                response=raw_response,
+                error_message=(",".join(partial_errors) if partial_errors else None),
+            )
 
             result = WordBoundaryRefinement(
                 refined_start=refined_start,
@@ -311,6 +230,123 @@ Ad: {{ad_start}}s-{{ad_end}}s
                 continue
         return None
 
+    @staticmethod
+    def _has_text(value: Any) -> bool:
+        if value is None:
+            return False
+        try:
+            return bool(str(value).strip())
+        except Exception:
+            return False
+
+    def _extract_payload(self, parsed: Dict[str, Any]) -> Dict[str, Any]:
+        occurrence = parsed.get("occurrence")
+        if occurrence is None:
+            occurrence = parsed.get("occurance")
+
+        return {
+            "start_segment_seq": parsed.get("refined_start_segment_seq"),
+            "start_phrase": parsed.get("refined_start_phrase"),
+            "end_segment_seq": parsed.get("refined_end_segment_seq"),
+            "end_phrase": parsed.get("refined_end_phrase"),
+            "start_word": parsed.get("refined_start_word"),
+            "start_occurrence": occurrence,
+            "start_word_index": parsed.get("refined_start_word_index"),
+            "start_reason": str(parsed.get("start_adjustment_reason") or ""),
+            "end_reason": str(parsed.get("end_adjustment_reason") or ""),
+        }
+
+    @staticmethod
+    def _default_reason(reason: str, *, changed: bool) -> str:
+        if reason:
+            return reason
+        return "refined" if changed else "unchanged"
+
+    @staticmethod
+    def _result_status(
+        start_changed: bool, end_changed: bool, partial_errors: List[str]
+    ) -> str:
+        if partial_errors and not start_changed and not end_changed:
+            return "success_heuristic"
+        return "success"
+
+    def _refine_start(
+        self,
+        *,
+        ad_start: float,
+        all_segments: List[Dict[str, Any]],
+        context_segments: List[Dict[str, Any]],
+        start_segment_seq: Any,
+        start_phrase: Any,
+        start_word: Any,
+        start_occurrence: Any,
+        start_word_index: Any,
+        start_reason: str,
+    ) -> Tuple[float, bool, str, Optional[str]]:
+        if self._has_text(start_phrase):
+            estimated_start = self._estimate_phrase_time(
+                all_segments=all_segments,
+                context_segments=context_segments,
+                preferred_segment_seq=start_segment_seq,
+                phrase=start_phrase,
+                direction="start",
+            )
+            if estimated_start is None:
+                return float(ad_start), False, start_reason, "start_phrase_not_found"
+            return (
+                self._constrain_start(float(estimated_start), ad_start),
+                True,
+                start_reason,
+                None,
+            )
+
+        if self._has_text(start_word) or start_word_index is not None:
+            estimated_start = self._estimate_word_time(
+                all_segments=all_segments,
+                segment_seq=start_segment_seq,
+                word=start_word,
+                occurrence=start_occurrence,
+                word_index=start_word_index,
+            )
+            return (
+                self._constrain_start(float(estimated_start), ad_start),
+                True,
+                start_reason,
+                None,
+            )
+
+        return float(ad_start), False, (start_reason or "unchanged"), None
+
+    def _refine_end(
+        self,
+        *,
+        ad_end: float,
+        all_segments: List[Dict[str, Any]],
+        context_segments: List[Dict[str, Any]],
+        end_segment_seq: Any,
+        end_phrase: Any,
+        end_reason: str,
+    ) -> Tuple[float, bool, str, Optional[str]]:
+        if not self._has_text(end_phrase):
+            return float(ad_end), False, (end_reason or "unchanged"), None
+
+        estimated_end = self._estimate_phrase_time(
+            all_segments=all_segments,
+            context_segments=context_segments,
+            preferred_segment_seq=end_segment_seq,
+            phrase=end_phrase,
+            direction="end",
+        )
+        if estimated_end is None:
+            return float(ad_end), False, end_reason, "end_phrase_not_found"
+
+        return (
+            self._constrain_end(float(estimated_end), ad_end),
+            True,
+            end_reason,
+            None,
+        )
+
     def _get_context(
         self,
         ad_start: float,
@@ -320,54 +356,82 @@ Ad: {{ad_start}}s-{{ad_end}}s
         first_seq_num: Optional[int],
         last_seq_num: Optional[int],
     ) -> List[Dict[str, Any]]:
-        # Prefer the detected ad-range sequence numbers (±2 segments) when available.
-        if first_seq_num is not None and last_seq_num is not None and all_segments:
-            seq_values: List[int] = []
-            for s in all_segments:
-                try:
-                    seq_values.append(int(s.get("sequence_num", -1)))
-                except Exception:
-                    continue
+        selected = self._context_by_seq_window(
+            all_segments,
+            first_seq_num=first_seq_num,
+            last_seq_num=last_seq_num,
+        )
+        if selected:
+            return selected
 
-            if seq_values:
-                min_seq = min(seq_values)
-                max_seq = max(seq_values)
-                start_seq = max(min_seq, int(first_seq_num) - 2)
-                end_seq = min(max_seq, int(last_seq_num) + 2)
-                selected: List[Dict[str, Any]] = []
-                for s in all_segments:
-                    try:
-                        seq = int(s.get("sequence_num", -1))
-                    except Exception:
-                        continue
-                    if start_seq <= seq <= end_seq:
-                        selected.append(s)
-                if selected:
-                    return selected
+        return self._context_by_time_overlap(ad_start, ad_end, all_segments)
 
-        # Fallback: derive ad segments by time and expand by ±2 by index.
-        ad_segs: List[Dict[str, Any]] = []
-        for s in all_segments:
+    def _context_by_seq_window(
+        self,
+        all_segments: List[Dict[str, Any]],
+        *,
+        first_seq_num: Optional[int],
+        last_seq_num: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        if first_seq_num is None or last_seq_num is None or not all_segments:
+            return []
+
+        seq_values: List[int] = []
+        for segment in all_segments:
             try:
-                seg_start = float(s.get("start_time", 0.0))
+                seq_values.append(int(segment.get("sequence_num", -1)))
             except Exception:
-                seg_start = 0.0
+                continue
+        if not seq_values:
+            return []
+
+        min_seq = min(seq_values)
+        max_seq = max(seq_values)
+        start_seq = max(min_seq, int(first_seq_num) - 2)
+        end_seq = min(max_seq, int(last_seq_num) + 2)
+
+        selected: List[Dict[str, Any]] = []
+        for segment in all_segments:
             try:
-                seg_end = float(s.get("end_time", seg_start))
+                seq = int(segment.get("sequence_num", -1))
             except Exception:
-                seg_end = seg_start
-            # Time overlap: include segments that overlap the detected window.
-            if seg_start <= float(ad_end) and seg_end >= float(ad_start):
-                ad_segs.append(s)
+                continue
+            if start_seq <= seq <= end_seq:
+                selected.append(segment)
+
+        return selected
+
+    def _context_by_time_overlap(
+        self,
+        ad_start: float,
+        ad_end: float,
+        all_segments: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        ad_segs = [
+            s for s in all_segments if self._segment_overlaps(s, ad_start, ad_end)
+        ]
         if not ad_segs:
             return []
 
         first_idx = all_segments.index(ad_segs[0])
         last_idx = all_segments.index(ad_segs[-1])
-
         start_idx = max(0, first_idx - 2)
         end_idx = min(len(all_segments), last_idx + 3)
         return all_segments[start_idx:end_idx]
+
+    @staticmethod
+    def _segment_overlaps(
+        segment: Dict[str, Any], ad_start: float, ad_end: float
+    ) -> bool:
+        try:
+            seg_start = float(segment.get("start_time", 0.0))
+        except Exception:
+            seg_start = 0.0
+        try:
+            seg_end = float(segment.get("end_time", seg_start))
+        except Exception:
+            seg_end = seg_start
+        return seg_start <= float(ad_end) and seg_end >= float(ad_start)
 
     def _estimate_phrase_times(
         self,
@@ -618,23 +682,11 @@ Ad: {{ad_start}}s-{{ad_end}}s
         response: Optional[str],
         error_message: Optional[str],
     ) -> None:
-        if model_call_id is None:
-            return
-        try:
-            writer_client.update(
-                "ModelCall",
-                int(model_call_id),
-                {
-                    "status": status,
-                    "response": response,
-                    "error_message": error_message,
-                    "retry_attempts": 1,
-                },
-                wait=True,
-            )
-        except Exception as exc:
-            self.logger.warning(
-                "Word boundary refine: failed to update ModelCall %s: %s",
-                model_call_id,
-                exc,
-            )
+        try_update_model_call(
+            model_call_id,
+            status=status,
+            response=response,
+            error_message=error_message,
+            logger=self.logger,
+            log_prefix="Word boundary refine",
+        )
