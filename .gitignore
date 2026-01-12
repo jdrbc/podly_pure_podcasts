@@ -60,3 +60,7 @@ frontend-build.log
 # Claude Code local notes (not committed)
 .claude-notes/
 CLAUDE_NOTES.md
+
+# Claude local files
+.claude/
+CLAUDE.md
