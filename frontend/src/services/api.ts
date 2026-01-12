@@ -140,6 +140,14 @@ export const feedsApi = {
     return response.data;
   },
 
+  updateFeedSettings: async (
+    feedId: number,
+    settings: { auto_whitelist_new_episodes_override: boolean | null }
+  ): Promise<Feed> => {
+    const response = await api.patch(`/api/feeds/${feedId}/settings`, settings);
+    return response.data;
+  },
+
   getProcessingEstimate: async (guid: string): Promise<{
     post_guid: string;
     estimated_minutes: number;

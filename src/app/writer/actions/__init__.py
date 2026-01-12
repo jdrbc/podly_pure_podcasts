@@ -28,6 +28,7 @@ from .feeds import (
     toggle_whitelist_all_for_feed_action as toggle_whitelist_all_for_feed_action,
 )
 from .feeds import touch_feed_access_token_action as touch_feed_access_token_action
+from .feeds import update_feed_settings_action as update_feed_settings_action
 from .feeds import (
     whitelist_latest_post_for_feed_action as whitelist_latest_post_for_feed_action,
 )
