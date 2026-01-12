@@ -324,7 +324,9 @@ export default function ProcessingStatsButton({
                                         ? 'bg-red-100 text-red-800'
                                         : 'bg-green-100 text-green-800'
                                     }`}>
-                                      {segment.primary_label === 'ad' ? 'Ad' : 'Content'}
+                                      {segment.primary_label === 'ad'
+                                        ? (segment.mixed ? 'Ad (mixed)' : 'Ad')
+                                        : 'Content'}
                                     </span>
                                   </td>
                                   <td className="px-4 py-3 text-sm text-gray-900 max-w-md">
@@ -375,7 +377,9 @@ export default function ProcessingStatsButton({
                                         ? 'bg-red-100 text-red-800'
                                         : 'bg-green-100 text-green-800'
                                     }`}>
-                                      {identification.label}
+                                      {identification.label === 'ad'
+                                        ? (identification.mixed ? 'ad (mixed)' : 'ad')
+                                        : identification.label}
                                     </span>
                                   </td>
                                   <td className="px-4 py-3 text-sm text-gray-600">

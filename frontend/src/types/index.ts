@@ -104,6 +104,7 @@ export interface LLMConfig {
   llm_enable_token_rate_limiting: boolean;
   llm_max_input_tokens_per_minute?: number | null;
   enable_boundary_refinement: boolean;
+  enable_word_level_boundary_refinder?: boolean;
 }
 
 export type WhisperConfig =

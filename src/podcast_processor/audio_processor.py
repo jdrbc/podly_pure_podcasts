@@ -104,6 +104,12 @@ class AudioProcessor:
             min_content_gap=12.0,
         )
 
+        # If boundary refinement persisted refined windows on the post, prefer those
+        # refined timestamps for audio cutting (this allows word-level refinement to
+        # affect the actual cut start time).
+        if getattr(self.config, "enable_boundary_refinement", False):
+            self._apply_refined_boundaries(post, ad_groups)
+
         self.logger.info(
             f"Merged {len(ad_segments_with_text)} segments into {len(ad_groups)} groups for post {post.id}"
         )
@@ -112,6 +118,69 @@ class AudioProcessor:
         ad_segments_times = [(g.start_time, g.end_time) for g in ad_groups]
         ad_segments_times.sort(key=lambda x: x[0])
         return ad_segments_times
+
+    def _apply_refined_boundaries(self, post: Post, ad_groups: Any) -> None:
+        try:
+            post_row = self.db_session.get(Post, post.id)
+        except Exception:  # pylint: disable=broad-except
+            post_row = None
+
+        refined = getattr(post_row, "refined_ad_boundaries", None) if post_row else None
+        if not refined or not isinstance(refined, list):
+            return
+
+        parsed: List[Tuple[float, float, float, float]] = []
+        for item in refined:
+            if not isinstance(item, dict):
+                continue
+            try:
+                orig_start_raw = item.get("orig_start")
+                orig_end_raw = item.get("orig_end")
+                refined_start_raw = item.get("refined_start")
+                refined_end_raw = item.get("refined_end")
+                if (
+                    orig_start_raw is None
+                    or orig_end_raw is None
+                    or refined_start_raw is None
+                    or refined_end_raw is None
+                ):
+                    continue
+
+                orig_start = float(orig_start_raw)
+                orig_end = float(orig_end_raw)
+                refined_start = float(refined_start_raw)
+                refined_end = float(refined_end_raw)
+            except Exception:  # pylint: disable=broad-except
+                continue
+
+            if refined_end <= refined_start:
+                continue
+            parsed.append((orig_start, orig_end, refined_start, refined_end))
+
+        if not parsed:
+            return
+
+        for group in ad_groups:
+            overlaps: List[Tuple[float, float]] = []
+            for orig_start, orig_end, refined_start, refined_end in parsed:
+                overlap = max(
+                    0.0,
+                    min(group.end_time, orig_end) - max(group.start_time, orig_start),
+                )
+                if overlap > 0.0:
+                    overlaps.append((refined_start, refined_end))
+
+            if not overlaps:
+                continue
+
+            refined_start_min = min(s for s, _ in overlaps)
+            refined_end_max = max(e for _, e in overlaps)
+
+            new_start = max(group.start_time, refined_start_min)
+            new_end = min(group.end_time, refined_end_max)
+            if new_end > new_start:
+                group.start_time = new_start
+                group.end_time = new_end
 
     def merge_ad_segments(
         self,

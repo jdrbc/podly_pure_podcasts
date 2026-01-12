@@ -22,7 +22,6 @@ class BoundaryRefinement:
     refined_end: float
     start_adjustment_reason: str
     end_adjustment_reason: str
-    confidence_adjustment: float = 0.0
 
 
 class BoundaryRefiner:
@@ -82,8 +81,6 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
             ad_end=ad_end,
             ad_confidence=confidence,
             context_segments=context,
-            max_start_extension=MAX_START_EXTENSION_SECONDS,
-            max_end_extension=MAX_END_EXTENSION_SECONDS,
         )
 
         model_call_id: Optional[int] = None
@@ -196,9 +193,6 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                         end_adjustment_reason=parsed.get(
                             "end_adjustment_reason", parsed.get("end_reason", "")
                         ),
-                        confidence_adjustment=float(
-                            parsed.get("confidence_adjustment", 0.0)
-                        ),
                     ),
                 )
                 self._update_model_call(
@@ -212,7 +206,6 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                     extra={
                         "refined_start": refined.refined_start,
                         "refined_end": refined.refined_end,
-                        "confidence_adjustment": refined.confidence_adjustment,
                     },
                 )
                 return refined
