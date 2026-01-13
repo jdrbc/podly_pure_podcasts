@@ -291,6 +291,7 @@ export const feedsApi = {
       end_time: number;
       text: string;
       primary_label: 'ad' | 'content';
+      mixed: boolean;
       identifications: Array<{
         id: number;
         label: string;
@@ -308,6 +309,7 @@ export const feedsApi = {
       segment_start_time: number;
       segment_end_time: number;
       segment_text: string;
+      mixed: boolean;
     }>;
   }> => {
     const response = await api.get(`/api/posts/${guid}/stats`);
@@ -390,6 +392,7 @@ export const feedsApi = {
       end_time: number;
       text: string;
       primary_label: 'ad' | 'content';
+      mixed: boolean;
       identifications: Array<{
         id: number;
         label: string;
@@ -407,6 +410,7 @@ export const feedsApi = {
       segment_start_time: number;
       segment_end_time: number;
       segment_text: string;
+      mixed: boolean;
     }>;
   }> => {
     return feedsApi.getPostStats(guid);

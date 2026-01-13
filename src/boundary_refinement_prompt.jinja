@@ -30,8 +30,6 @@ BOUNDARY DETECTION RULES:
 **ANALYSIS CONTEXT**:
 - **Detected Ad Block**: {{ad_start}}s - {{ad_end}}s
 - **Original Confidence**: {{ad_confidence}}
-- **Max Start Extension**: {{max_start_extension}}s
-- **Max End Extension**: {{max_end_extension}}s
 
 **CONTEXT SEGMENTS**:
 {% for segment in context_segments -%}
@@ -45,14 +43,12 @@ Respond with valid JSON containing refined boundaries:
   "refined_start": {{ad_start}},
   "refined_end": {{ad_end}},
   "start_adjustment_reason": "reason for start boundary change",
-  "end_adjustment_reason": "reason for end boundary change", 
-  "confidence_adjustment": 0.0
+  "end_adjustment_reason": "reason for end boundary change"
 }
 ```
 
 **REFINEMENT GUIDELINES**:
 - If no refinement needed, return original timestamps with "No adjustment needed" reasons
-- Limit start extensions to {{max_start_extension}}s backward
-- Limit end extensions to {{max_end_extension}}s forward
+- Keep adjustments close to the detected timestamps
 - For confidence {{ad_confidence}}: {% if ad_confidence > 0.9 %}be aggressive with boundary extension{% elif ad_confidence > 0.7 %}be conservative, only extend for clear signals{% else %}minimal changes, preserve content{% endif %}
 - Always ensure refined_start < refined_end

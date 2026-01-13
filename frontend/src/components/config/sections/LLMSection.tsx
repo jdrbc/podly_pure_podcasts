@@ -145,6 +145,18 @@ export default function LLMSection() {
               onChange={(e) => setField(['llm', 'enable_boundary_refinement'], e.target.checked)}
             />
           </Field>
+          <Field
+            label="Enable Word-Level Boundary Refiner"
+            hint="Uses a word-position heuristic to estimate the ad start time within a transcript segment"
+          >
+            <input
+              type="checkbox"
+              checked={!!pending?.llm?.enable_word_level_boundary_refinder}
+              onChange={(e) =>
+                setField(['llm', 'enable_word_level_boundary_refinder'], e.target.checked)
+              }
+            />
+          </Field>
           <Field label="Max Input Tokens Per Call (optional)">
             <input
               className="input"

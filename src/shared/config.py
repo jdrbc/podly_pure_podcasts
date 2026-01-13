@@ -99,7 +99,11 @@ class Config(BaseModel):
     )
     enable_boundary_refinement: bool = Field(
         default=DEFAULTS.ENABLE_BOUNDARY_REFINEMENT,
-        description="Enable LLM-based ad boundary refinement for improved precision",
+        description="Enable LLM-based ad boundary refinement for improved precision (consumes additional LLM tokens)",
+    )
+    enable_word_level_boundary_refinder: bool = Field(
+        default=DEFAULTS.ENABLE_WORD_LEVEL_BOUNDARY_REFINDER,
+        description="Enable word-level (heuristic-timed) ad boundary refinement",
     )
     developer_mode: bool = Field(
         default=False,

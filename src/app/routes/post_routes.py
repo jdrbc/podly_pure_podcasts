@@ -20,6 +20,11 @@ from app.models import (
     TranscriptSegment,
 )
 from app.posts import clear_post_processing_data
+from app.routes.post_stats_utils import (
+    count_model_calls,
+    is_mixed_segment,
+    parse_refined_windows,
+)
 from app.runtime_config import config as runtime_config
 from app.writer.client import writer_client
 
@@ -308,17 +313,7 @@ def post_debug(p_guid: str) -> flask.Response:
         .all()
     )
 
-    model_call_statuses: Dict[str, int] = {}
-    model_types: Dict[str, int] = {}
-
-    for call in model_calls:
-        if call.status not in model_call_statuses:
-            model_call_statuses[call.status] = 0
-        model_call_statuses[call.status] += 1
-
-        if call.model_name not in model_types:
-            model_types[call.model_name] = 0
-        model_types[call.model_name] += 1
+    model_call_statuses, model_types = count_model_calls(model_calls)
 
     content_segments = sum(1 for i in identifications if i.label == "content")
     ad_segments = sum(1 for i in identifications if i.label == "ad")
@@ -384,6 +379,13 @@ def api_post_stats(p_guid: str) -> flask.Response:
     content_segments = sum(1 for i in identifications if i.label == "content")
     ad_segments = sum(1 for i in identifications if i.label == "ad")
 
+    # Refined ad windows are written by boundary refinement and are used for precise
+    # cutting. We also derive a UI-only "mixed" flag for segments that overlap a
+    # refined ad window but are not fully contained by it (i.e., segment contains
+    # both content and ad).
+    raw_refined = getattr(post, "refined_ad_boundaries", None) or []
+    refined_windows = parse_refined_windows(raw_refined)
+
     model_call_details = []
     for call in model_calls:
         model_call_details.append(
@@ -403,6 +405,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
         )
 
     transcript_segments_data = []
+    segment_mixed_by_id: Dict[int, bool] = {}
     for segment in transcript_segments:
         segment_identifications = [
             i for i in identifications if i.transcript_segment_id == segment.id
@@ -410,6 +413,13 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
         has_ad_label = any(i.label == "ad" for i in segment_identifications)
         primary_label = "ad" if has_ad_label else "content"
+
+        seg_start = float(segment.start_time)
+        seg_end = float(segment.end_time)
+        mixed = bool(has_ad_label) and is_mixed_segment(
+            seg_start=seg_start, seg_end=seg_end, refined_windows=refined_windows
+        )
+        segment_mixed_by_id[int(segment.id)] = mixed
 
         transcript_segments_data.append(
             {
@@ -419,6 +429,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
                 "end_time": round(segment.end_time, 1),
                 "text": segment.text,
                 "primary_label": primary_label,
+                "mixed": mixed,
                 "identifications": [
                     {
                         "id": ident.id,
@@ -451,6 +462,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
                 "segment_start_time": round(segment.start_time, 1),
                 "segment_end_time": round(segment.end_time, 1),
                 "segment_text": segment.text,
+                "mixed": bool(segment_mixed_by_id.get(int(segment.id), False)),
             }
         )
 

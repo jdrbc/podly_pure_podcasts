@@ -1,7 +1,9 @@
-# pylint: disable=too-many-lines
 import logging
 import math
 import time
+
+# pylint: disable=too-many-lines
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import litellm
@@ -31,6 +33,7 @@ from podcast_processor.token_rate_limiter import (
     configure_rate_limiter_for_model,
 )
 from podcast_processor.transcribe import Segment
+from podcast_processor.word_boundary_refiner import WordBoundaryRefiner
 from shared.config import Config, TestWhisperConfig
 from shared.llm_utils import model_uses_max_completion_tokens
 
@@ -111,8 +114,12 @@ class AdClassifier:
         # Initialize boundary refiner (conditionally based on config)
         self.boundary_refiner: Optional[BoundaryRefiner] = None
         if config.enable_boundary_refinement:
-            self.boundary_refiner = BoundaryRefiner(config, self.logger)
-            self.logger.info("Boundary refinement enabled")
+            if getattr(config, "enable_word_level_boundary_refinder", False):
+                self.boundary_refiner = WordBoundaryRefiner(config, self.logger)  # type: ignore[assignment]
+                self.logger.info("Word-level boundary refiner enabled")
+            else:
+                self.boundary_refiner = BoundaryRefiner(config, self.logger)
+                self.logger.info("Boundary refinement enabled")
         else:
             self.logger.info("Boundary refinement disabled via config")
 
@@ -1291,23 +1298,19 @@ class AdClassifier:
                     - (ident.transcript_segment.start_time or 0.0)
                 )
 
-                # When boundary refinement is disabled, be stricter:
-                # only expand to neighbors with strong ad cues
-                if not self.config.enable_boundary_refinement:
-                    if not has_strong_cue:
-                        continue
-                else:
-                    # With refinement enabled, allow proximity-based expansion
-                    # (the refiner will correct over-expansion)
-                    if not (has_strong_cue or is_transition):
-                        if gap_seconds > 10.0:
-                            continue
+                if not self._should_expand_neighbor(
+                    has_strong_cue=has_strong_cue,
+                    is_transition=is_transition,
+                    gap_seconds=gap_seconds,
+                ):
+                    continue
 
-                confidence = 0.72 if is_transition else 0.75
-                if has_strong_cue:
-                    confidence = 0.85 if gap_seconds <= 10.0 else 0.8
-                if is_self_promo:
-                    confidence = max(0.5, confidence - 0.25)
+                confidence = self._neighbor_confidence(
+                    has_strong_cue=has_strong_cue,
+                    is_transition=is_transition,
+                    is_self_promo=is_self_promo,
+                    gap_seconds=gap_seconds,
+                )
 
                 to_create.append(
                     {
@@ -1325,6 +1328,36 @@ class AdClassifier:
             return self._create_identifications_bulk(to_create)
         return 0
 
+    def _should_expand_neighbor(
+        self,
+        *,
+        has_strong_cue: bool,
+        is_transition: bool,
+        gap_seconds: float,
+    ) -> bool:
+        if not self.config.enable_boundary_refinement:
+            return has_strong_cue
+
+        if has_strong_cue or is_transition:
+            return True
+
+        return gap_seconds <= 10.0
+
+    @staticmethod
+    def _neighbor_confidence(
+        *,
+        has_strong_cue: bool,
+        is_transition: bool,
+        is_self_promo: bool,
+        gap_seconds: float,
+    ) -> float:
+        confidence = 0.72 if is_transition else 0.75
+        if has_strong_cue:
+            confidence = 0.85 if gap_seconds <= 10.0 else 0.8
+        if is_self_promo:
+            confidence = max(0.5, confidence - 0.25)
+        return confidence
+
     def _refine_boundaries(
         self, transcript_segments: List[TranscriptSegment], post: Post
     ) -> None:
@@ -1334,6 +1367,10 @@ class AdClassifier:
         """
         if not self.boundary_refiner:
             return
+
+        # Latest refined boundaries for downstream audio cuts. Overwrites prior
+        # values for the post ("latest successful" semantics).
+        refined_boundaries: List[Dict[str, Any]] = []
 
         # Get ad identifications
         identifications = (
@@ -1363,7 +1400,12 @@ class AdClassifier:
                 ad_end=block["end"],
                 confidence=block["confidence"],
                 all_segments=[
-                    {"start_time": s.start_time, "text": s.text, "end_time": s.end_time}
+                    {
+                        "sequence_num": s.sequence_num,
+                        "start_time": s.start_time,
+                        "text": s.text,
+                        "end_time": s.end_time,
+                    }
                     for s in transcript_segments
                 ],
                 post_id=post.id,
@@ -1382,6 +1424,42 @@ class AdClassifier:
                 self._apply_refinement(
                     block, refinement, transcript_segments, post, model_call
                 )
+
+                refined_boundaries.append(
+                    {
+                        "orig_start": float(block["start"]),
+                        "orig_end": float(block["end"]),
+                        "refined_start": float(refinement.refined_start),
+                        "refined_end": float(refinement.refined_end),
+                        "confidence": float(block.get("confidence", 0.0) or 0.0),
+                    }
+                )
+
+        # Store latest refined boundaries on the post so audio processing can cut
+        # using refined timestamps (including word-level refined start times).
+        # Clear the value when we have no refined boundaries so stale data doesn't
+        # affect future audio cuts.
+        try:
+            res = writer_client.update(
+                "Post",
+                post.id,
+                {
+                    "refined_ad_boundaries": refined_boundaries or None,
+                    "refined_ad_boundaries_updated_at": datetime.utcnow(),
+                },
+                wait=True,
+            )
+            if not res or not res.success:
+                raise RuntimeError(
+                    getattr(res, "error", "Failed to update refined ad boundaries")
+                )
+        except Exception as exc:  # pylint: disable=broad-except
+            # Best-effort: cutting can fall back to segment-derived windows.
+            self.logger.warning(
+                "Failed to persist refined ad boundaries for post %s: %s",
+                post.id,
+                exc,
+            )
 
     def _group_into_blocks(
         self, identifications: List[Identification]
@@ -1439,7 +1517,13 @@ class AdClassifier:
 
         new_identifications: List[Dict[str, Any]] = []
         for seg in transcript_segments:
-            if refinement.refined_start <= seg.start_time <= refinement.refined_end:
+            seg_start = float(seg.start_time or 0.0)
+            seg_end = float(seg.end_time or seg_start)
+            # Keep segments that overlap the refined window. This preserves the
+            # containing segment when refined boundaries fall mid-segment.
+            if seg_start <= float(refinement.refined_end) and seg_end >= float(
+                refinement.refined_start
+            ):
                 new_identifications.append(
                     {
                         "transcript_segment_id": seg.id,
