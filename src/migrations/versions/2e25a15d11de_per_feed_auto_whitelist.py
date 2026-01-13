@@ -1,7 +1,7 @@
 """per feed auto whitelist
 
 Revision ID: 2e25a15d11de
-Revises: f7a4195e0953
+Revises: 82cfcc8e0326
 Create Date: 2026-01-12 12:47:42.611999
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '2e25a15d11de'
-down_revision = 'f7a4195e0953'
+down_revision = '82cfcc8e0326'
 branch_labels = None
 depends_on = None
 
