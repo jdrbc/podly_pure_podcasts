@@ -31,6 +31,27 @@ def _product_id() -> Optional[str]:
     return os.getenv("STRIPE_PRODUCT_ID")
 
 
+def _min_subscription_amount_cents() -> int:
+    """Minimum non-zero subscription amount in cents.
+
+    Allow 0 to cancel, otherwise enforce this minimum.
+    Configurable via STRIPE_MIN_SUBSCRIPTION_AMOUNT_CENTS.
+    """
+
+    raw = os.getenv("STRIPE_MIN_SUBSCRIPTION_AMOUNT_CENTS")
+    if raw is None or raw == "":
+        return 100
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid STRIPE_MIN_SUBSCRIPTION_AMOUNT_CENTS=%r; defaulting to 100",
+            raw,
+        )
+        return 100
+    return max(0, value)
+
+
 def _user_feed_usage(user: User) -> dict[str, int]:
     feeds_in_use = UserFeed.query.filter_by(user_id=user.id).count()
     allowance = getattr(user, "manual_feed_allowance", None)
@@ -109,6 +130,7 @@ def billing_summary() -> Any:
             "feeds_in_use": usage["feeds_in_use"],
             "remaining": usage["remaining"],
             "current_amount": current_amount,
+            "min_amount_cents": _min_subscription_amount_cents(),
             "subscription_status": getattr(
                 user, "feed_subscription_status", "inactive"
             ),
@@ -138,9 +160,14 @@ def update_subscription() -> Any:  # pylint: disable=too-many-statements
     amount = int(payload.get("amount") or 0)
     logger.info("Update subscription for user %s: %s cents", user.id, amount)
 
-    # Allow 0 to cancel, otherwise min 100 cents ($1.00)
-    if 0 < amount < 100:
-        return jsonify({"error": "Minimum amount is $1.00"}), 400
+    # Allow 0 to cancel, otherwise enforce configured minimum.
+    min_amount_cents = _min_subscription_amount_cents()
+    if 0 < amount < min_amount_cents:
+        min_amount_dollars = min_amount_cents / 100.0
+        return (
+            jsonify({"error": f"Minimum amount is ${min_amount_dollars:.2f}"}),
+            400,
+        )
 
     stripe_client, stripe_err = _get_stripe_client()
     product_id = _product_id()

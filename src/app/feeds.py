@@ -46,6 +46,9 @@ def is_feed_active_for_user(feed_id: int, user: User) -> bool:
 
 def _should_auto_whitelist_new_posts(feed: Feed, post: Optional[Post] = None) -> bool:
     """Return True when new posts should default to whitelisted for this feed."""
+    override = getattr(feed, "auto_whitelist_new_episodes_override", None)
+    if override is not None:
+        return bool(override)
 
     if not getattr(config, "automatically_whitelist_new_episodes", False):
         return False

@@ -9,6 +9,7 @@ export interface Feed {
   member_count?: number;
   is_member?: boolean;
   is_active_subscription?: boolean;
+  auto_whitelist_new_episodes_override?: boolean | null;
 }
 
 export interface Episode {
@@ -206,6 +207,7 @@ export interface BillingSummary {
   feeds_in_use: number;
   remaining: number;
   current_amount?: number;
+  min_amount_cents?: number;
   subscription_status: string;
   stripe_subscription_id?: string | null;
   stripe_customer_id?: string | null;
