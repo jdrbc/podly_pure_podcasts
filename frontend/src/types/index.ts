@@ -207,6 +207,7 @@ export interface BillingSummary {
   feeds_in_use: number;
   remaining: number;
   current_amount?: number;
+  min_amount_cents?: number;
   subscription_status: string;
   stripe_subscription_id?: string | null;
   stripe_customer_id?: string | null;
