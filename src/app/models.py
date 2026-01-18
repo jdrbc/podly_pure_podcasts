@@ -30,6 +30,7 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     author = db.Column(db.Text)
     rss_url = db.Column(db.Text, unique=True, nullable=False)
     image_url = db.Column(db.Text)
+    auto_whitelist_new_episodes_override = db.Column(db.Boolean, nullable=True)
 
     posts = db.relationship(
         "Post", backref="feed", lazy=True, order_by="Post.release_date.desc()"
