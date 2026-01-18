@@ -202,6 +202,7 @@ def configure_rate_limiter_for_model(model: str) -> TokenRateLimiter:
         "gpt-4o": 150000,
         "gpt-4": 40000,
         # Google Gemini models
+        "gemini/gemini-3-flash-preview": 60000,
         "gemini/gemini-2.5-flash": 60000,
         "gemini/gemini-2.5-pro": 30000,
     }

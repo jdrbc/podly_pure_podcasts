@@ -10,6 +10,7 @@ const LLM_MODEL_ALIASES: string[] = [
   'openai/gpt-4o',
   'anthropic/claude-3.5-sonnet',
   'anthropic/claude-3.5-haiku',
+  'gemini/gemini-3-flash-preview',
   'gemini/gemini-2.0-flash',
   'gemini/gemini-1.5-pro',
   'gemini/gemini-1.5-flash',
@@ -137,6 +138,25 @@ export default function LLMSection() {
               onChange={(e) => setField(['llm', 'llm_enable_token_rate_limiting'], e.target.checked)}
             />
           </Field>
+          <Field label="Enable Boundary Refinement" hint="LLM-based ad boundary refinement for improved precision">
+            <input
+              type="checkbox"
+              checked={pending?.llm?.enable_boundary_refinement ?? true}
+              onChange={(e) => setField(['llm', 'enable_boundary_refinement'], e.target.checked)}
+            />
+          </Field>
+          <Field
+            label="Enable Word-Level Boundary Refiner"
+            hint="Uses a word-position heuristic to estimate the ad start time within a transcript segment"
+          >
+            <input
+              type="checkbox"
+              checked={!!pending?.llm?.enable_word_level_boundary_refinder}
+              onChange={(e) =>
+                setField(['llm', 'enable_word_level_boundary_refinder'], e.target.checked)
+              }
+            />
+          </Field>
           <Field label="Max Input Tokens Per Call (optional)">
             <input
               className="input"
@@ -199,6 +219,9 @@ function BaseUrlInfoBox() {
           <li>
             <code className="bg-white px-1 rounded">anthropic/claude-3.5-sonnet</code> → Anthropic
             API
+          </li>
+          <li>
+            <code className="bg-white px-1 rounded">gemini/gemini-3-flash-preview</code> → Google API
           </li>
           <li>
             <code className="bg-white px-1 rounded">gemini/gemini-2.0-flash</code> → Google API

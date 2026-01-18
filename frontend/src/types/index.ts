@@ -103,6 +103,8 @@ export interface LLMConfig {
   llm_max_input_tokens_per_call?: number | null;
   llm_enable_token_rate_limiting: boolean;
   llm_max_input_tokens_per_minute?: number | null;
+  enable_boundary_refinement: boolean;
+  enable_word_level_boundary_refinder?: boolean;
 }
 
 export type WhisperConfig =
@@ -146,6 +148,7 @@ export interface AppConfigUI {
   number_of_episodes_to_whitelist_from_archive_of_new_feed: number;
   enable_public_landing_page: boolean;
   user_limit_total: number | null;
+  autoprocess_on_download: boolean;
 }
 
 export interface CombinedConfig {

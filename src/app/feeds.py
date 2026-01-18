@@ -2,7 +2,7 @@ import datetime
 import logging
 import uuid
 from email.utils import format_datetime, parsedate_to_datetime
-from typing import Any, Optional
+from typing import Any, Iterable, Optional, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import feedparser  # type: ignore[import-untyped]
@@ -329,16 +329,20 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
 def generate_feed_xml(feed: Feed) -> Any:
     logger.info(f"Generating XML for feed with ID: {feed.id}")
 
-    # Only publish processed + whitelisted episodes for this feed
-    posts = (
-        Post.query.filter(
-            Post.feed_id == feed.id,
-            Post.whitelisted.is_(True),
-            Post.processed_audio_path.isnot(None),
+    include_unprocessed = getattr(config, "autoprocess_on_download", True)
+
+    if include_unprocessed:
+        posts = list(cast(Iterable[Post], feed.posts))
+    else:
+        posts = (
+            Post.query.filter(
+                Post.feed_id == feed.id,
+                Post.whitelisted.is_(True),
+                Post.processed_audio_path.isnot(None),
+            )
+            .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+            .all()
         )
-        .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
-        .all()
-    )
 
     items = [feed_item(post) for post in posts]
 
@@ -488,12 +492,21 @@ def make_post(feed: Feed, entry: feedparser.FeedParserDict) -> Post:
     if not episode_image_url:
         episode_image_url = feed.image_url
 
+    # Try multiple description fields in order of preference
+    description = entry.get("description", "")
+    if not description:
+        description = entry.get("summary", "")
+    if not description and hasattr(entry, "content") and entry.content:
+        description = entry.content[0].get("value", "")
+    if not description:
+        description = entry.get("subtitle", "")
+
     return Post(
         feed_id=feed.id,
         guid=get_guid(entry),
         download_url=find_audio_link(entry),
         title=entry.title,
-        description=entry.get("description", ""),
+        description=description,
         release_date=_parse_release_date(entry),
         duration=get_duration(entry),
         image_url=episode_image_url,
