@@ -2,7 +2,7 @@ import logging
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, cast
 
 import flask
 from flask import Blueprint, g, jsonify, request, send_file
@@ -20,6 +20,12 @@ from app.models import (
     TranscriptSegment,
 )
 from app.posts import clear_post_processing_data
+from app.routes.post_stats_utils import (
+    count_model_calls,
+    is_mixed_segment,
+    parse_refined_windows,
+)
+from app.runtime_config import config as runtime_config
 from app.writer.client import writer_client
 
 logger = logging.getLogger("global_logger")
@@ -46,6 +52,70 @@ def _increment_download_count(post: Post) -> None:
         )
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Failed to increment download count for post {post.guid}: {e}")
+
+
+def _ensure_whitelisted_for_download(
+    post: Post, p_guid: str
+) -> Optional[flask.Response]:
+    """Make sure a post is whitelisted before serving or queuing processing."""
+    if post.whitelisted:
+        return None
+
+    if not getattr(runtime_config, "autoprocess_on_download", False):
+        logger.warning(
+            "Post %s not whitelisted and auto-process is disabled", post.guid
+        )
+        return flask.make_response(("Post not whitelisted", 403))
+
+    try:
+        writer_client.action(
+            "whitelist_post",
+            {"post_id": post.id},
+            wait=True,
+        )
+        post.whitelisted = True
+        logger.info("Auto-whitelisted post %s on download request", p_guid)
+        return None
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning(
+            "Failed to auto-whitelist post %s on download: %s", post.guid, exc
+        )
+        return flask.make_response(("Post not whitelisted", 403))
+
+
+def _missing_processed_audio_response(post: Post, p_guid: str) -> flask.Response:
+    """Return a response when processed audio is missing, optionally queueing work."""
+    if not getattr(runtime_config, "autoprocess_on_download", False):
+        logger.warning("Processed audio not found for post: %s", post.id)
+        return flask.make_response(("Processed audio not found", 404))
+
+    logger.info(
+        "Auto-processing on download is enabled; queuing processing for %s",
+        p_guid,
+    )
+    requester = getattr(getattr(g, "current_user", None), "id", None)
+    job_response = get_jobs_manager().start_post_processing(
+        p_guid,
+        priority="download",
+        requested_by_user_id=requester,
+        billing_user_id=requester,
+    )
+    status = cast(Optional[str], job_response.get("status"))
+    status_code = {
+        "completed": 200,
+        "skipped": 200,
+        "error": 400,
+        "running": 202,
+        "started": 202,
+    }.get(status or "pending", 202)
+    message = job_response.get(
+        "message",
+        "Processing queued because audio was not ready for download",
+    )
+    return flask.make_response(
+        flask.jsonify({**job_response, "message": message}),
+        status_code,
+    )
 
 
 @post_bp.route("/api/feeds/<int:feed_id>/posts", methods=["GET"])
@@ -243,17 +313,7 @@ def post_debug(p_guid: str) -> flask.Response:
         .all()
     )
 
-    model_call_statuses: Dict[str, int] = {}
-    model_types: Dict[str, int] = {}
-
-    for call in model_calls:
-        if call.status not in model_call_statuses:
-            model_call_statuses[call.status] = 0
-        model_call_statuses[call.status] += 1
-
-        if call.model_name not in model_types:
-            model_types[call.model_name] = 0
-        model_types[call.model_name] += 1
+    model_call_statuses, model_types = count_model_calls(model_calls)
 
     content_segments = sum(1 for i in identifications if i.label == "content")
     ad_segments = sum(1 for i in identifications if i.label == "ad")
@@ -380,6 +440,13 @@ def api_post_stats(p_guid: str) -> flask.Response:
     content_segments = sum(1 for i in identifications if i.label == "content")
     ad_segments = sum(1 for i in identifications if i.label == "ad")
 
+    # Refined ad windows are written by boundary refinement and are used for precise
+    # cutting. We also derive a UI-only "mixed" flag for segments that overlap a
+    # refined ad window but are not fully contained by it (i.e., segment contains
+    # both content and ad).
+    raw_refined = getattr(post, "refined_ad_boundaries", None) or []
+    refined_windows = parse_refined_windows(raw_refined)
+
     model_call_details = []
     for call in model_calls:
         model_call_details.append(
@@ -399,6 +466,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
         )
 
     transcript_segments_data = []
+    segment_mixed_by_id: Dict[int, bool] = {}
     for segment in transcript_segments:
         segment_identifications = [
             i for i in identifications if i.transcript_segment_id == segment.id
@@ -406,6 +474,13 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
         has_ad_label = any(i.label == "ad" for i in segment_identifications)
         primary_label = "ad" if has_ad_label else "content"
+
+        seg_start = float(segment.start_time)
+        seg_end = float(segment.end_time)
+        mixed = bool(has_ad_label) and is_mixed_segment(
+            seg_start=seg_start, seg_end=seg_end, refined_windows=refined_windows
+        )
+        segment_mixed_by_id[int(segment.id)] = mixed
 
         transcript_segments_data.append(
             {
@@ -415,6 +490,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
                 "end_time": round(segment.end_time, 1),
                 "text": segment.text,
                 "primary_label": primary_label,
+                "mixed": mixed,
                 "identifications": [
                     {
                         "id": ident.id,
@@ -447,6 +523,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
                 "segment_start_time": round(segment.start_time, 1),
                 "segment_end_time": round(segment.end_time, 1),
                 "segment_text": segment.text,
+                "mixed": bool(segment_mixed_by_id.get(int(segment.id), False)),
             }
         )
 
@@ -883,8 +960,9 @@ def api_get_post_audio(p_guid: str) -> ResponseReturnValue:
 @post_bp.route("/api/posts/<string:p_guid>/download", methods=["GET"])
 def api_download_post(p_guid: str) -> flask.Response:
     """API endpoint to download processed audio files."""
-    if hasattr(g, "current_user") and g.current_user:
-        update_user_last_active(g.current_user.id)
+    current_user = getattr(g, "current_user", None)
+    if current_user:
+        update_user_last_active(current_user.id)
 
     logger.info(f"Request to download post with GUID: {p_guid}")
     post = Post.query.filter_by(guid=p_guid).first()
@@ -892,13 +970,12 @@ def api_download_post(p_guid: str) -> flask.Response:
         logger.warning(f"Post with GUID: {p_guid} not found")
         return flask.make_response(("Post not found", 404))
 
-    if not post.whitelisted:
-        logger.warning(f"Post: {post.title} is not whitelisted")
-        return flask.make_response(("Post not whitelisted", 403))
+    whitelist_response = _ensure_whitelisted_for_download(post, p_guid)
+    if whitelist_response:
+        return whitelist_response
 
     if not post.processed_audio_path or not Path(post.processed_audio_path).exists():
-        logger.warning(f"Processed audio not found for post: {post.id}")
-        return flask.make_response(("Processed audio not found", 404))
+        return _missing_processed_audio_response(post, p_guid)
 
     try:
         response = send_file(

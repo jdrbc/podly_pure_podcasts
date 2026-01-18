@@ -1,0 +1,61 @@
+You are analyzing podcast transcript segments to identify the precise START and END of advertisement content.
+
+Your job is to locate short, distinctive phrases at the START and END of the ad break within the provided segments.
+
+BOUNDARY DETECTION RULES:
+
+**AD START INDICATORS** (extend boundary backward):
+- Sponsor introductions: "This episode is brought to you by...", "And now a word from our sponsor"
+- Transition phrases: "Before we continue...", "Let me tell you about...", "Speaking of..."
+- Host acknowledgments: "I want to thank...", "Special thanks to...", "Our sponsor today is..."
+- Subtle lead-ins: "You know what's interesting...", "I've been using...", "Let me share something..."
+
+**AD END INDICATORS** (extend boundary forward or tighten earlier):
+- Transition back to content: "And we're back", "Now back to the show", "Alright, let's get back to..."
+- Host resumes discussion: references to the previous topic immediately after sponsor talk
+- Audible wrap-up phrases: "Check them out", "Use code...", "Link in the description" followed by topic continuation
+
+**ANALYSIS CONTEXT**:
+- **Detected Ad Block**: {{ad_start}}s - {{ad_end}}s
+- **Original Confidence**: {{ad_confidence}}
+
+**CONTEXT SEGMENTS**:
+Each segment has a stable sequence number and timing.
+
+{% for segment in context_segments -%}
+[seq={{segment.sequence_num}} start={{segment.start_time}} end={{segment.end_time}}] {{segment.text}}
+{% endfor %}
+
+**OUTPUT FORMAT**:
+Respond with valid JSON.
+
+- Identify the segment that contains the START of the ad break.
+- Identify a short phrase at the START of the ad break: the first 4 words of the promo/sponsor read.
+- Identify the segment that contains the END of the ad break.
+- Identify a short phrase at the END of the ad break: the last 4 words right before returning to content.
+
+Phrase requirements:
+- Each phrase should be a contiguous sequence of words that appears in the segment text.
+- Prefer phrases that are fully contained within a single segment.
+- Use exactly 4 words when possible. If you cannot, return fewer words (3, 2, or 1) that still appear contiguously.
+
+Partial output is allowed:
+- If you are unsure about the START phrase, you may omit `refined_start_phrase` (or set it to null/empty) and we will keep the original detected start boundary.
+- If you are unsure about the END phrase, you may omit `refined_end_phrase` (or set it to null/empty) and we will keep the original detected end boundary.
+
+```json
+{
+  "refined_start_segment_seq": 0,
+  "refined_start_phrase": "this episode is brought",
+  "refined_end_segment_seq": 0,
+  "refined_end_phrase": "now back to the",
+  "start_adjustment_reason": "reason for start boundary change",
+  "end_adjustment_reason": "reason for end boundary change"
+}
+```
+
+**REFINEMENT GUIDELINES**:
+- If no refinement needed, pick the best segment/word corresponding to the existing detected start.
+- Prefer to refine both START and END boundaries, but return partial results if only one side is confident.
+- Always ensure the chosen start phrase occurs near the detected start boundary.
+- Always ensure the chosen end phrase occurs near the detected end boundary.

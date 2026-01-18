@@ -165,6 +165,7 @@ class TestAdClassifierRateLimiting:
             ("anthropic/claude-3-5-sonnet-20240620", 30000),
             ("gpt-4o", 150000),
             ("gpt-4o-mini", 200000),
+            ("gemini/gemini-3-flash-preview", 60000),
             ("gemini/gemini-2.5-flash", 60000),
             ("unknown-model", 30000),  # Should use default
         ]

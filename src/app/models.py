@@ -97,6 +97,12 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     # JSON data for chapter-based processing results
     chapter_data = db.Column(db.Text, nullable=True)
 
+    # Latest (most recent) refined ad cut windows for this post.
+    # This is written by the ad classifier boundary refinement step and read by the
+    # audio processor to cut ads using refined (intra-segment) timestamps.
+    refined_ad_boundaries = db.Column(db.JSON, nullable=True)
+    refined_ad_boundaries_updated_at = db.Column(db.DateTime, nullable=True)
+
     segments = db.relationship(
         "TranscriptSegment",
         backref="post",
@@ -375,6 +381,14 @@ class LLMSettings(db.Model):  # type: ignore[name-defined, misc]
         db.Boolean, nullable=False, default=DEFAULTS.LLM_ENABLE_TOKEN_RATE_LIMITING
     )
     llm_max_input_tokens_per_minute = db.Column(db.Integer, nullable=True)
+    enable_boundary_refinement = db.Column(
+        db.Boolean, nullable=False, default=DEFAULTS.ENABLE_BOUNDARY_REFINEMENT
+    )
+    enable_word_level_boundary_refinder = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=DEFAULTS.ENABLE_WORD_LEVEL_BOUNDARY_REFINDER,
+    )
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -497,6 +511,11 @@ class AppSettings(db.Model):  # type: ignore[name-defined, misc]
         default=DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
     )
     user_limit_total = db.Column(db.Integer, nullable=True)
+    autoprocess_on_download = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=DEFAULTS.APP_AUTOPROCESS_ON_DOWNLOAD,
+    )
 
     # Hash of the environment variables used to seed configuration.
     # Used to detect changes in environment variables between restarts.

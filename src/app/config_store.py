@@ -112,6 +112,8 @@ def ensure_defaults() -> None:
             "llm_max_concurrent_calls": DEFAULTS.LLM_DEFAULT_MAX_CONCURRENT_CALLS,
             "llm_max_retry_attempts": DEFAULTS.LLM_DEFAULT_MAX_RETRY_ATTEMPTS,
             "llm_enable_token_rate_limiting": DEFAULTS.LLM_ENABLE_TOKEN_RATE_LIMITING,
+            "enable_boundary_refinement": DEFAULTS.ENABLE_BOUNDARY_REFINEMENT,
+            "enable_word_level_boundary_refinder": DEFAULTS.ENABLE_WORD_LEVEL_BOUNDARY_REFINDER,
         },
     )
 
@@ -157,6 +159,7 @@ def ensure_defaults() -> None:
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
             "enable_public_landing_page": DEFAULTS.APP_ENABLE_PUBLIC_LANDING_PAGE,
             "user_limit_total": DEFAULTS.APP_USER_LIMIT_TOTAL,
+            "autoprocess_on_download": DEFAULTS.APP_AUTOPROCESS_ON_DOWNLOAD,
         },
     )
 
@@ -448,6 +451,8 @@ def read_combined() -> Dict[str, Any]:
             "llm_max_input_tokens_per_call": llm.llm_max_input_tokens_per_call,
             "llm_enable_token_rate_limiting": llm.llm_enable_token_rate_limiting,
             "llm_max_input_tokens_per_minute": llm.llm_max_input_tokens_per_minute,
+            "enable_boundary_refinement": llm.enable_boundary_refinement,
+            "enable_word_level_boundary_refinder": llm.enable_word_level_boundary_refinder,
         },
         "whisper": whisper_payload,
         "processing": {
@@ -466,6 +471,7 @@ def read_combined() -> Dict[str, Any]:
             "number_of_episodes_to_whitelist_from_archive_of_new_feed": app_s.number_of_episodes_to_whitelist_from_archive_of_new_feed,
             "enable_public_landing_page": app_s.enable_public_landing_page,
             "user_limit_total": app_s.user_limit_total,
+            "autoprocess_on_download": app_s.autoprocess_on_download,
         },
     }
 
@@ -484,6 +490,8 @@ def _update_section_llm(data: Dict[str, Any]) -> None:
         "llm_max_input_tokens_per_call",
         "llm_enable_token_rate_limiting",
         "llm_max_input_tokens_per_minute",
+        "enable_boundary_refinement",
+        "enable_word_level_boundary_refinder",
     ]:
         if key in data:
             new_val = data[key]
@@ -597,6 +605,7 @@ def _update_section_app(data: Dict[str, Any]) -> Tuple[Optional[int], Optional[i
         "number_of_episodes_to_whitelist_from_archive_of_new_feed",
         "enable_public_landing_page",
         "user_limit_total",
+        "autoprocess_on_download",
     ]:
         if key in data:
             setattr(row, key, data[key])
@@ -741,6 +750,18 @@ def to_pydantic_config() -> PydanticConfig:
         llm_max_input_tokens_per_minute=data["llm"].get(
             "llm_max_input_tokens_per_minute"
         ),
+        enable_boundary_refinement=bool(
+            data["llm"].get(
+                "enable_boundary_refinement",
+                DEFAULTS.ENABLE_BOUNDARY_REFINEMENT,
+            )
+        ),
+        enable_word_level_boundary_refinder=bool(
+            data["llm"].get(
+                "enable_word_level_boundary_refinder",
+                DEFAULTS.ENABLE_WORD_LEVEL_BOUNDARY_REFINDER,
+            )
+        ),
         output=data["output"],
         processing=data["processing"],
         background_update_interval_minute=data["app"].get(
@@ -769,6 +790,12 @@ def to_pydantic_config() -> PydanticConfig:
         ),
         user_limit_total=data["app"].get(
             "user_limit_total", DEFAULTS.APP_USER_LIMIT_TOTAL
+        ),
+        autoprocess_on_download=bool(
+            data["app"].get(
+                "autoprocess_on_download",
+                DEFAULTS.APP_AUTOPROCESS_ON_DOWNLOAD,
+            )
         ),
     )
 
