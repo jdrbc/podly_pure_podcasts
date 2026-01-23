@@ -39,6 +39,7 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     )
     # Per-feed filter strings override (comma-separated), null = use global defaults
     chapter_filter_strings = db.Column(db.Text, nullable=True)
+    auto_whitelist_new_episodes_override = db.Column(db.Boolean, nullable=True)
 
     posts = db.relationship(
         "Post", backref="feed", lazy=True, order_by="Post.release_date.desc()"

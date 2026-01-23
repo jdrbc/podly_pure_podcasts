@@ -80,6 +80,7 @@ class MockFeed:
         self.image_url = image_url
         self.posts = []
         self.user_feeds = []
+        self.auto_whitelist_new_episodes_override = None
 
 
 @pytest.fixture
@@ -246,6 +247,24 @@ def test_should_auto_whitelist_true_when_no_users(
     mock_db_session.query.return_value.first.return_value = None
     mock_feed.user_feeds = []
     assert _should_auto_whitelist_new_posts(mock_feed) is True
+
+
+def test_should_auto_whitelist_respects_feed_override_true(monkeypatch, mock_feed):
+    monkeypatch.setattr(
+        "app.feeds.config",
+        SimpleNamespace(automatically_whitelist_new_episodes=False),
+    )
+    mock_feed.auto_whitelist_new_episodes_override = True
+    assert _should_auto_whitelist_new_posts(mock_feed) is True
+
+
+def test_should_auto_whitelist_respects_feed_override_false(monkeypatch, mock_feed):
+    monkeypatch.setattr(
+        "app.feeds.config",
+        SimpleNamespace(automatically_whitelist_new_episodes=True),
+    )
+    mock_feed.auto_whitelist_new_episodes_override = False
+    assert _should_auto_whitelist_new_posts(mock_feed) is False
 
 
 @mock.patch("app.feeds.writer_client")

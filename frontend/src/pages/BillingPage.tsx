@@ -71,6 +71,8 @@ export default function BillingPage() {
   const currentAmountDollars = data.current_amount ? data.current_amount / 100 : 0;
   const atCurrentAmount = amount === currentAmountDollars && isSubscribed;
   const planLimitInfo = `${data.feeds_in_use}/${data.feed_allowance} feeds active`;
+  const minAmountCents = data.min_amount_cents ?? 100;
+  const minAmountDollars = minAmountCents / 100;
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -108,7 +110,7 @@ export default function BillingPage() {
             {isSubscribed ? 'Update your price' : 'Subscribe to Starter Bundle'}
           </div>
           <p className="text-sm text-gray-600">
-            Get 10 feeds for a monthly price of your choice (min $1.00).
+            Get 10 feeds for a monthly price of your choice (min ${minAmountDollars.toFixed(2)}).
           </p>
           
           <div className="text-xs text-amber-800 bg-amber-50 p-3 rounded-md border border-amber-200">
@@ -122,7 +124,7 @@ export default function BillingPage() {
               </div>
               <input
                 type="number"
-                min={1}
+                min={minAmountDollars}
                 step={0.5}
                 value={amount}
                 onChange={(e) => setAmount(Math.max(0, Number(e.target.value)))}
@@ -154,7 +156,7 @@ export default function BillingPage() {
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center pt-2">
             <button
               onClick={() => updateSubscription.mutate(amount)}
-              disabled={updateSubscription.isPending || atCurrentAmount || amount < 1}
+              disabled={updateSubscription.isPending || atCurrentAmount || amount < minAmountDollars}
               className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {updateSubscription.isPending 
@@ -163,8 +165,8 @@ export default function BillingPage() {
                   ? (atCurrentAmount ? 'Current Price' : 'Update Price') 
                   : 'Subscribe'}
             </button>
-            {amount < 1 && (
-                <span className="text-xs text-red-500">Minimum amount is $1.00</span>
+            {amount < minAmountDollars && (
+                <span className="text-xs text-red-500">Minimum amount is ${minAmountDollars.toFixed(2)}</span>
             )}
           </div>
         </div>

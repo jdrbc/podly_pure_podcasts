@@ -11,11 +11,13 @@ export interface Feed {
   is_active_subscription?: boolean;
   ad_detection_strategy?: 'llm' | 'chapter';
   chapter_filter_strings?: string | null;
+  auto_whitelist_new_episodes_override?: boolean | null;
 }
 
 export interface FeedSettingsUpdate {
   ad_detection_strategy?: 'llm' | 'chapter';
   chapter_filter_strings?: string | null;
+  auto_whitelist_new_episodes_override?: boolean | null;
 }
 
 export interface Episode {
@@ -213,6 +215,7 @@ export interface BillingSummary {
   feeds_in_use: number;
   remaining: number;
   current_amount?: number;
+  min_amount_cents?: number;
   subscription_status: string;
   stripe_subscription_id?: string | null;
   stripe_customer_id?: string | null;
