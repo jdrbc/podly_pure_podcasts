@@ -26,6 +26,7 @@ from flask import (
 from flask.typing import ResponseReturnValue
 
 from app.auth import is_auth_enabled
+from app.auth.guards import require_admin
 from app.auth.service import update_user_last_active
 from app.extensions import db
 from app.feeds import (
@@ -468,6 +469,45 @@ def refresh_feed_endpoint(f_id: int) -> ResponseReturnValue:
     )
 
 
+@feed_bp.route("/api/feeds/<int:feed_id>/settings", methods=["PATCH"])
+def update_feed_settings_endpoint(feed_id: int) -> ResponseReturnValue:
+    _, error_response = require_admin("update feed settings")
+    if error_response is not None:
+        return error_response
+
+    payload = request.get_json(silent=True) or {}
+    if "auto_whitelist_new_episodes_override" not in payload:
+        return jsonify({"error": "No settings provided."}), 400
+
+    override = payload.get("auto_whitelist_new_episodes_override")
+    if override is not None and not isinstance(override, bool):
+        return (
+            jsonify(
+                {
+                    "error": "auto_whitelist_new_episodes_override must be a boolean or null."
+                }
+            ),
+            400,
+        )
+
+    result = writer_client.action(
+        "update_feed_settings",
+        {"feed_id": feed_id, "auto_whitelist_new_episodes_override": override},
+        wait=True,
+    )
+    if result is None or not result.success:
+        return (
+            jsonify({"error": getattr(result, "error", "Failed to update feed")}),
+            500,
+        )
+
+    feed = db.session.get(Feed, feed_id)
+    if feed is None:
+        return jsonify({"error": "Feed not found"}), 404
+
+    return jsonify(_serialize_feed(feed, current_user=getattr(g, "current_user", None)))
+
+
 def _refresh_feed_background(app: Flask, feed_id: int) -> None:
     with app.app_context():
         feed = db.session.get(Feed, feed_id)
@@ -894,6 +934,9 @@ def _serialize_feed(
         "description": feed.description,
         "author": feed.author,
         "image_url": feed.image_url,
+        "auto_whitelist_new_episodes_override": getattr(
+            feed, "auto_whitelist_new_episodes_override", None
+        ),
         "posts_count": len(feed.posts),
         "member_count": len(member_ids),
         "is_member": is_member,

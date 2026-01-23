@@ -106,6 +106,24 @@ def add_feed_action(params: Dict[str, Any]) -> Dict[str, Any]:
     return {"feed_id": feed.id}
 
 
+def update_feed_settings_action(params: Dict[str, Any]) -> Dict[str, Any]:
+    feed_id = params.get("feed_id")
+    if not feed_id:
+        raise ValueError("feed_id is required")
+
+    feed = db.session.get(Feed, int(feed_id))
+    if not feed:
+        raise ValueError(f"Feed {feed_id} not found")
+
+    if "auto_whitelist_new_episodes_override" in params:
+        feed.auto_whitelist_new_episodes_override = params.get(
+            "auto_whitelist_new_episodes_override"
+        )
+
+    db.session.flush()
+    return {"feed_id": feed.id}
+
+
 def increment_download_count_action(params: Dict[str, Any]) -> Dict[str, Any]:
     post_id = params.get("post_id")
     if not post_id:

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from app.extensions import db
-from app.models import User
+from app.models import FeedAccessToken, User
 
 
 def create_user_action(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -50,6 +50,18 @@ def delete_user_action(params: Dict[str, Any]) -> Dict[str, Any]:
     user = db.session.get(User, int(user_id))
     if not user:
         return {"deleted": False}
+
+    # FeedAccessToken.user_id is non-nullable; without cascading deletes SQLAlchemy
+    # will attempt to NULL the FK when deleting a User, causing an IntegrityError.
+    # Delete tokens explicitly as part of the writer action.
+    tokens = (
+        db.session.query(FeedAccessToken)
+        .filter(FeedAccessToken.user_id == user.id)
+        .all()
+    )
+    for token in tokens:
+        db.session.delete(token)
+
     db.session.delete(user)
     return {"deleted": True}
 

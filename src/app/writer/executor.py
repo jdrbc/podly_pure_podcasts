@@ -46,6 +46,9 @@ class CommandExecutor:
         self.register_action("refresh_feed", writer_actions.refresh_feed_action)
         self.register_action("add_feed", writer_actions.add_feed_action)
         self.register_action(
+            "update_feed_settings", writer_actions.update_feed_settings_action
+        )
+        self.register_action(
             "clear_post_processing_data",
             writer_actions.clear_post_processing_data_action,
         )
