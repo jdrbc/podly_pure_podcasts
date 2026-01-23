@@ -926,14 +926,24 @@ def update_feed_settings(feed_id: int) -> ResponseReturnValue:
     if "ad_detection_strategy" in data:
         strategy = data["ad_detection_strategy"]
         if strategy not in ("llm", "chapter"):
-            return jsonify({"error": "Invalid ad_detection_strategy. Must be 'llm' or 'chapter'"}), 400
+            return (
+                jsonify(
+                    {
+                        "error": "Invalid ad_detection_strategy. Must be 'llm' or 'chapter'"
+                    }
+                ),
+                400,
+            )
         updates["ad_detection_strategy"] = strategy
 
     # Validate and extract chapter_filter_strings
     if "chapter_filter_strings" in data:
         filter_strings = data["chapter_filter_strings"]
         if filter_strings is not None and not isinstance(filter_strings, str):
-            return jsonify({"error": "chapter_filter_strings must be a string or null"}), 400
+            return (
+                jsonify({"error": "chapter_filter_strings must be a string or null"}),
+                400,
+            )
         updates["chapter_filter_strings"] = filter_strings
 
     if not updates:
@@ -941,7 +951,12 @@ def update_feed_settings(feed_id: int) -> ResponseReturnValue:
 
     result = writer_client.update("Feed", feed.id, updates, wait=True)
     if not result or not result.success:
-        return jsonify({"error": getattr(result, "error", "Failed to update feed settings")}), 500
+        return (
+            jsonify(
+                {"error": getattr(result, "error", "Failed to update feed settings")}
+            ),
+            500,
+        )
 
     # Refresh and return updated feed
     refreshed = Feed.query.get(feed_id)
