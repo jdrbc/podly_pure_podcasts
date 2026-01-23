@@ -13,6 +13,7 @@ from app.extensions import db
 from app.models import Post, ProcessingJob, TranscriptSegment
 from app.writer.client import writer_client
 from podcast_processor.ad_classifier import AdClassifier
+from podcast_processor.audio import clip_segments_exact
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.chapter_ad_detector import ChapterAdDetector, ChapterDetectionError
 from podcast_processor.chapter_filter import parse_filter_strings
@@ -437,8 +438,6 @@ class PodcastProcessor:
         ad_segments_ms = [(int(s * 1000), int(e * 1000)) for s, e in ad_segments]
 
         if ad_segments_ms:
-            from podcast_processor.audio import clip_segments_exact
-
             clip_segments_exact(
                 ad_segments_ms=ad_segments_ms,
                 in_path=str(post.unprocessed_audio_path),
