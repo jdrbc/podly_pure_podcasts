@@ -1,3 +1,4 @@
+import json
 import logging
 import math
 import os
@@ -27,6 +28,8 @@ from app.routes.post_stats_utils import (
 )
 from app.runtime_config import config as runtime_config
 from app.writer.client import writer_client
+from podcast_processor.chapter_filter import parse_filter_strings
+from shared import defaults as DEFAULTS
 
 logger = logging.getLogger("global_logger")
 
@@ -344,10 +347,6 @@ def post_debug(p_guid: str) -> flask.Response:
 
 def _get_chapter_stats(post: Post, feed: Feed) -> Dict[str, Any]:
     """Get chapter statistics for chapter-based processing."""
-    import json
-
-    from podcast_processor.chapter_filter import parse_filter_strings
-    from shared import defaults as DEFAULTS
 
     # Try to read stored chapter data first (set during processing)
     if post.chapter_data:
