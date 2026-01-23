@@ -528,7 +528,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
     # Build chapter data for chapter-based processing
     chapters_data = None
-    if ad_detection_strategy == "chapter" and post.processed_audio_path:
+    if ad_detection_strategy == "chapter" and post.processed_audio_path and feed:
         chapters_data = _get_chapter_stats(post, feed)
 
     stats_data = {

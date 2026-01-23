@@ -3,14 +3,15 @@
 import logging
 from typing import List, Optional, Tuple
 
-from podcast_processor.chapter_filter import filter_chapters_by_strings, parse_filter_strings
+from podcast_processor.chapter_filter import (
+    filter_chapters_by_strings,
+    parse_filter_strings,
+)
 from podcast_processor.chapter_reader import Chapter, read_chapters
 
 
 class ChapterDetectionError(Exception):
     """Raised when chapter-based detection fails."""
-
-    pass
 
 
 class ChapterAdDetector:

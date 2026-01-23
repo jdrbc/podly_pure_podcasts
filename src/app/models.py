@@ -7,7 +7,6 @@ from sqlalchemy.orm import validates
 from app.auth.passwords import hash_password, verify_password
 from app.extensions import db
 from shared import defaults as DEFAULTS
-from typing import Literal
 
 
 def generate_uuid() -> str:

@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import List
 
-from mutagen.id3 import ID3, CHAP
+from mutagen.id3 import CHAP, ID3  # type: ignore[attr-defined]
 from mutagen.mp3 import MP3
 
 logger = logging.getLogger("global_logger")
@@ -39,18 +39,18 @@ def read_chapters(audio_path: str) -> List[Chapter]:
             logger.debug("No ID3 tags found in %s", audio_path)
             return []
 
-        for key, frame in audio.tags.items():
+        for _, frame in audio.tags.items():
             if not isinstance(frame, CHAP):
                 continue
 
-            element_id = frame.element_id
-            start_time_ms = frame.start_time
-            end_time_ms = frame.end_time
+            element_id = frame.element_id  # type: ignore[attr-defined]
+            start_time_ms = frame.start_time  # type: ignore[attr-defined]
+            end_time_ms = frame.end_time  # type: ignore[attr-defined]
 
             # Extract title from sub-frames (TIT2)
             title = ""
-            if frame.sub_frames:
-                for sub_frame in frame.sub_frames.values():
+            if frame.sub_frames:  # type: ignore[attr-defined]
+                for sub_frame in frame.sub_frames.values():  # type: ignore[attr-defined]
                     if sub_frame.FrameID == "TIT2":
                         title = str(sub_frame.text[0]) if sub_frame.text else ""
                         break

@@ -3,7 +3,7 @@
 import logging
 from typing import List, Tuple
 
-from mutagen.id3 import CHAP, CTOC, ID3, TIT2
+from mutagen.id3 import CHAP, CTOC, TIT2  # type: ignore[attr-defined]
 from mutagen.mp3 import MP3
 
 from podcast_processor.chapter_reader import Chapter
@@ -43,7 +43,6 @@ def recalculate_chapter_times(
         chapter_start_ms = chapter.start_time_ms
         chapter_end_ms = chapter.end_time_ms
         chapter_start_sec = chapter_start_ms / 1000.0
-        chapter_end_sec = chapter_end_ms / 1000.0
 
         # Calculate cumulative offset from removed segments before this chapter
         offset_ms = 0
@@ -112,7 +111,7 @@ def write_chapters(
 
         # Create ID3 tags if they don't exist
         if audio.tags is None:
-            audio.add_tags()
+            audio.add_tags()  # type: ignore[no-untyped-call]
 
         # Remove existing chapter frames
         keys_to_remove = [
@@ -128,10 +127,10 @@ def write_chapters(
             chapter_ids.append(element_id)
 
             # Create TIT2 sub-frame for chapter title
-            tit2 = TIT2(encoding=3, text=[chapter.title])
+            tit2 = TIT2(encoding=3, text=[chapter.title])  # type: ignore[no-untyped-call]
 
             # Create CHAP frame
-            chap = CHAP(
+            chap = CHAP(  # type: ignore[no-untyped-call]
                 element_id=element_id,
                 start_time=chapter.start_time_ms,
                 end_time=chapter.end_time_ms,
@@ -143,7 +142,7 @@ def write_chapters(
 
         # Create CTOC (Table of Contents) frame
         if chapter_ids:
-            ctoc = CTOC(
+            ctoc = CTOC(  # type: ignore[no-untyped-call]
                 element_id="toc",
                 flags=3,  # Top-level, ordered
                 child_element_ids=chapter_ids,

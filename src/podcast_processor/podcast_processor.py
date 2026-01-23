@@ -15,7 +15,10 @@ from app.writer.client import writer_client
 from podcast_processor.ad_classifier import AdClassifier
 from podcast_processor.audio import clip_segments_exact
 from podcast_processor.audio_processor import AudioProcessor
-from podcast_processor.chapter_ad_detector import ChapterAdDetector, ChapterDetectionError
+from podcast_processor.chapter_ad_detector import (
+    ChapterAdDetector,
+    ChapterDetectionError,
+)
 from podcast_processor.chapter_filter import parse_filter_strings
 from podcast_processor.chapter_writer import write_adjusted_chapters
 from podcast_processor.podcast_downloader import PodcastDownloader, sanitize_title
@@ -156,8 +159,12 @@ class PodcastProcessor:
         cached_feed_title = post.feed.title
         cached_job_id = job.id
         cached_current_step = job.current_step
-        cached_ad_detection_strategy = getattr(post.feed, "ad_detection_strategy", "llm")
-        cached_chapter_filter_strings = getattr(post.feed, "chapter_filter_strings", None)
+        cached_ad_detection_strategy = getattr(
+            post.feed, "ad_detection_strategy", "llm"
+        )
+        cached_chapter_filter_strings = getattr(
+            post.feed, "chapter_filter_strings", None
+        )
 
         try:
             self.logger.debug(
@@ -445,7 +452,6 @@ class PodcastProcessor:
             )
         else:
             # No ads found, copy the original file
-            import shutil
             shutil.copyfile(str(post.unprocessed_audio_path), processed_audio_path)
 
         # Write adjusted chapters to the processed file
@@ -457,6 +463,7 @@ class PodcastProcessor:
 
         # Build chapter data for stats
         import json
+
         chapter_data = {
             "filter_strings": filter_strings,
             "chapters_kept": [

@@ -3,7 +3,7 @@ import math
 import os
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import ffmpeg  # type: ignore[import-untyped]
 
@@ -30,7 +30,7 @@ def get_audio_duration_ms(file_path: str) -> Optional[int]:
 
 def _get_encoding_args(
     use_vbr: bool = False, vbr_quality: int = 2, cbr_bitrate: str = "192k"
-) -> dict:
+) -> Dict[str, Any]:
     """Return ffmpeg encoding arguments for VBR or CBR."""
     if use_vbr:
         return {"q:a": vbr_quality}
@@ -82,7 +82,7 @@ def _clip_segments_complex(
     in_path: str,
     out_path: str,
     audio_duration_ms: int,
-    encoding_args: dict,
+    encoding_args: Dict[str, Any],
 ) -> None:
     """Original complex approach with fades."""
 
@@ -145,7 +145,9 @@ def clip_segments_exact(
     assert audio_duration_ms is not None
     # Chapter strategy always uses CBR for accurate chapter marker seeking
     encoding_args = _get_encoding_args(use_vbr=False, cbr_bitrate=cbr_bitrate)
-    _clip_segments_simple(ad_segments_ms, in_path, out_path, audio_duration_ms, encoding_args)
+    _clip_segments_simple(
+        ad_segments_ms, in_path, out_path, audio_duration_ms, encoding_args
+    )
 
 
 def _clip_segments_simple(
@@ -153,7 +155,7 @@ def _clip_segments_simple(
     in_path: str,
     out_path: str,
     audio_duration_ms: int,
-    encoding_args: dict,
+    encoding_args: Dict[str, Any],
 ) -> None:
     """Simpler approach without fades - more reliable for many segments."""
 
@@ -189,8 +191,11 @@ def _clip_segments_simple(
             (
                 ffmpeg.input(in_path)
                 .output(
-                    segment_path, ss=start_sec, t=duration_sec, acodec="libmp3lame",
-                    **encoding_args
+                    segment_path,
+                    ss=start_sec,
+                    t=duration_sec,
+                    acodec="libmp3lame",
+                    **encoding_args,
                 )
                 .overwrite_output()
                 .run(quiet=True)
