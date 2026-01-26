@@ -1,7 +1,7 @@
 """add chapter filter settings
 
 Revision ID: a1b2c3d4e5f6
-Revises: 58b4eedd4c61
+Revises: 2e25a15d11de
 Create Date: 2026-01-07 12:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "a1b2c3d4e5f6"
-down_revision = "58b4eedd4c61"
+down_revision = "2e25a15d11de"
 branch_labels = None
 depends_on = None
 
