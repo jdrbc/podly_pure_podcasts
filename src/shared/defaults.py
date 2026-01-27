@@ -49,3 +49,9 @@ APP_AUTOPROCESS_ON_DOWNLOAD = False
 
 # Credits defaults
 MINUTES_PER_CREDIT = 60
+
+# Chapter filter defaults
+AD_DETECTION_DEFAULT_STRATEGY = "llm"
+CHAPTER_FILTER_DEFAULT_STRINGS = (
+    "sponsor,advertisement,ad break,promo,brought to you by"
+)

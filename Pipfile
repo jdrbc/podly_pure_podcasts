@@ -37,6 +37,7 @@ flask-cors = "*"
 bcrypt = "*"
 httpx-aiohttp = "*"
 stripe = "*"
+mutagen = "*"
 
 [dev-packages]
 black = "*"

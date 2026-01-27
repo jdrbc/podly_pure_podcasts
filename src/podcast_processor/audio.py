@@ -3,7 +3,7 @@ import math
 import os
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import ffmpeg  # type: ignore[import-untyped]
 
@@ -28,34 +28,52 @@ def get_audio_duration_ms(file_path: str) -> Optional[int]:
         return None
 
 
+def _get_encoding_args(
+    use_vbr: bool = False, vbr_quality: int = 2, cbr_bitrate: str = "192k"
+) -> Dict[str, Any]:
+    """Return ffmpeg encoding arguments for VBR or CBR."""
+    if use_vbr:
+        return {"q:a": vbr_quality}
+    return {"b:a": cbr_bitrate}
+
+
 def clip_segments_with_fade(
     ad_segments_ms: List[Tuple[int, int]],
     fade_ms: int,
     in_path: str,
     out_path: str,
+    use_vbr: bool = False,
+    vbr_quality: int = 2,
+    cbr_bitrate: str = "192k",
 ) -> None:
 
     audio_duration_ms = get_audio_duration_ms(in_path)
     assert audio_duration_ms is not None
 
+    encoding_args = _get_encoding_args(use_vbr, vbr_quality, cbr_bitrate)
+
     # Try the complex filter approach first, fall back to simple if it fails
     # Catch both ffmpeg.Error (runtime) and broader exceptions (filter graph construction)
     try:
         _clip_segments_complex(
-            ad_segments_ms, fade_ms, in_path, out_path, audio_duration_ms
+            ad_segments_ms, fade_ms, in_path, out_path, audio_duration_ms, encoding_args
         )
     except ffmpeg.Error as e:
         err_msg = e.stderr.decode() if getattr(e, "stderr", None) else str(e)
         logger.warning(
             "Complex filter failed (ffmpeg error), trying simple approach: %s", err_msg
         )
-        _clip_segments_simple(ad_segments_ms, in_path, out_path, audio_duration_ms)
+        _clip_segments_simple(
+            ad_segments_ms, in_path, out_path, audio_duration_ms, encoding_args
+        )
     except Exception as e:  # pylint: disable=broad-except
         # Catches filter graph construction errors like "multiple outgoing edges"
         logger.warning(
             "Complex filter failed (graph error), trying simple approach: %s", e
         )
-        _clip_segments_simple(ad_segments_ms, in_path, out_path, audio_duration_ms)
+        _clip_segments_simple(
+            ad_segments_ms, in_path, out_path, audio_duration_ms, encoding_args
+        )
 
 
 def _clip_segments_complex(
@@ -64,6 +82,7 @@ def _clip_segments_complex(
     in_path: str,
     out_path: str,
     audio_duration_ms: int,
+    encoding_args: Dict[str, Any],
 ) -> None:
     """Original complex approach with fades."""
 
@@ -102,8 +121,33 @@ def _clip_segments_complex(
         out_path,
         len(trimmed_list),
     )
-    ffmpeg.concat(*trimmed_list, v=0, a=1).output(out_path).overwrite_output().run()
+    (
+        ffmpeg.concat(*trimmed_list, v=0, a=1)
+        .output(out_path, acodec="libmp3lame", **encoding_args)
+        .overwrite_output()
+        .run()
+    )
     logger.info("[FFMPEG_CONCAT] Completed audio concatenation: %s", out_path)
+
+
+def clip_segments_exact(
+    ad_segments_ms: List[Tuple[int, int]],
+    in_path: str,
+    out_path: str,
+    cbr_bitrate: str = "192k",
+) -> None:
+    """Remove segments with exact cuts at boundaries, no fades.
+
+    Used by chapter-based ad detection. Always uses CBR encoding because VBR
+    causes seeking inaccuracy with chapter markers.
+    """
+    audio_duration_ms = get_audio_duration_ms(in_path)
+    assert audio_duration_ms is not None
+    # Chapter strategy always uses CBR for accurate chapter marker seeking
+    encoding_args = _get_encoding_args(use_vbr=False, cbr_bitrate=cbr_bitrate)
+    _clip_segments_simple(
+        ad_segments_ms, in_path, out_path, audio_duration_ms, encoding_args
+    )
 
 
 def _clip_segments_simple(
@@ -111,6 +155,7 @@ def _clip_segments_simple(
     in_path: str,
     out_path: str,
     audio_duration_ms: int,
+    encoding_args: Dict[str, Any],
 ) -> None:
     """Simpler approach without fades - more reliable for many segments."""
 
@@ -146,7 +191,11 @@ def _clip_segments_simple(
             (
                 ffmpeg.input(in_path)
                 .output(
-                    segment_path, ss=start_sec, t=duration_sec, acodec="libmp3lame", q=2
+                    segment_path,
+                    ss=start_sec,
+                    t=duration_sec,
+                    acodec="libmp3lame",
+                    **encoding_args,
                 )
                 .overwrite_output()
                 .run(quiet=True)
@@ -163,7 +212,7 @@ def _clip_segments_simple(
         # Concatenate all segments
         (
             ffmpeg.input(concat_list_path, format="concat", safe=0)
-            .output(out_path, acodec="libmp3lame", q=2)
+            .output(out_path, acodec="libmp3lame", **encoding_args)
             .overwrite_output()
             .run(quiet=True)
         )

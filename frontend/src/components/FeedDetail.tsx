@@ -7,6 +7,7 @@ import DownloadButton from './DownloadButton';
 import PlayButton from './PlayButton';
 import ProcessingStatsButton from './ProcessingStatsButton';
 import EpisodeProcessingStatus from './EpisodeProcessingStatus';
+import FeedSettingsModal from './FeedSettingsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { copyToClipboard } from '../utils/clipboard';
 import { emitDiagnosticError } from '../utils/diagnostics';
@@ -45,6 +46,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const [isEstimating, setIsEstimating] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   const isAdmin = !requireAuth || user?.role === 'admin';
   const whitelistedOnly = requireAuth && !isAdmin;
@@ -118,32 +120,6 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
           feedId: currentFeed.id,
         },
       });
-    },
-  });
-
-  const updateFeedSettingsMutation = useMutation({
-    mutationFn: (override: boolean | null) =>
-      feedsApi.updateFeedSettings(currentFeed.id, {
-        auto_whitelist_new_episodes_override: override,
-      }),
-    onSuccess: (data) => {
-      setCurrentFeed(data);
-      queryClient.invalidateQueries({ queryKey: ['feeds'] });
-      toast.success('Feed settings updated');
-    },
-    onError: (err) => {
-      const { status, data, message } = getHttpErrorInfo(err);
-      emitDiagnosticError({
-        title: 'Failed to update feed settings',
-        message,
-        kind: status ? 'http' : 'network',
-        details: {
-          status,
-          response: data,
-          feedId: currentFeed.id,
-        },
-      });
-      toast.error('Failed to update feed settings');
     },
   });
 
@@ -321,12 +297,6 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     setEstimateError(null);
   };
 
-  const handleAutoWhitelistOverrideChange = (value: string) => {
-    const override =
-      value === 'inherit' ? null : value === 'on';
-    updateFeedSettingsMutation.mutate(override);
-  };
-
   const isMember = Boolean(currentFeed.is_member);
   const isActiveSubscription = currentFeed.is_active_subscription !== false;
 
@@ -339,20 +309,6 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const showWhitelistUi = canModifyEpisodes && isAdmin;
   const appAutoWhitelistDefault =
     configResponse?.config?.app?.automatically_whitelist_new_episodes;
-  const autoWhitelistDefaultLabel =
-    appAutoWhitelistDefault === undefined
-      ? 'Unknown'
-      : appAutoWhitelistDefault
-        ? 'On'
-        : 'Off';
-  const autoWhitelistOverrideValue =
-    currentFeed.auto_whitelist_new_episodes_override ?? null;
-  const autoWhitelistSelectValue =
-    autoWhitelistOverrideValue === true
-      ? 'on'
-      : autoWhitelistOverrideValue === false
-        ? 'off'
-        : 'inherit';
 
   const episodes = episodesPage?.items ?? [];
   const totalCount = episodesPage?.total ?? 0;
@@ -627,6 +583,20 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 </button>
               )}
 
+              {/* Settings Button (cog) */}
+              {isAdmin && (
+                <button
+                  onClick={() => setShowSettingsModal(true)}
+                  title="Feed settings"
+                  className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </button>
+              )}
+
               {/* Ellipsis Menu */}
               <div className="relative menu-container">
                 <button
@@ -744,35 +714,6 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
             {currentFeed.description && (
               <div className="text-gray-700 leading-relaxed">
                 <p>{currentFeed.description.replace(/<[^>]*>/g, '')}</p>
-              </div>
-            )}
-
-            {isAdmin && (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <div className="flex flex-col gap-2">
-                  <div>
-                    <label className="text-sm font-medium text-gray-900">
-                      Auto-whitelist new episodes
-                    </label>
-                    <p className="text-xs text-gray-600">
-                      Overrides the global setting. Global default: {autoWhitelistDefaultLabel}.
-                    </p>
-                  </div>
-                  <select
-                    value={autoWhitelistSelectValue}
-                    onChange={(e) => handleAutoWhitelistOverrideChange(e.target.value)}
-                    disabled={updateFeedSettingsMutation.isPending}
-                    className={`text-sm border border-gray-300 rounded-md px-3 py-2 bg-white ${
-                      updateFeedSettingsMutation.isPending
-                        ? 'opacity-60 cursor-not-allowed'
-                        : ''
-                    }`}
-                  >
-                    <option value="inherit">Use global setting ({autoWhitelistDefaultLabel})</option>
-                    <option value="on">On</option>
-                    <option value="off">Off</option>
-                  </select>
-                </div>
               </div>
             )}
           </div>
@@ -1082,6 +1023,13 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
           </div>
         </div>
       )}
+
+      <FeedSettingsModal
+        feed={currentFeed}
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        autoWhitelistGlobalDefault={appAutoWhitelistDefault}
+      />
     </div>
   );
 }
