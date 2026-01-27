@@ -128,6 +128,19 @@ pipenv run flask --app ./src/main.py db migrate -m "[change description]"
 
 On next launch, the database updates automatically.
 
+## Releases and Commit Messages
+
+This repo uses `semantic-release` to automate versioning and GitHub releases. It relies on
+Conventional Commits to determine the next version.
+
+For pull requests, include **at least one** commit that follows the Conventional Commit format:
+
+- `feat: add new episode filter`
+- `fix(api): handle empty feed`
+- `chore: update dependencies`
+
+If no Conventional Commit is present, the release pipeline will have nothing to publish.
+
 ## Docker Support
 
 Podly can be run in Docker with support for both NVIDIA GPU and non-NVIDIA environments.
