@@ -11,30 +11,49 @@ on:
 jobs:
   lint-format-test:
     runs-on: ubuntu-latest
+    env:
+      PIPENV_VENV_IN_PROJECT: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        id: python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "Pipfile.lock"
 
       - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update -y && sudo apt-get install -y --no-install-recommends ffmpeg
 
       - name: Install pipenv
         run: pip install pipenv
 
+      - name: Cache pipenv virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-${{ steps.python.outputs.python-version }}-${{ hashFiles('Pipfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-venv-${{ steps.python.outputs.python-version }}-
+
+      - name: Cache mypy
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: ${{ runner.os }}-mypy-${{ steps.python.outputs.python-version }}-${{ hashFiles('Pipfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mypy-${{ steps.python.outputs.python-version }}-
+
       - name: Install dependencies
-        run: pipenv install --dev
+        run: pipenv install --dev --deploy
 
       - name: Install dependencies for mypy
-        run: pipenv run mypy --install-types
-
-      - name: Run mypy
-        run: pipenv run mypy src --explicit-package-bases --exclude 'migrations' --exclude 'build' --exclude 'scripts' --exclude 'src/tests' --exclude 'src/tests/test_routes.py' --exclude 'src/app/routes.py'
+        run: pipenv run mypy . --install-types --non-interactive --explicit-package-bases --exclude 'migrations' --exclude 'build' --exclude 'scripts' --exclude 'src/tests' --exclude 'src/tests/test_routes.py' --exclude 'src/app/routes.py'
 
       - name: Run pylint
         run: pipenv run pylint src --ignore=migrations,tests
