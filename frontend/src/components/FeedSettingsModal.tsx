@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { feedsApi } from '../services/api';
 import type { Feed, FeedSettingsUpdate } from '../types';
@@ -7,11 +7,12 @@ interface FeedSettingsModalProps {
   feed: Feed;
   isOpen: boolean;
   onClose: () => void;
+  autoWhitelistGlobalDefault?: boolean;
 }
 
 const DEFAULT_FILTER_STRINGS = 'sponsor,advertisement,ad break,promo,brought to you by';
 
-export default function FeedSettingsModal({ feed, isOpen, onClose }: FeedSettingsModalProps) {
+export default function FeedSettingsModal({ feed, isOpen, onClose, autoWhitelistGlobalDefault }: FeedSettingsModalProps) {
   const queryClient = useQueryClient();
 
   const [strategy, setStrategy] = useState<'llm' | 'chapter'>(
@@ -20,6 +21,25 @@ export default function FeedSettingsModal({ feed, isOpen, onClose }: FeedSetting
   const [filterStrings, setFilterStrings] = useState(
     feed.chapter_filter_strings || DEFAULT_FILTER_STRINGS
   );
+  const [autoWhitelistOverride, setAutoWhitelistOverride] = useState<'inherit' | 'on' | 'off'>(
+    feed.auto_whitelist_new_episodes_override === true
+      ? 'on'
+      : feed.auto_whitelist_new_episodes_override === false
+        ? 'off'
+        : 'inherit'
+  );
+
+  useEffect(() => {
+    setStrategy(feed.ad_detection_strategy || 'llm');
+    setFilterStrings(feed.chapter_filter_strings || DEFAULT_FILTER_STRINGS);
+    setAutoWhitelistOverride(
+      feed.auto_whitelist_new_episodes_override === true
+        ? 'on'
+        : feed.auto_whitelist_new_episodes_override === false
+          ? 'off'
+          : 'inherit'
+    );
+  }, [feed]);
 
   const updateMutation = useMutation({
     mutationFn: (settings: FeedSettingsUpdate) =>
@@ -33,6 +53,8 @@ export default function FeedSettingsModal({ feed, isOpen, onClose }: FeedSetting
   const handleSave = () => {
     const settings: FeedSettingsUpdate = {
       ad_detection_strategy: strategy,
+      auto_whitelist_new_episodes_override:
+        autoWhitelistOverride === 'inherit' ? null : autoWhitelistOverride === 'on',
     };
 
     if (strategy === 'chapter') {
@@ -43,6 +65,13 @@ export default function FeedSettingsModal({ feed, isOpen, onClose }: FeedSetting
 
     updateMutation.mutate(settings);
   };
+
+  const autoWhitelistDefaultLabel =
+    autoWhitelistGlobalDefault === undefined
+      ? 'Unknown'
+      : autoWhitelistGlobalDefault
+        ? 'On'
+        : 'Off';
 
   if (!isOpen) return null;
 
@@ -55,7 +84,7 @@ export default function FeedSettingsModal({ feed, isOpen, onClose }: FeedSetting
           <div>
             <h2 className="text-base font-semibold text-gray-900">Feed Settings</h2>
             <p className="text-sm text-gray-600 mt-1">
-              Configure ad detection for "{feed.title}"
+              Settings for "{feed.title}"
             </p>
           </div>
           <button
@@ -87,25 +116,45 @@ export default function FeedSettingsModal({ feed, isOpen, onClose }: FeedSetting
                 ? 'Uses AI transcription and classification to detect ads'
                 : 'Removes chapters matching filter strings (requires chapter metadata). Uses CBR encoding for accurate chapter seeking, instead of the default VBR.'}
             </p>
+
+            {strategy === 'chapter' && (
+              <div className="mt-3 ml-3 pl-3 border-l-2 border-gray-200">
+                <label className="block text-xs text-gray-600 mb-1">
+                  Filter Strings
+                </label>
+                <textarea
+                  value={filterStrings}
+                  onChange={(e) => setFilterStrings(e.target.value)}
+                  placeholder="sponsor,advertisement,ad break"
+                  rows={3}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Comma-separated list. Chapters containing any of these will be removed (case-insensitive).
+                </p>
+              </div>
+            )}
           </div>
 
-          {strategy === 'chapter' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Filter Strings
-              </label>
-              <textarea
-                value={filterStrings}
-                onChange={(e) => setFilterStrings(e.target.value)}
-                placeholder="sponsor,advertisement,ad break"
-                rows={3}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Comma-separated list of strings. Chapters with titles containing any of these will be removed (case-insensitive).
-              </p>
-            </div>
-          )}
+          <div className="border-t border-gray-200" />
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Auto-whitelist new episodes
+            </label>
+            <select
+              value={autoWhitelistOverride}
+              onChange={(e) => setAutoWhitelistOverride(e.target.value as 'inherit' | 'on' | 'off')}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              <option value="inherit">Use global setting ({autoWhitelistDefaultLabel})</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Overrides the global setting for this feed.
+            </p>
+          </div>
 
           {updateMutation.isError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
