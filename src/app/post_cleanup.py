@@ -98,7 +98,7 @@ def cleanup_processed_posts(retention_days: Optional[int]) -> int:
             _remove_associated_files(post)
             try:
                 writer_client.action(
-                    "cleanup_processed_post", {"post_id": post.id}, wait=True
+                    "cleanup_processed_post_files_only", {"post_id": post.id}, wait=True
                 )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error(

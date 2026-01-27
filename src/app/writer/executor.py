@@ -56,6 +56,10 @@ class CommandExecutor:
             "cleanup_processed_post", writer_actions.cleanup_processed_post_action
         )
         self.register_action(
+            "cleanup_processed_post_files_only",
+            writer_actions.cleanup_processed_post_files_only_action,
+        )
+        self.register_action(
             "increment_download_count", writer_actions.increment_download_count_action
         )
         self.register_action(
