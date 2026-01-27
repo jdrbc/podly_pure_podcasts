@@ -1,0 +1,40 @@
+name: Conventional Commit Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure at least one Conventional Commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          echo "Checking commit subjects between $BASE_SHA and $HEAD_SHA"
+          subjects=$(git log --format=%s "$BASE_SHA..$HEAD_SHA")
+          if [ -z "$subjects" ]; then
+            echo "No commits found in range."
+            exit 1
+          fi
+
+          if echo "$subjects" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?(!)?: .+'; then
+            echo "Conventional Commit found."
+          else
+            echo "No Conventional Commit found in this PR."
+            echo "Add at least one commit like: feat: ..., fix(scope): ..., chore: ..."
+            echo "Please refer to https://www.conventionalcommits.org/en/v1.0.0/#summary for more details."
+            exit 1
+          fi
