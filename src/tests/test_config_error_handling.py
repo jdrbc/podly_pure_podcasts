@@ -120,10 +120,19 @@ class TestEnvKeyValidation:
     def test_llm_and_groq_conflict_raises(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("LLM_API_KEY", "llm-value")
         monkeypatch.setenv("GROQ_API_KEY", "groq-value")
+        monkeypatch.setenv("LLM_MODEL", "groq/openai/gpt-oss-120b")
         monkeypatch.delenv("WHISPER_REMOTE_API_KEY", raising=False)
 
         with pytest.raises(SystemExit):
             app_module._validate_env_key_conflicts()
+
+    def test_non_groq_llm_allows_different_groq_key(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("LLM_API_KEY", "llm-value")
+        monkeypatch.setenv("GROQ_API_KEY", "groq-value")
+        monkeypatch.setenv("LLM_MODEL", "google/gemini-1.5-pro")
+        monkeypatch.delenv("WHISPER_REMOTE_API_KEY", raising=False)
+
+        app_module._validate_env_key_conflicts()
 
     def test_whisper_remote_allows_different_key(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("LLM_API_KEY", "llm-value")
