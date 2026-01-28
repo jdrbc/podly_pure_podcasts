@@ -21,6 +21,39 @@ def count_model_calls(
     return model_call_statuses, model_types
 
 
+def group_identifications_by_segment(
+    identifications: Iterable[Any],
+) -> Dict[int, List[Any]]:
+    grouped: Dict[int, List[Any]] = {}
+    for ident in identifications:
+        seg_id = getattr(ident, "transcript_segment_id", None)
+        if seg_id is None:
+            continue
+        grouped.setdefault(int(seg_id), []).append(ident)
+    return grouped
+
+
+def count_primary_labels(
+    transcript_segments: Iterable[Any],
+    identifications_by_segment: Dict[int, List[Any]],
+) -> Tuple[int, int]:
+    content_segments = 0
+    ad_segments = 0
+    for segment in transcript_segments:
+        seg_id = getattr(segment, "id", None)
+        if seg_id is None:
+            continue
+        segment_identifications = identifications_by_segment.get(int(seg_id), [])
+        has_ad_label = any(
+            getattr(ident, "label", None) == "ad" for ident in segment_identifications
+        )
+        if has_ad_label:
+            ad_segments += 1
+        else:
+            content_segments += 1
+    return content_segments, ad_segments
+
+
 def parse_refined_windows(raw_refined: Any) -> List[Tuple[float, float]]:
     refined_windows: List[Tuple[float, float]] = []
     if not isinstance(raw_refined, list):

@@ -22,6 +22,8 @@ from app.models import (
 from app.posts import clear_post_processing_data
 from app.routes.post_stats_utils import (
     count_model_calls,
+    count_primary_labels,
+    group_identifications_by_segment,
     is_mixed_segment,
     merge_time_windows,
     parse_refined_windows,
@@ -316,8 +318,10 @@ def post_debug(p_guid: str) -> flask.Response:
 
     model_call_statuses, model_types = count_model_calls(model_calls)
 
-    content_segments = sum(1 for i in identifications if i.label == "content")
-    ad_segments = sum(1 for i in identifications if i.label == "ad")
+    identifications_by_segment = group_identifications_by_segment(identifications)
+    content_segments, ad_segments = count_primary_labels(
+        transcript_segments, identifications_by_segment
+    )
 
     stats = {
         "total_segments": len(transcript_segments),
@@ -377,8 +381,10 @@ def api_post_stats(p_guid: str) -> flask.Response:
             model_types[call.model_name] = 0
         model_types[call.model_name] += 1
 
-    content_segments = sum(1 for i in identifications if i.label == "content")
-    ad_segments = sum(1 for i in identifications if i.label == "ad")
+    identifications_by_segment = group_identifications_by_segment(identifications)
+    content_segments, ad_segments = count_primary_labels(
+        transcript_segments, identifications_by_segment
+    )
 
     # Refined ad windows are written by boundary refinement and are used for precise
     # cutting. We also derive a UI-only "mixed" flag for segments that overlap a
@@ -409,9 +415,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
     segment_mixed_by_id: Dict[int, bool] = {}
     ad_windows_from_segments: List[Tuple[float, float]] = []
     for segment in transcript_segments:
-        segment_identifications = [
-            i for i in identifications if i.transcript_segment_id == segment.id
-        ]
+        segment_identifications = identifications_by_segment.get(segment.id, [])
 
         has_ad_label = any(i.label == "ad" for i in segment_identifications)
         primary_label = "ad" if has_ad_label else "content"
