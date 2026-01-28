@@ -2,7 +2,7 @@ import logging
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import flask
 from flask import Blueprint, g, jsonify, request, send_file
@@ -23,6 +23,7 @@ from app.posts import clear_post_processing_data
 from app.routes.post_stats_utils import (
     count_model_calls,
     is_mixed_segment,
+    merge_time_windows,
     parse_refined_windows,
 )
 from app.runtime_config import config as runtime_config
@@ -406,6 +407,7 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
     transcript_segments_data = []
     segment_mixed_by_id: Dict[int, bool] = {}
+    ad_windows_from_segments: List[Tuple[float, float]] = []
     for segment in transcript_segments:
         segment_identifications = [
             i for i in identifications if i.transcript_segment_id == segment.id
@@ -416,6 +418,8 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
         seg_start = float(segment.start_time)
         seg_end = float(segment.end_time)
+        if has_ad_label:
+            ad_windows_from_segments.append((seg_start, seg_end))
         mixed = bool(has_ad_label) and is_mixed_segment(
             seg_start=seg_start, seg_end=seg_end, refined_windows=refined_windows
         )
@@ -466,6 +470,18 @@ def api_post_stats(p_guid: str) -> flask.Response:
             }
         )
 
+    ad_windows_source = refined_windows or ad_windows_from_segments
+    ad_blocks = merge_time_windows(ad_windows_source, gap_seconds=1.0)
+    ad_time_seconds = sum(end - start for start, end in ad_blocks if end > start)
+
+    duration_seconds = float(post.duration or 0)
+    if duration_seconds <= 0 and transcript_segments:
+        duration_seconds = max(float(seg.end_time) for seg in transcript_segments)
+
+    ad_percentage = (
+        (ad_time_seconds / duration_seconds) * 100 if duration_seconds > 0 else 0.0
+    )
+
     stats_data = {
         "post": {
             "guid": post.guid,
@@ -484,6 +500,15 @@ def api_post_stats(p_guid: str) -> flask.Response:
             "total_identifications": len(identifications),
             "content_segments": content_segments,
             "ad_segments_count": ad_segments,
+            "ad_percentage": round(ad_percentage, 1),
+            "estimated_ad_time_seconds": round(ad_time_seconds, 1),
+            "ad_blocks": [
+                {
+                    "start_time": round(start, 1),
+                    "end_time": round(end, 1),
+                }
+                for start, end in ad_blocks
+            ],
             "model_call_statuses": model_call_statuses,
             "model_types": model_types,
         },

@@ -268,6 +268,10 @@ export const feedsApi = {
       ad_segments_count: number;
       ad_percentage: number;
       estimated_ad_time_seconds: number;
+      ad_blocks?: Array<{
+        start_time: number;
+        end_time: number;
+      }>;
       model_call_statuses: Record<string, number>;
       model_types: Record<string, number>;
     };
@@ -369,6 +373,10 @@ export const feedsApi = {
       ad_segments_count: number;
       ad_percentage: number;
       estimated_ad_time_seconds: number;
+      ad_blocks?: Array<{
+        start_time: number;
+        end_time: number;
+      }>;
       model_call_statuses: Record<string, number>;
       model_types: Record<string, number>;
     };

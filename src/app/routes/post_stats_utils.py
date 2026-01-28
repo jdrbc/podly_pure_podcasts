@@ -47,6 +47,27 @@ def parse_refined_windows(raw_refined: Any) -> List[Tuple[float, float]]:
     return refined_windows
 
 
+def merge_time_windows(
+    windows: List[Tuple[float, float]], gap_seconds: float = 1.0
+) -> List[Tuple[float, float]]:
+    if not windows:
+        return []
+
+    windows_sorted = sorted(windows, key=lambda w: w[0])
+    merged: List[Tuple[float, float]] = []
+    current_start, current_end = windows_sorted[0]
+
+    for start, end in windows_sorted[1:]:
+        if start <= current_end + gap_seconds:
+            current_end = max(current_end, end)
+        else:
+            merged.append((current_start, current_end))
+            current_start, current_end = start, end
+
+    merged.append((current_start, current_end))
+    return merged
+
+
 def is_mixed_segment(
     *, seg_start: float, seg_end: float, refined_windows: List[Tuple[float, float]]
 ) -> bool:
