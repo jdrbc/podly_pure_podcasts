@@ -264,21 +264,40 @@ def test_cleanup_preview():
 def test_cleanup_removes_only_audio_files():
     """Test that cleanup removes audio but preserves metadata.
 
-    NOTE: This test depends on the post being old enough to be cleaned up
-    based on the server's retention_days setting. In developer mode with
-    test feeds, posts may be created with timestamps that make them eligible
-    for cleanup.
+    NOTE: This test processes all posts in a feed. With retention_days=0
+    (allowed in developer mode), all posts become eligible for cleanup except
+    the most recent post for the feed which is always preserved.
     """
     print("  → test_cleanup_removes_only_audio_files")
     client = get_api_client()
     feed = create_test_feed(client)
 
     try:
-        processed_post = get_processed_post(client, feed)
-        guid = processed_post.guid
+        # Get all posts from the feed
+        posts = client.get_posts(feed.id)
+        if len(posts) < 2:
+            raise SkipTest(
+                f"Feed needs at least 2 posts for cleanup test, found {len(posts)}"
+            )
 
-        # Capture initial state
-        initial_info = client.get_post_info(guid)
+        # Process all posts (they're ordered newest to oldest)
+        for post in posts:
+            if not post.get("has_processed_audio"):
+                if not post.get("whitelisted"):
+                    client.whitelist_post(
+                        post["guid"], whitelisted=True, trigger_processing=True
+                    )
+                else:
+                    client.process_post(post["guid"])
+                client.wait_for_processing(post["guid"], timeout=60)
+
+        # Use an older post (not the most recent) for testing cleanup
+        # The most recent post will never be cleaned up
+        test_post = posts[1] if len(posts) > 1 else posts[0]
+        old_guid = test_post["guid"]
+
+        # Capture initial state of a post
+        initial_info = client.get_post_info(old_guid)
         assert initial_info is not None
         assert (
             initial_info.has_processed_audio
@@ -287,13 +306,11 @@ def test_cleanup_removes_only_audio_files():
         # Store duration for later comparison (should be preserved)
         initial_duration = initial_info.duration
 
-        # Force cleanup eligibility by using retention_days=0
-        # This makes all processed posts eligible regardless of completion time
+        # Preview cleanup with retention_days=0 (developer mode allows this)
         preview_before = client.get_cleanup_preview(retention_days=0)
         if preview_before.get("count", 0) == 0:
             raise SkipTest(
-                "No posts eligible for cleanup even with retention_days=0. "
-                "Post may not be fully processed yet."
+                "No posts eligible for cleanup. All posts may be the most recent for their feeds."
             )
 
         # Run cleanup with retention_days=0
@@ -305,12 +322,16 @@ def test_cleanup_removes_only_audio_files():
 
         assert result.get("status") == "ok", f"Cleanup failed: {result}"
 
-        # Verify the post state after cleanup
-        post_after = client.get_post_info(guid)
+        # At least one post should have been removed
+        removed = result.get("removed_posts", 0)
+        assert removed >= 1, f"Expected at least 1 post removed, got {removed}"
+
+        # Verify the older post state after cleanup
+        post_after = client.get_post_info(old_guid)
 
         assert post_after is not None, "Post should still exist after cleanup"
 
-        # Audio files should be removed
+        # Audio files should be removed from the old post
         assert (
             not post_after.has_processed_audio
         ), "Processed audio path should be cleared after cleanup"

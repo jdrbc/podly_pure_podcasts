@@ -1,7 +1,7 @@
 import logging
 
 import flask
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 from flask.typing import ResponseReturnValue
 
 from app.auth.guards import require_admin
@@ -106,7 +106,12 @@ def api_run_cleanup() -> ResponseReturnValue:
         if retention_override is not None
         else getattr(runtime_config, "post_cleanup_retention_days", None)
     )
-    if retention is None or retention <= 0:
+
+    # In developer mode, allow retention_days=0 for testing
+    # In production, require retention_days > 0
+    developer_mode = current_app.config.get("developer_mode", False)
+
+    if retention is None or (retention <= 0 and not developer_mode):
         return flask.jsonify(
             {
                 "status": "disabled",
