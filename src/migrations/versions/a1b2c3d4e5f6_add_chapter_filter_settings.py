@@ -19,9 +19,7 @@ depends_on = None
 def table_exists(table_name: str) -> bool:
     conn = op.get_bind()
     result = conn.execute(
-        sa.text(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=:name"
-        ),
+        sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
         {"name": table_name},
     )
     return result.fetchone() is not None
