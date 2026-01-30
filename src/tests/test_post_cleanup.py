@@ -130,10 +130,12 @@ def test_cleanup_removes_expired_posts(app, tmp_path) -> None:
         assert cleaned_old_post.processed_audio_path is None
         assert cleaned_old_post.unprocessed_audio_path is None
         assert Post.query.filter_by(guid="recent-guid").first() is not None
-        assert ProcessingJob.query.filter_by(post_guid="old-guid").first() is None
-        assert Identification.query.count() == 0
-        assert TranscriptSegment.query.count() == 0
-        assert ModelCall.query.count() == 0
+        # Processing metadata is now preserved for historical tracking
+        assert ProcessingJob.query.filter_by(post_guid="old-guid").first() is not None
+        assert Identification.query.count() == 1
+        assert TranscriptSegment.query.count() == 1
+        assert ModelCall.query.count() == 1
+        # Audio files are still deleted
         assert not old_processed.exists()
         assert not old_unprocessed.exists()
 

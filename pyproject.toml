@@ -20,7 +20,9 @@ strict = true
 mypy_path = "src"
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
+norecursedirs = ["scripts", "scripts/*", ".worktrees", ".worktrees/*"]
+testpaths = []  # No test paths - tests converted to standalone scripts
 
 [tool.black]
 line-length = 88

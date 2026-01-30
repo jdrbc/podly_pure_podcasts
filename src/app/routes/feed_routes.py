@@ -121,7 +121,8 @@ def _whitelist_latest_for_first_member(
 def _handle_developer_mode_feed(url: str, user: Optional[User]) -> ResponseReturnValue:
     try:
         feed_id_str = url.split("/")[-1]
-        feed_num = int(feed_id_str)
+        # Convert hex string to integer for feed_num
+        feed_num = int(feed_id_str, 16)
 
         result = writer_client.action(
             "create_dev_test_feed",

@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict
 
 from app.extensions import db
@@ -111,7 +112,7 @@ def cleanup_processed_post_action(params: Dict[str, Any]) -> Dict[str, Any]:
     if not post_id:
         raise ValueError("post_id is required")
 
-    post = db.session.get(Post, int(post_id))
+    post = db.session.get(Post, int(str(post_id)))
     if not post:
         raise ValueError(f"Post {post_id} not found")
 
@@ -131,11 +132,15 @@ def cleanup_processed_post_action(params: Dict[str, Any]) -> Dict[str, Any]:
 def cleanup_processed_post_files_only_action(params: Dict[str, Any]) -> Dict[str, Any]:
     """Remove audio files but preserve processing metadata."""
     post_id = params.get("post_id")
-    post = db.session.get(Post, int(post_id))
+    if not post_id:
+        raise ValueError("post_id is required")
+    post = db.session.get(Post, int(str(post_id)))
     if not post:
         raise ValueError(f"Post {post_id} not found")
 
-    logger.info("[WRITER] cleanup_processed_post_files_only_action: post_id=%s", post_id)
+    logger.info(
+        "[WRITER] cleanup_processed_post_files_only_action: post_id=%s", post_id
+    )
 
     # Delete audio files (using same pattern as post_cleanup.py)
     for path_str in [post.unprocessed_audio_path, post.processed_audio_path]:
@@ -144,9 +149,7 @@ def cleanup_processed_post_files_only_action(params: Dict[str, Any]) -> Dict[str
         try:
             file_path = Path(path_str)
         except Exception:  # pylint: disable=broad-except
-            logger.warning(
-                "[WRITER] Invalid path for post %s: %s", post.guid, path_str
-            )
+            logger.warning("[WRITER] Invalid path for post %s: %s", post.guid, path_str)
             continue
         if not file_path.exists():
             continue
@@ -154,9 +157,7 @@ def cleanup_processed_post_files_only_action(params: Dict[str, Any]) -> Dict[str
             file_path.unlink()
             logger.info("[WRITER] Deleted file: %s", file_path)
         except OSError as exc:
-            logger.warning(
-                "[WRITER] Unable to delete %s: %s", file_path, exc
-            )
+            logger.warning("[WRITER] Unable to delete %s: %s", file_path, exc)
 
     # Clear file paths but preserve duration and other metadata
     post.unprocessed_audio_path = None
