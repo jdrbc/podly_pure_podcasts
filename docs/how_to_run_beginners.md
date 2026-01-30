@@ -6,7 +6,7 @@ This guide will walk you through setting up Podly from scratch using Docker. Pod
 
 Want an expert to guide you through the setup? Download an AI powered IDE like cursor https://www.cursor.com/ or windsurf https://windsurf.com/
 
-Most IDEs have a free tier you can use to get started. Alternatively, you can use your own [LLM API key in Cursor](https://docs.cursor.com/settings/api-keys) (you'll need a key for Podly anyways).
+Most IDEs have a free tier you can use to get started. Alternatively, you can use your own [LLM API key in Cursor](https://docs.cursor.com/settings/api-keys).
 
 Open the AI chat in the IDE. Enable 'Agent' mode if available, which will allow the IDE to help you run commands, view the output, and debug or take corrective steps if necessary.
 
@@ -86,7 +86,7 @@ docker compose version
 
 You should see version information for both commands.
 
-### 2. Get an OpenAI API Key
+### 2. Get an OpenAI API Key (if using OpenAI)
 
 1. Go to [OpenAI's API platform](https://platform.openai.com/)
 2. Sign up for an account or log in if you already have one
@@ -103,7 +103,7 @@ You should see version information for both commands.
 ### Download the Project
 
 ```bash
-git clone https://github.com/normand1/podly_pure_podcasts.git
+git clone https://github.com/podly-pure-podcasts/podly_pure_podcasts.git
 cd podly_pure_podcasts
 ```
 
@@ -120,9 +120,9 @@ chmod +x run_podly_docker.sh
 
 ### Optional: Enable Authentication
 
-The Docker image reads environment variables from `.env` files or your shell. To require login:
+The Docker image reads environment variables from `.env.local` files or your shell. To require login:
 
-1. Export the variables before running Podly, or add them to `config/.env`:
+1. Export the variables before running Podly, or add them to `config/.env.local`:
 
 ```bash
 export REQUIRE_AUTH=true

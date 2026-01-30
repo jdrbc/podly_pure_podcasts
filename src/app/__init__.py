@@ -34,6 +34,7 @@ from app.processor import (
 from app.routes import register_routes
 from app.runtime_config import config, is_test
 from app.writer.client import writer_client
+from shared import defaults as DEFAULTS
 from shared.processing_paths import get_in_root, get_srv_root
 
 setup_logger("global_logger", "src/instance/logs/app.log")
@@ -235,13 +236,17 @@ def _validate_env_key_conflicts() -> None:
     """Validate that environment API key variables are not conflicting.
 
     Rules:
-    - If both LLM_API_KEY and GROQ_API_KEY are set and differ -> error
+    - If Groq is being used as the LLM and both LLM_API_KEY and GROQ_API_KEY are
+      set but differ -> error
     """
     llm_key = os.environ.get("LLM_API_KEY")
     groq_key = os.environ.get("GROQ_API_KEY")
+    llm_model = os.environ.get("LLM_MODEL") or DEFAULTS.LLM_DEFAULT_MODEL
+    llm_model_norm = llm_model.strip().lower() if isinstance(llm_model, str) else ""
+    groq_llm_selected = llm_model_norm.startswith("groq/")
 
     conflicts: list[str] = []
-    if llm_key and groq_key and llm_key != groq_key:
+    if groq_llm_selected and llm_key and groq_key and llm_key != groq_key:
         conflicts.append(
             "LLM_API_KEY and GROQ_API_KEY are both set but have different values"
         )
