@@ -20,9 +20,11 @@ pipenv run isort .
 
 # lint and type check
 echo '============================================================='
-echo "Running 'pipenv run mypy .'"
+echo "Running 'pipenv run mypy . --install-types --non-interactive'"
 echo '============================================================='
 pipenv run mypy . \
+    --install-types \
+    --non-interactive \
     --explicit-package-bases \
     --exclude 'migrations' \
     --exclude 'build' \

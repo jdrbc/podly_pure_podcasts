@@ -64,3 +64,7 @@ CLAUDE_NOTES.md
 
 # Railway command script with credentials
 scripts/railway_command.sh
+
+# Claude local files
+.claude/
+CLAUDE.md

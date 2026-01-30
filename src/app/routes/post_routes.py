@@ -1,8 +1,9 @@
+import json
 import logging
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Tuple
 
 import flask
 from flask import Blueprint, g, jsonify, request, send_file
@@ -22,100 +23,25 @@ from app.models import (
 from app.posts import clear_post_processing_data
 from app.routes.post_stats_utils import (
     count_model_calls,
+    count_primary_labels,
+    group_identifications_by_segment,
     is_mixed_segment,
+    merge_time_windows,
     parse_refined_windows,
 )
-from app.runtime_config import config as runtime_config
+from app.routes.post_utils import (
+    ensure_whitelisted_for_download,
+    increment_download_count,
+    missing_processed_audio_response,
+)
 from app.writer.client import writer_client
+from podcast_processor.chapter_filter import parse_filter_strings
+from shared import defaults as DEFAULTS
 
 logger = logging.getLogger("global_logger")
 
 
 post_bp = Blueprint("post", __name__)
-
-
-def _is_latest_post(feed: Feed, post: Post) -> bool:
-    """Return True if the post is the latest by release_date (fallback to id)."""
-    latest = (
-        Post.query.filter_by(feed_id=feed.id)
-        .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
-        .first()
-    )
-    return bool(latest and latest.id == post.id)
-
-
-def _increment_download_count(post: Post) -> None:
-    """Safely increment the download counter for a post."""
-    try:
-        writer_client.action(
-            "increment_download_count", {"post_id": post.id}, wait=False
-        )
-    except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Failed to increment download count for post {post.guid}: {e}")
-
-
-def _ensure_whitelisted_for_download(
-    post: Post, p_guid: str
-) -> Optional[flask.Response]:
-    """Make sure a post is whitelisted before serving or queuing processing."""
-    if post.whitelisted:
-        return None
-
-    if not getattr(runtime_config, "autoprocess_on_download", False):
-        logger.warning(
-            "Post %s not whitelisted and auto-process is disabled", post.guid
-        )
-        return flask.make_response(("Post not whitelisted", 403))
-
-    try:
-        writer_client.action(
-            "whitelist_post",
-            {"post_id": post.id},
-            wait=True,
-        )
-        post.whitelisted = True
-        logger.info("Auto-whitelisted post %s on download request", p_guid)
-        return None
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.warning(
-            "Failed to auto-whitelist post %s on download: %s", post.guid, exc
-        )
-        return flask.make_response(("Post not whitelisted", 403))
-
-
-def _missing_processed_audio_response(post: Post, p_guid: str) -> flask.Response:
-    """Return a response when processed audio is missing, optionally queueing work."""
-    if not getattr(runtime_config, "autoprocess_on_download", False):
-        logger.warning("Processed audio not found for post: %s", post.id)
-        return flask.make_response(("Processed audio not found", 404))
-
-    logger.info(
-        "Auto-processing on download is enabled; queuing processing for %s",
-        p_guid,
-    )
-    requester = getattr(getattr(g, "current_user", None), "id", None)
-    job_response = get_jobs_manager().start_post_processing(
-        p_guid,
-        priority="download",
-        requested_by_user_id=requester,
-        billing_user_id=requester,
-    )
-    status = cast(Optional[str], job_response.get("status"))
-    status_code = {
-        "completed": 200,
-        "skipped": 200,
-        "error": 400,
-        "running": 202,
-        "started": 202,
-    }.get(status or "pending", 202)
-    message = job_response.get(
-        "message",
-        "Processing queued because audio was not ready for download",
-    )
-    return flask.make_response(
-        flask.jsonify({**job_response, "message": message}),
-        status_code,
-    )
 
 
 @post_bp.route("/api/feeds/<int:feed_id>/posts", methods=["GET"])
@@ -315,8 +241,10 @@ def post_debug(p_guid: str) -> flask.Response:
 
     model_call_statuses, model_types = count_model_calls(model_calls)
 
-    content_segments = sum(1 for i in identifications if i.label == "content")
-    ad_segments = sum(1 for i in identifications if i.label == "ad")
+    identifications_by_segment = group_identifications_by_segment(identifications)
+    content_segments, ad_segments = count_primary_labels(
+        transcript_segments, identifications_by_segment
+    )
 
     stats = {
         "total_segments": len(transcript_segments),
@@ -342,12 +270,69 @@ def post_debug(p_guid: str) -> flask.Response:
     )
 
 
+def _get_chapter_stats(post: Post, feed: Feed) -> Dict[str, Any]:
+    """Get chapter statistics for chapter-based processing."""
+
+    # Try to read stored chapter data first (set during processing)
+    if post.chapter_data:
+        try:
+            data = json.loads(post.chapter_data)
+            chapters_kept = [
+                {**ch, "label": "content"} for ch in data.get("chapters_kept", [])
+            ]
+            chapters_removed = [
+                {**ch, "label": "ad"} for ch in data.get("chapters_removed", [])
+            ]
+            # Sort by original start time to maintain order from the file
+            all_chapters = sorted(
+                chapters_kept + chapters_removed, key=lambda c: c["start_time"]
+            )
+            return {
+                "total_chapters": len(chapters_kept) + len(chapters_removed),
+                "chapters_kept": len(chapters_kept),
+                "chapters_removed": len(chapters_removed),
+                "filter_strings": data.get("filter_strings", []),
+                "chapters": all_chapters,
+            }
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Fallback: read from processed audio (only shows kept chapters)
+    from podcast_processor.chapter_reader import read_chapters
+
+    chapters = read_chapters(post.processed_audio_path or "")
+    filter_csv = feed.chapter_filter_strings or DEFAULTS.CHAPTER_FILTER_DEFAULT_STRINGS
+    filter_strings = parse_filter_strings(filter_csv)
+
+    chapters_kept = [
+        {
+            "title": ch.title,
+            "start_time": round(ch.start_time_ms / 1000.0, 1),
+            "end_time": round(ch.end_time_ms / 1000.0, 1),
+            "label": "content",
+        }
+        for ch in chapters
+    ]
+
+    return {
+        "total_chapters": len(chapters_kept),
+        "chapters_kept": len(chapters_kept),
+        "chapters_removed": 0,
+        "filter_strings": filter_strings,
+        "chapters": chapters_kept,
+        "note": "Removed chapters not available (processed before this feature)",
+    }
+
+
 @post_bp.route("/api/posts/<string:p_guid>/stats", methods=["GET"])
 def api_post_stats(p_guid: str) -> flask.Response:
     """Get processing statistics for a post in JSON format."""
     post = Post.query.filter_by(guid=p_guid).first()
     if post is None:
         return flask.make_response(flask.jsonify({"error": "Post not found"}), 404)
+
+    feed = db.session.get(Feed, post.feed_id)
+    ad_detection_strategy = feed.ad_detection_strategy if feed else "llm"
 
     model_calls = (
         ModelCall.query.filter_by(post_id=post.id)
@@ -376,8 +361,10 @@ def api_post_stats(p_guid: str) -> flask.Response:
             model_types[call.model_name] = 0
         model_types[call.model_name] += 1
 
-    content_segments = sum(1 for i in identifications if i.label == "content")
-    ad_segments = sum(1 for i in identifications if i.label == "ad")
+    identifications_by_segment = group_identifications_by_segment(identifications)
+    content_segments, ad_segments = count_primary_labels(
+        transcript_segments, identifications_by_segment
+    )
 
     # Refined ad windows are written by boundary refinement and are used for precise
     # cutting. We also derive a UI-only "mixed" flag for segments that overlap a
@@ -406,16 +393,17 @@ def api_post_stats(p_guid: str) -> flask.Response:
 
     transcript_segments_data = []
     segment_mixed_by_id: Dict[int, bool] = {}
+    ad_windows_from_segments: List[Tuple[float, float]] = []
     for segment in transcript_segments:
-        segment_identifications = [
-            i for i in identifications if i.transcript_segment_id == segment.id
-        ]
+        segment_identifications = identifications_by_segment.get(segment.id, [])
 
         has_ad_label = any(i.label == "ad" for i in segment_identifications)
         primary_label = "ad" if has_ad_label else "content"
 
         seg_start = float(segment.start_time)
         seg_end = float(segment.end_time)
+        if has_ad_label:
+            ad_windows_from_segments.append((seg_start, seg_end))
         mixed = bool(has_ad_label) and is_mixed_segment(
             seg_start=seg_start, seg_end=seg_end, refined_windows=refined_windows
         )
@@ -466,6 +454,24 @@ def api_post_stats(p_guid: str) -> flask.Response:
             }
         )
 
+    # Build chapter data for chapter-based processing
+    chapters_data = None
+    if ad_detection_strategy == "chapter" and post.processed_audio_path and feed:
+        chapters_data = _get_chapter_stats(post, feed)
+
+    # Calculate ad blocks and statistics for LLM-based processing
+    ad_windows_source = refined_windows or ad_windows_from_segments
+    ad_blocks = merge_time_windows(ad_windows_source, gap_seconds=1.0)
+    ad_time_seconds = sum(end - start for start, end in ad_blocks if end > start)
+
+    duration_seconds = float(post.duration or 0)
+    if duration_seconds <= 0 and transcript_segments:
+        duration_seconds = max(float(seg.end_time) for seg in transcript_segments)
+
+    ad_percentage = (
+        (ad_time_seconds / duration_seconds) * 100 if duration_seconds > 0 else 0.0
+    )
+
     stats_data = {
         "post": {
             "guid": post.guid,
@@ -478,18 +484,29 @@ def api_post_stats(p_guid: str) -> flask.Response:
             "has_processed_audio": post.processed_audio_path is not None,
             "download_count": post.download_count,
         },
+        "ad_detection_strategy": ad_detection_strategy,
         "processing_stats": {
             "total_segments": len(transcript_segments),
             "total_model_calls": len(model_calls),
             "total_identifications": len(identifications),
             "content_segments": content_segments,
             "ad_segments_count": ad_segments,
+            "ad_percentage": round(ad_percentage, 1),
+            "estimated_ad_time_seconds": round(ad_time_seconds, 1),
+            "ad_blocks": [
+                {
+                    "start_time": round(start, 1),
+                    "end_time": round(end, 1),
+                }
+                for start, end in ad_blocks
+            ],
             "model_call_statuses": model_call_statuses,
             "model_types": model_types,
         },
         "model_calls": model_call_details,
         "transcript_segments": transcript_segments_data,
         "identifications": identifications_data,
+        "chapters": chapters_data,
     }
 
     return flask.jsonify(stats_data)
@@ -902,12 +919,12 @@ def api_download_post(p_guid: str) -> flask.Response:
         logger.warning(f"Post with GUID: {p_guid} not found")
         return flask.make_response(("Post not found", 404))
 
-    whitelist_response = _ensure_whitelisted_for_download(post, p_guid)
+    whitelist_response = ensure_whitelisted_for_download(post, p_guid)
     if whitelist_response:
         return whitelist_response
 
     if not post.processed_audio_path or not Path(post.processed_audio_path).exists():
-        return _missing_processed_audio_response(post, p_guid)
+        return missing_processed_audio_response(post, p_guid)
 
     try:
         response = send_file(
@@ -920,7 +937,7 @@ def api_download_post(p_guid: str) -> flask.Response:
         logger.error(f"Error serving file for {p_guid}: {e}")
         return flask.make_response(("Error serving file", 500))
 
-    _increment_download_count(post)
+    increment_download_count(post)
     return response
 
 
@@ -955,7 +972,7 @@ def api_download_original_post(p_guid: str) -> flask.Response:
         logger.error(f"Error serving original file for {p_guid}: {e}")
         return flask.make_response(("Error serving file", 500))
 
-    _increment_download_count(post)
+    increment_download_count(post)
     return response
 
 

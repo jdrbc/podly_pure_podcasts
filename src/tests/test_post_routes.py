@@ -41,7 +41,7 @@ def test_download_endpoints_increment_counter(app, tmp_path):
         client = app.test_client()
 
         # Mock writer_client to simulate DB update
-        with mock.patch("app.routes.post_routes.writer_client") as mock_writer:
+        with mock.patch("app.routes.post_utils.writer_client") as mock_writer:
 
             def side_effect(action, params, wait=False):
                 if action == "increment_download_count":
@@ -89,7 +89,7 @@ def test_download_triggers_processing_when_enabled(app):
     original_flag = runtime_config.autoprocess_on_download
     runtime_config.autoprocess_on_download = True
     try:
-        with mock.patch("app.routes.post_routes.get_jobs_manager") as mock_mgr:
+        with mock.patch("app.routes.post_utils.get_jobs_manager") as mock_mgr:
             mock_mgr.return_value.start_post_processing.return_value = {
                 "status": "started",
                 "job_id": "job-123",
@@ -133,7 +133,7 @@ def test_download_missing_audio_returns_404_when_disabled(app):
     original_flag = runtime_config.autoprocess_on_download
     runtime_config.autoprocess_on_download = False
     try:
-        with mock.patch("app.routes.post_routes.get_jobs_manager") as mock_mgr:
+        with mock.patch("app.routes.post_utils.get_jobs_manager") as mock_mgr:
             response = client.get(f"/api/posts/{post_guid}/download")
             assert response.status_code == 404
             mock_mgr.return_value.start_post_processing.assert_not_called()
@@ -172,7 +172,7 @@ def test_download_auto_whitelists_post(app, tmp_path):
     original_flag = runtime_config.autoprocess_on_download
     runtime_config.autoprocess_on_download = True
 
-    with mock.patch("app.routes.post_routes.writer_client") as mock_writer:
+    with mock.patch("app.routes.post_utils.writer_client") as mock_writer:
         mock_writer.action.return_value = SimpleNamespace(success=True, data=None)
         response = client.get(f"/api/posts/{post_guid}/download")
         assert response.status_code == 200
