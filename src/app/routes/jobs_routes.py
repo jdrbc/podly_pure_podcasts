@@ -1,9 +1,10 @@
 import logging
 
 import flask
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 from flask.typing import ResponseReturnValue
 
+from app.auth.guards import require_admin
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
 from app.jobs_manager_run_service import build_run_status_snapshot
@@ -71,7 +72,17 @@ def api_cancel_job(job_id: str) -> ResponseReturnValue:
 
 @jobs_bp.route("/api/jobs/cleanup/preview", methods=["GET"])
 def api_cleanup_preview() -> ResponseReturnValue:
-    retention = getattr(runtime_config, "post_cleanup_retention_days", None)
+    _, error_response = require_admin("preview cleanup candidates")
+    if error_response:
+        return error_response
+
+    # Allow override via query param for testing
+    retention_override = request.args.get("retention_days", type=int)
+    retention = (
+        retention_override
+        if retention_override is not None
+        else getattr(runtime_config, "post_cleanup_retention_days", None)
+    )
     count, cutoff = count_cleanup_candidates(retention)
     return flask.jsonify(
         {
@@ -84,8 +95,23 @@ def api_cleanup_preview() -> ResponseReturnValue:
 
 @jobs_bp.route("/api/jobs/cleanup/run", methods=["POST"])
 def api_run_cleanup() -> ResponseReturnValue:
-    retention = getattr(runtime_config, "post_cleanup_retention_days", None)
-    if retention is None or retention <= 0:
+    _, error_response = require_admin("run cleanup job")
+    if error_response:
+        return error_response
+
+    # Allow override via query param for testing
+    retention_override = request.args.get("retention_days", type=int)
+    retention = (
+        retention_override
+        if retention_override is not None
+        else getattr(runtime_config, "post_cleanup_retention_days", None)
+    )
+
+    # In developer mode, allow retention_days=0 for testing
+    # In production, require retention_days > 0
+    developer_mode = current_app.config.get("developer_mode", False)
+
+    if retention is None or (retention <= 0 and not developer_mode):
         return flask.jsonify(
             {
                 "status": "disabled",

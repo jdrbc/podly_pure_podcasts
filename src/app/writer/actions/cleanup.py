@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict
 
 from app.extensions import db
@@ -111,7 +112,7 @@ def cleanup_processed_post_action(params: Dict[str, Any]) -> Dict[str, Any]:
     if not post_id:
         raise ValueError("post_id is required")
 
-    post = db.session.get(Post, int(post_id))
+    post = db.session.get(Post, int(str(post_id)))
     if not post:
         raise ValueError(f"Post {post_id} not found")
 
@@ -124,5 +125,52 @@ def cleanup_processed_post_action(params: Dict[str, Any]) -> Dict[str, Any]:
     recalculate_run_counts(db.session)
 
     logger.info("[WRITER] cleanup_processed_post_action: completed post_id=%s", post_id)
+
+    return {"post_id": post.id}
+
+
+def cleanup_processed_post_files_only_action(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove audio files but preserve processing metadata."""
+    post_id = params.get("post_id")
+    if not post_id:
+        raise ValueError("post_id is required")
+    post = db.session.get(Post, int(str(post_id)))
+    if not post:
+        raise ValueError(f"Post {post_id} not found")
+
+    logger.info(
+        "[WRITER] cleanup_processed_post_files_only_action: post_id=%s", post_id
+    )
+
+    # Delete audio files (using same pattern as post_cleanup.py)
+    for path_str in [post.unprocessed_audio_path, post.processed_audio_path]:
+        if not path_str:
+            continue
+        try:
+            file_path = Path(path_str)
+        except Exception:  # pylint: disable=broad-except
+            logger.warning("[WRITER] Invalid path for post %s: %s", post.guid, path_str)
+            continue
+        if not file_path.exists():
+            continue
+        try:
+            file_path.unlink()
+            logger.info("[WRITER] Deleted file: %s", file_path)
+        except OSError as exc:
+            logger.warning("[WRITER] Unable to delete %s: %s", file_path, exc)
+
+    # Clear file paths but preserve duration and other metadata
+    post.unprocessed_audio_path = None
+    post.processed_audio_path = None
+    # Un-whitelist the post (prevents re-queuing for processing)
+    post.whitelisted = False
+
+    # DO NOT delete: ModelCall, ProcessingJob, TranscriptSegment, Identification
+    # DO NOT null: post.duration
+
+    logger.info(
+        "[WRITER] cleanup_processed_post_files_only_action: completed post_id=%s",
+        post_id,
+    )
 
     return {"post_id": post.id}

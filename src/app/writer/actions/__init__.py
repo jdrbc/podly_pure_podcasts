@@ -10,6 +10,9 @@ from .cleanup import (
 )
 from .cleanup import cleanup_processed_post_action as cleanup_processed_post_action
 from .cleanup import (
+    cleanup_processed_post_files_only_action as cleanup_processed_post_files_only_action,
+)
+from .cleanup import (
     clear_post_processing_data_action as clear_post_processing_data_action,
 )
 from .feeds import add_feed_action as add_feed_action

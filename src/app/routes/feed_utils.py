@@ -2,14 +2,14 @@
 
 import logging
 import re
-from typing import Optional, cast
+from typing import Optional
 
 from flask import jsonify, make_response, redirect, url_for
 from flask.typing import ResponseReturnValue
 
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
-from app.models import Feed, Post, User, UserFeed
+from app.models import Feed, User, UserFeed
 from app.writer.client import writer_client
 
 logger = logging.getLogger("global_logger")
@@ -75,19 +75,19 @@ def handle_developer_mode_feed(url: str, user: Optional[User]) -> ResponseReturn
     """Handle special developer mode feed creation."""
     try:
         feed_id_str = url.split("/")[-1]
-        feed_num = int(feed_id_str)
+        # Use the feed_id_str directly as an identifier (could be hex string or int)
 
         result = writer_client.action(
             "create_dev_test_feed",
             {
                 "rss_url": url,
-                "title": f"Test Feed {feed_num}",
+                "title": f"Test Feed {feed_id_str}",
                 "image_url": "https://via.placeholder.com/150",
                 "description": "A test feed for development",
                 "author": "Test Author",
                 "post_count": 5,
-                "guid_prefix": f"test-guid-{feed_num}",
-                "download_url_prefix": f"http://test-feed/{feed_num}",
+                "guid_prefix": f"test-guid-{feed_id_str}",
+                "download_url_prefix": f"http://test-feed/{feed_id_str}",
             },
             wait=True,
         )
