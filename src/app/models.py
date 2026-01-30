@@ -30,6 +30,14 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     author = db.Column(db.Text)
     rss_url = db.Column(db.Text, unique=True, nullable=False)
     image_url = db.Column(db.Text)
+    # Ad detection strategy: "llm" (default) or "chapter".
+    # Note: "chapter" strategy requires CBR audio encoding for accurate chapter marker
+    # seeking. "llm" uses VBR for smaller files.
+    ad_detection_strategy = db.Column(
+        db.String(20), nullable=False, default=DEFAULTS.AD_DETECTION_DEFAULT_STRATEGY
+    )
+    # Per-feed filter strings override (comma-separated), null = use global defaults
+    chapter_filter_strings = db.Column(db.Text, nullable=True)
     auto_whitelist_new_episodes_override = db.Column(db.Boolean, nullable=True)
 
     posts = db.relationship(
@@ -86,6 +94,8 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     whitelisted = db.Column(db.Boolean, default=False, nullable=False)
     image_url = db.Column(db.Text)  # Episode thumbnail URL
     download_count = db.Column(db.Integer, nullable=True, default=0)
+    # JSON data for chapter-based processing results
+    chapter_data = db.Column(db.Text, nullable=True)
 
     # Latest (most recent) refined ad cut windows for this post.
     # This is written by the ad classifier boundary refinement step and read by the
@@ -524,6 +534,18 @@ class DiscordSettings(db.Model):  # type: ignore[name-defined, misc]
     redirect_uri = db.Column(db.Text, nullable=True)
     guild_ids = db.Column(db.Text, nullable=True)  # Comma-separated list
     allow_registration = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ChapterFilterSettings(db.Model):  # type: ignore[name-defined, misc]
+    __tablename__ = "chapter_filter_settings"
+
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    default_filter_strings = db.Column(
+        db.Text, nullable=False, default=DEFAULTS.CHAPTER_FILTER_DEFAULT_STRINGS
+    )
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

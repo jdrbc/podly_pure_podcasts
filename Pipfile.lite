@@ -35,6 +35,7 @@ pytest-cov = "*"
 flask-cors = "*"
 bcrypt = "*"
 stripe = "*"
+mutagen = "*"
 
 [dev-packages]
 black = "*"
