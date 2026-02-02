@@ -7,13 +7,15 @@ import AddFeedForm from '../components/AddFeedForm';
 import type { Feed, ConfigResponse } from '../types';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { copyToClipboard } from '../utils/clipboard';
 import { emitDiagnosticError } from '../utils/diagnostics';
 import { getHttpErrorInfo } from '../utils/httpError';
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { feedId } = useParams();
+  const location = useLocation();
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedFeed, setSelectedFeed] = useState<Feed | null>(null);
   const { requireAuth, user } = useAuth();
@@ -70,6 +72,28 @@ export default function HomePage() {
     };
   }, [showAddForm]);
 
+  useEffect(() => {
+    if (!feeds || !feedId) {
+      if (location.pathname === '/' && selectedFeed !== null) {
+        setSelectedFeed(null);
+      }
+      return;
+    }
+
+    const parsedId = Number(feedId);
+    if (!Number.isFinite(parsedId)) {
+      if (selectedFeed !== null) {
+        setSelectedFeed(null);
+      }
+      return;
+    }
+
+    const matchingFeed = feeds.find((feed) => feed.id === parsedId) || null;
+    if (matchingFeed?.id !== selectedFeed?.id) {
+      setSelectedFeed(matchingFeed);
+    }
+  }, [feeds, feedId, location.pathname, selectedFeed]);
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -95,6 +119,9 @@ export default function HomePage() {
     navigate('/billing');
   };
 
+  const parsedFeedId = feedId ? Number(feedId) : null;
+  const feedIdIsValid = parsedFeedId !== null && Number.isFinite(parsedFeedId);
+  const feedNotFound = feedIdIsValid && !selectedFeed;
 
   const handleCopyAggregateLink = async () => {
     try {
@@ -166,7 +193,10 @@ export default function HomePage() {
           <FeedList 
             feeds={feeds || []} 
             onFeedDeleted={refetch}
-            onFeedSelected={setSelectedFeed}
+            onFeedSelected={(feed) => {
+              setSelectedFeed(feed);
+              navigate(`/feeds/${feed.id}`);
+            }}
             selectedFeedId={selectedFeed?.id}
           />
         </div>
@@ -179,9 +209,13 @@ export default function HomePage() {
         } flex-col bg-white rounded-lg shadow border overflow-hidden`}>
           <FeedDetail 
             feed={selectedFeed} 
-            onClose={() => setSelectedFeed(null)}
+            onClose={() => {
+              setSelectedFeed(null);
+              navigate('/');
+            }}
             onFeedDeleted={() => {
               setSelectedFeed(null);
+              navigate('/');
               refetch();
             }}
           />
@@ -189,7 +223,7 @@ export default function HomePage() {
       )}
 
       {/* Empty State for Desktop */}
-      {!selectedFeed && (
+      {!selectedFeed && !feedNotFound && (
         <div className="hidden lg:flex flex-[2] items-center justify-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
           <div className="text-center">
             <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -197,6 +231,18 @@ export default function HomePage() {
             </svg>
             <h3 className="mt-2 text-sm font-medium text-gray-900">No podcast selected</h3>
             <p className="mt-1 text-sm text-gray-500">Select a podcast from the list to view details and episodes.</p>
+          </div>
+        </div>
+      )}
+
+      {feedNotFound && (
+        <div className="hidden lg:flex flex-[2] items-center justify-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+          <div className="text-center">
+            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">Feed not found</h3>
+            <p className="mt-1 text-sm text-gray-500">Pick a feed from the list to continue.</p>
           </div>
         </div>
       )}

@@ -276,6 +276,7 @@ function AppShell() {
       <main className="flex-1 px-2 sm:px-4 lg:px-6 py-4 overflow-auto">
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/feeds/:feedId" element={<HomePage />} />
           {showBillingLink && <Route path="/billing" element={<BillingPage />} />}
           {showJobsLink && <Route path="/jobs" element={<JobsPage />} />}
           {showConfigLink && <Route path="/config" element={<ConfigPage />} />}
