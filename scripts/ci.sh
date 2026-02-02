@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# ensure dependencies are installed and are always up to date
+echo '============================================================='
+echo "Running 'pipenv sync --dev'"
+echo '============================================================='
+pipenv sync --dev
+
 # format
 echo '============================================================='
 echo "Running 'pipenv run black .'"
