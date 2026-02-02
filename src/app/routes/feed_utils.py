@@ -2,14 +2,14 @@
 
 import logging
 import re
-from typing import Optional, cast
+from typing import Optional
 
 from flask import jsonify, make_response, redirect, url_for
 from flask.typing import ResponseReturnValue
 
 from app.extensions import db
 from app.jobs_manager import get_jobs_manager
-from app.models import Feed, Post, User, UserFeed
+from app.models import Feed, User, UserFeed
 from app.writer.client import writer_client
 
 logger = logging.getLogger("global_logger")
