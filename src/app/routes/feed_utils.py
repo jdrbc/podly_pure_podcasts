@@ -46,6 +46,12 @@ def whitelist_latest_for_first_member(
     feed: Feed, requested_by_user_id: int | None
 ) -> None:
     """When a feed goes from 0→1 members, whitelist and process the latest post."""
+    # Respect global/per-feed whitelist settings; skip if auto-whitelist is disabled.
+    from app.feeds import _should_auto_whitelist_new_posts
+
+    if not _should_auto_whitelist_new_posts(feed):
+        return
+
     try:
         result = writer_client.action(
             "whitelist_latest_post_for_feed", {"feed_id": feed.id}, wait=True
