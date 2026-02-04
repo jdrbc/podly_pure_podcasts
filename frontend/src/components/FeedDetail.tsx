@@ -40,6 +40,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const feedHeaderRef = useRef<HTMLDivElement>(null);
   const [currentFeed, setCurrentFeed] = useState(feed);
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
   const [pendingEpisode, setPendingEpisode] = useState<Episode | null>(null);
   const [showProcessingModal, setShowProcessingModal] = useState(false);
   const [processingEstimate, setProcessingEstimate] = useState<ProcessingEstimate | null>(null);
@@ -50,6 +51,15 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
   const isAdmin = !requireAuth || user?.role === 'admin';
   const whitelistedOnly = requireAuth && !isAdmin;
+
+  const decodeEpisodeDescription = (rawDescription: string) => {
+    if (typeof document === 'undefined') {
+      return rawDescription;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = rawDescription;
+    return textarea.value;
+  };
 
   const { data: configResponse } = useQuery<ConfigResponse>({
     queryKey: ['config'],
@@ -199,6 +209,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
   useEffect(() => {
     setCurrentFeed(feed);
   }, [feed]);
+
+  useEffect(() => {
+    setExpandedDescriptions(new Set());
+  }, [feed.id]);
 
   useEffect(() => {
     setPage(1);
@@ -835,9 +849,43 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                     {/* Episode Description */}
                     {episode.description && (
                       <div className="text-left">
-                        <p className="text-sm text-gray-500 line-clamp-3">
-                          {episode.description.replace(/<[^>]*>/g, '').substring(0, 300)}...
-                        </p>
+                        {(() => {
+                          const cleanedDescription = decodeEpisodeDescription(
+                            episode.description.replace(/<[^>]*>/g, '').trim(),
+                          );
+                          const isExpanded = expandedDescriptions.has(episode.guid);
+                          const shouldTruncate = cleanedDescription.length > 300;
+                          const displayText = isExpanded || !shouldTruncate
+                            ? cleanedDescription
+                            : `${cleanedDescription.substring(0, 300)}...`;
+                          return (
+                            <>
+                              <p className={`text-sm text-gray-500 ${isExpanded ? '' : 'line-clamp-3'}`}>
+                                {displayText}
+                              </p>
+                              {shouldTruncate && (
+                                <button
+                                  type="button"
+                                  aria-expanded={isExpanded}
+                                  onClick={() => {
+                                    setExpandedDescriptions((prev) => {
+                                      const next = new Set(prev);
+                                      if (isExpanded) {
+                                        next.delete(episode.guid);
+                                      } else {
+                                        next.add(episode.guid);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                  className="mt-2 inline-flex items-center text-xs font-medium text-gray-500 underline-offset-2 transition hover:text-gray-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/60"
+                                >
+                                  {isExpanded ? 'Show less' : 'Show more'}
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
 
